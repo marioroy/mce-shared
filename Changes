@@ -1,6 +1,10 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.001 Sat Mar 19 23:00:00 EST 2016
+
+  * Completed IPC optimizations for 1.0.
+
 1.000 Tue Mar 15 22:00:00 EST 2016
 
   * First release.

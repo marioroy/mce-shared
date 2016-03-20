@@ -4,13 +4,14 @@ This document describes MCE::Shared version 1.000.
 
 ### Description
 
-MCE::Shared provides data sharing for MCE supporting threads and processes.
-Included with the distribution is MCE::Hobo for providing threads-like
-parallelization for running code asynchronously.
+This module provides data sharing capabilities for
+[MCE](https://github.com/marioroy/mce-perl) supporting threads and processes.
+
+MCE::Hobo, included with the distribution, provides threads-like parallelization
+for running code asynchronously. Unlike threads, Hobo workers are spawned as
+processes having unique PIDs.
 
 ### Synopsis
-
-Unlike threads, Hobo workers are spawned as processes having unique PIDs.
 
 ```perl
  use MCE::Hobo;

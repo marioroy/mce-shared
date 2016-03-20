@@ -33,8 +33,7 @@ BEGIN {
          eval 'use threads::shared';
       }
    }
-
-   $_has_threads = $INC{'threads/shared.pm'} ? 1 : 0;
+   $_has_threads = $INC{'threads.pm'} ? 1 : 0;
 }
 
 use Time::HiRes qw(sleep);
@@ -51,14 +50,14 @@ use overload (
    fallback => 1
 );
 
-my $_tid = $INC{'threads.pm'} ? threads->tid() : 0;
+my $_tid = $_has_threads ? threads->tid() : 0;
 my $_EXT_LOCK : shared = 1;
 
 my $_FREEZE = \&Storable::freeze;
 my $_THAW   = \&Storable::thaw;
 my $_imported;
 
-sub CLONE { $_tid = threads->tid() }
+sub CLONE { $_tid = threads->tid() if $_has_threads }
 
 END { finish() }
 
@@ -201,11 +200,11 @@ sub create {
       }
 
       ## Run.
-      $_STAT->get($mgr_id)->set($wrk_id, "running");
+      $_STAT->get($mgr_id)->set($wrk_id, '');
       my @result = eval { no strict 'refs'; $func->(@_) };
 
       $_DATA->get($mgr_id)->set($wrk_id, $_FREEZE->(\@result));
-      $_STAT->get($mgr_id)->set($wrk_id, "joinable: $@");
+      $_STAT->get($mgr_id)->set($wrk_id, $@) if $@;
 
       _exit();
    }
@@ -242,7 +241,6 @@ sub exit {
       $self;
    }
    elsif ($mgr_id ne $wrk_id) {
-      $_STAT->get($mgr_id)->set($wrk_id, "joinable: ");
       _exit();
    }
    else {
@@ -277,13 +275,10 @@ sub is_joinable {
 
    my ($self) = @_;
    my $mgr_id = $self->{MGR_ID};
-   my $wrk_id = $self->{WRK_ID};
 
-   if ($mgr_id eq "$$.$_tid" && $mgr_id ne $wrk_id) {
+   if ($mgr_id eq "$$.$_tid" && $mgr_id ne $self->{WRK_ID}) {
       return undef if (exists $self->{JOINED});
-      sleep 0.01 until $_STAT->get($mgr_id)->exists($wrk_id);
-
-      ($_STAT->get($mgr_id)->get($wrk_id) =~ /^joinable/) ? 1 : '';
+      (waitpid($self->{PID}, 1) == 0) ? '' : 1;
    }
    else {
       '';
@@ -295,13 +290,10 @@ sub is_running {
 
    my ($self) = @_;
    my $mgr_id = $self->{MGR_ID};
-   my $wrk_id = $self->{WRK_ID};
 
-   if ($mgr_id eq "$$.$_tid" && $mgr_id ne $wrk_id) {
+   if ($mgr_id eq "$$.$_tid" && $mgr_id ne $self->{WRK_ID}) {
       return undef if (exists $self->{JOINED});
-      sleep 0.01 until $_STAT->get($mgr_id)->exists($wrk_id);
-
-      ($_STAT->get($mgr_id)->get($wrk_id) eq "running") ? 1 : '';
+      (waitpid($self->{PID}, 1) == 0) ? 1 : '';
    }
    else {
       1;
@@ -325,10 +317,9 @@ sub join {
          waitpid($self->{PID}, 0);
 
          my $result = $_DATA->get($mgr_id)->del($wrk_id);
-         my $error  = $_STAT->get($mgr_id)->del($wrk_id);
 
-         $self->{ERROR}  = (length $error > 10) ? substr($error, 10) : "";
          $self->{RESULT} = (defined $result) ? $_THAW->($result) : [];
+         $self->{ERROR}  = $_STAT->get($mgr_id)->del($wrk_id);
          $self->{JOINED} = 1;
 
          $_LIST->del($wrk_id);
@@ -374,39 +365,17 @@ sub list {
 sub list_joinable {
    _croak('Usage: MCE::Hobo->list_joinable()') if ref($_[0]);
 
-   if (defined $_LIST) {
-      my ($mgr_id, $wrk_id) = ("$$.$_tid");
-      for my $self ($_LIST->vals) {
-         if (!exists $self->{JOINED}) {
-            $wrk_id = $self->{WRK_ID};
-            sleep 0.01 until $_STAT->get($mgr_id)->exists($wrk_id);
-         }
-      }
-      my %lkup = $_STAT->get($mgr_id)->pairs('val =~ /^joinable/');
-      map { exists $lkup{$_} ? $_LIST->get($_) : () } $_LIST->keys;
-   }
-   else {
-      ();
-   }
+   (defined $_LIST)
+      ? map { (waitpid($_->{PID}, 1) == 0) ? () : $_ } $_LIST->vals
+      : ();
 }
 
 sub list_running {
    _croak('Usage: MCE::Hobo->list_running()') if ref($_[0]);
 
-   if (defined $_LIST) {
-      my ($mgr_id, $wrk_id) = ("$$.$_tid");
-      for my $self ($_LIST->vals) {
-         if (!exists $self->{JOINED}) {
-            $wrk_id = $self->{WRK_ID};
-            sleep 0.01 until $_STAT->get($mgr_id)->exists($wrk_id);
-         }
-      }
-      my %lkup = $_STAT->get($mgr_id)->pairs('val eq running');
-      map { exists $lkup{$_} ? $_LIST->get($_) : () } $_LIST->keys;
-   }
-   else {
-      ();
-   }
+   (defined $_LIST)
+      ? map { (waitpid($_->{PID}, 1) == 0) ? $_ : () } $_LIST->vals
+      : ();
 }
 
 sub pending {
@@ -441,8 +410,7 @@ sub waitall {
 
    if (defined wantarray) {
       map { MCE::Hobo->waitone } 1 .. $_LIST->len;
-   }
-   else {
+   } else {
       $_->join for MCE::Hobo->list;
    }
 }
@@ -458,10 +426,9 @@ sub waitone {
 
    if ( $_DATA->exists($mgr_id) && ( my $self = $_LIST->del($wrk_id) ) ) {
       my $result = $_DATA->get($mgr_id)->del($wrk_id);
-      my $error  = $_STAT->get($mgr_id)->del($wrk_id);
 
-      $self->{ERROR}  = (length $error > 10) ? substr($error, 10) : "";
       $self->{RESULT} = (defined $result) ? $_THAW->($result) : [];
+      $self->{ERROR}  = $_STAT->get($mgr_id)->del($wrk_id);
       $self->{JOINED} = 1;
 
       $self;
@@ -502,7 +469,7 @@ sub _exit {
    $SIG{__DIE__} = $SIG{__WARN__} = sub {};
 
    if ($_has_threads && $^O eq 'MSWin32') {
-      { lock $_EXT_LOCK; sleep 0.002; }
+      if ($INC{'threads/shared.pm'}) { lock $_EXT_LOCK; sleep 0.002; }
       threads->exit(0);
    }
    elsif ($_SELF->{posix_exit}) {
@@ -606,7 +573,7 @@ This document describes MCE::Hobo version 1.000
 
 =head1 DESCRIPTION
 
-A hobo is a migratory worker inside the machine that carries the
+A Hobo is a migratory worker inside the machine that carries the
 asynchronous gene. Hobos are equipped with C<threads>-like capability
 for running code asynchronously. Unlike threads, each hobo is a unique
 process to the underlying OS. The IPC is managed by C<MCE::Shared>,

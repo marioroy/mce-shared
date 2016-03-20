@@ -17,7 +17,7 @@ our $VERSION = '1.000';
 
 use Scalar::Util qw( looks_like_number );
 use MCE::Shared::Base;
-use MCE::Util 1.702;
+use MCE::Util ();
 
 use constant {
    MAX_DQ_DEPTH => 192,  # Maximum dequeue notifications
@@ -51,7 +51,7 @@ my $_has_threads = $INC{'threads.pm'} ? 1 : 0;
 my $_tid = $_has_threads ? threads->tid() : 0;
 
 sub CLONE {
-   $_tid = threads->tid();
+   $_tid = threads->tid() if $_has_threads;
 }
 
 sub DESTROY {

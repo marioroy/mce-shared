@@ -389,7 +389,9 @@ This document describes MCE::Shared version 1.000
 
 =head1 DESCRIPTION
 
-This module provides data sharing for MCE supporting threads and processes.
+This module provides data sharing capabilities for L<MCE> supporting
+threads and processes. L<MCE::Hobo>, included with the distribution,
+provides threads-like parallelization for running code asynchronously.
 
 C<MCE::Shared> enables extra functionality on systems with C<IO::FDPass>.
 Without it, MCE::Shared is unable to send file descriptors to the
@@ -1053,20 +1055,6 @@ an alias to C<STORE>.
 
 =over 3
 
-=item start
-
-Starts the shared-manager process. This is done automatically.
-
-   MCE::Shared->start();
-
-=item stop
-
-Stops the shared-manager process wiping all shared data content. This is not
-typically done by the user, but rather by C<END> automatically when the script
-terminates.
-
-   MCE::Shared->stop();
-
 =item init
 
 This method is called automatically by each MCE or Hobo worker immediately
@@ -1076,6 +1064,37 @@ round-robin fashion.
 
    MCE::Shared->init();
    MCE::Shared->init( ID );
+
+=item start
+
+Starts the shared-manager process. This is done automatically.
+
+   MCE::Shared->start();
+
+=item stop
+
+Stops the shared-manager process, wiping all shared data content. This is
+called by the C<END> block automatically when the script terminates.
+
+   MCE::Shared->stop();
+
+=back
+
+=head1 REQUIREMENTS
+
+MCE::Shared requires Perl 5.10.1 or later.
+
+=head1 SOURCE AND FURTHER READING
+
+The source, cookbook, and examples are hosted at GitHub.
+
+=over 3
+
+=item * L<https://github.com/marioroy/mce-shared>
+
+=item * L<https://github.com/marioroy/mce-cookbook>
+
+=item * L<https://github.com/marioroy/mce-examples>
 
 =back
 

@@ -14,8 +14,8 @@ no warnings qw( threads recursion uninitialized numeric );
 our $VERSION = '1.000';
 
 use MCE::Shared::Base;
-use MCE::Util 1.702;
-use MCE::Mutex 1.702;
+use MCE::Util ();
+use MCE::Mutex;
 use bytes;
 
 use overload (
@@ -41,7 +41,7 @@ sub new {
 }
 
 sub CLONE {
-   $_tid = threads->tid();
+   $_tid = threads->tid() if $_has_threads;
 }
 
 sub DESTROY {

@@ -45,18 +45,18 @@ BEGIN {
       }
    }
 
-   $_has_threads = $INC{'threads/shared.pm'} ? 1 : 0;
+   $_has_threads = $INC{'threads.pm'} ? 1 : 0;
 
    eval 'use IO::FDPass' if !$INC{'IO/FDPass.pm'} && $^O ne 'cygwin';
    eval 'PDL::no_clone_skip_warning()' if $INC{'PDL.pm'};
 }
 
-use MCE::Util 1.702;
-use MCE::Mutex 1.702;
+use MCE::Util ();
+use MCE::Mutex;
 
 use constant {
    # Do not go higher than 8 on MSWin32 or it will fail.
-   DATA_CHANNELS =>  ($^O eq 'MSWin32') ? 8 : 12,
+   DATA_CHANNELS => ($^O eq 'MSWin32') ? 8 : 12,
 
    MAX_DQ_DEPTH  => 192,  # Maximum dequeue notifications
    WA_ARRAY      =>   1,  # Wants list
@@ -109,7 +109,7 @@ my $_is_MSWin32 = ($^O eq 'MSWin32') ? 1 : 0;
 my $_tid = $_has_threads ? threads->tid() : 0;
 
 sub _croak { goto &Carp::croak }
-sub  CLONE { $_tid = threads->tid() }
+sub  CLONE { $_tid = threads->tid() if $_has_threads }
 
 sub _use_sereal {
    local $@; eval 'use Sereal qw( encode_sereal decode_sereal )';
@@ -129,7 +129,7 @@ END {
       $MCE::Shared::Server::KILLED = 1;
 
       $SIG{INT} = $SIG{__DIE__} = $SIG{__WARN__} = $SIG{$_[0]} = sub {};
-      lock $_handler_cnt if $_has_threads;
+      lock $_handler_cnt if $INC{'threads/shared.pm'};
 
       if (++$_handler_cnt == 1) {
          CORE::kill($_sig_name, $_is_MSWin32 ? -$$ : -getpgrp);
@@ -200,8 +200,8 @@ sub _new {
    $_DAT_LOCK->lock();
    print {$_DAT_W_SOCK} SHR_M_NEW.$LF . $_chn.$LF;
 
-   $_buf = $_freeze->(shift);  print {$_DAU_W_SOCK} length($_buf).$LF . $_buf;
-   $_buf = $_freeze->([ @_ ]); print {$_DAU_W_SOCK} length($_buf).$LF . $_buf;
+   $_buf = $_freeze->(shift);  print {$_DAU_W_SOCK} length($_buf).$LF, $_buf;
+   $_buf = $_freeze->([ @_ ]); print {$_DAU_W_SOCK} length($_buf).$LF, $_buf;
    undef $_buf;
 
    print {$_DAU_W_SOCK} (keys %_hndls ? 1 : 0).$LF;
@@ -308,7 +308,8 @@ sub _start {
       unless $INC{'MCE/Signal.pm'};
 
    my $_data_channels = ($INC{'MCE.pm'} && MCE->wid()) ? 1 : DATA_CHANNELS;
-   my $_is_child = ($INC{'threads.pm'} || $_is_MSWin32) ? 0 : 1;
+   my $_is_child = $_has_threads ? 0 : 1;
+   my $_mgr_pid  = $$;
 
    $_SVR = { _data_channels => $_data_channels };
    local $_; $_init_pid = "$$.$_tid";
@@ -327,12 +328,11 @@ sub _start {
       $_svr_pid = fork();
       unless ($_svr_pid) {
          $SIG{CHLD} = 'IGNORE' unless $_is_MSWin32;
-         _loop($_is_child);
+         _loop($_is_child, $_mgr_pid);
       }
    }
    else {
-      require threads unless $INC{'threads.pm'};
-      $_svr_pid = threads->create(\&_loop, $_is_child);
+      $_svr_pid = threads->create(\&_loop, $_is_child, $_mgr_pid);
       $_svr_pid->detach() if defined $_svr_pid;
    }
 
@@ -414,7 +414,7 @@ sub _done {
 ###############################################################################
 
 sub _loop {
-   my ($_is_child) = @_;
+   my ($_is_child, $_mgr_pid) = @_;
    require POSIX if $_is_child;
 
    $_is_client = 0;
@@ -425,8 +425,11 @@ sub _loop {
 
    $SIG{HUP} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub {
       $SIG{INT} = $SIG{$_[0]} = sub {};
+
       CORE::kill($_[0], $_is_MSWin32 ? -$$ : -getpgrp);
-      _done(); $_is_child ? POSIX::_exit($?) : CORE::exit($?);
+      sleep 0.065 for (1..3);
+
+      CORE::kill('KILL', $_mgr_pid, $$);
    };
 
    $SIG{__DIE__} = sub {
@@ -617,7 +620,7 @@ sub _loop {
          print {$_DAU_R_SOCK} $_item->SHARED_ID().$LF;
 
          $_buf = $_freeze->($_item);
-         print {$_DAU_R_SOCK} length($_buf).$LF . $_buf;
+         print {$_DAU_R_SOCK} length($_buf).$LF, $_buf;
 
          return;
       },
@@ -1340,8 +1343,8 @@ sub _loop {
    # Wait for the main thread to exit to not impact socket handles.
    # Exiting via POSIX's _exit to avoid END blocks.
 
-   sleep(3.0)      if $_is_MSWin32;
-   POSIX::_exit(0) if $_is_child;
+   sleep(3.0)      if ( $_has_threads && $_is_MSWin32 );
+   POSIX::_exit(0) if ( $_is_child );
 
    return;
 }
@@ -1406,17 +1409,16 @@ use overload (
 
 no overloading;
 
-my ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_chn);
-my ($_dat_ex, $_dat_un);
+my ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_chn, $_dat_ex, $_dat_un);
 
 my $_blessed = \&Scalar::Util::blessed;
 my $_ready   = \&MCE::Util::_sock_ready;
 
-# Hook for non-MCE worker threads.
+# Hook for threads.
 
 sub CLONE {
    %_new = ();
-   &_init(threads->tid()) if $INC{'threads.pm'} && !$INC{'MCE.pm'};
+   &_init(threads->tid()) if ($_has_threads && !$INC{'MCE.pm'});
 }
 
 # Private functions.
@@ -1547,6 +1549,7 @@ sub _auto {
 
       my $_frozen = chop($_len);
       read $_DAU_W_SOCK, $_buf, $_len;
+
       $_dat_un->();
 
       ( $_wa != _ARRAY )
