@@ -11,7 +11,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.000';
+our $VERSION = '1.001';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -304,7 +304,7 @@ MCE::Shared::Hash - Hash helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Hash version 1.000
+This document describes MCE::Shared::Hash version 1.001
 
 =head1 SYNOPSIS
 
