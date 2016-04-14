@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.002';
+our $VERSION = '1.003';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 
@@ -128,7 +128,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.002
+This document describes MCE::Shared::Handle version 1.003
 
 =head1 SYNOPSIS
 

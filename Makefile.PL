@@ -11,7 +11,7 @@ WriteMakefile(
    ABSTRACT => 'MCE extension for sharing data supporting threads and processes',
    AUTHOR   => 'Mario E. Roy <marioeroy AT gmail DOT com>',
    NAME     => 'MCE::Shared',
-   VERSION  => '1.002',
+   VERSION  => '1.003',
 
    PREREQ_PM => {
       'bytes'        => 0,
@@ -39,7 +39,7 @@ WriteMakefile(
       ( META_MERGE => {
          'build_requires' => {
             'ExtUtils::MakeMaker' => 0,
-            'Test::More'          => 0.45
+            'Test::More'          => 0.88
          },
          'resources' => {
             'bugtracker' => 'https://github.com/marioroy/mce-shared/issues',
@@ -50,55 +50,55 @@ WriteMakefile(
          'provides' => {
             'MCE::Hobo' => {
                'file'    => 'lib/MCE/Hobo.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared' => {
                'file'    => 'lib/MCE/Shared.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Array' => {
                'file'    => 'lib/MCE/Shared/Array.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Base' => {
                'file'    => 'lib/MCE/Shared/Base.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Condvar' => {
                'file'    => 'lib/MCE/Shared/Condvar.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Handle' => {
                'file'    => 'lib/MCE/Shared/Handle.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Hash' => {
                'file'    => 'lib/MCE/Shared/Hash.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Minidb' => {
                'file'    => 'lib/MCE/Shared/Minidb.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Ordhash' => {
                'file'    => 'lib/MCE/Shared/Ordhash.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Queue' => {
                'file'    => 'lib/MCE/Shared/Queue.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Scalar' => {
                'file'    => 'lib/MCE/Shared/Scalar.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Sequence' => {
                'file'    => 'lib/MCE/Shared/Sequence.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             },
             'MCE::Shared::Server' => {
                'file'    => 'lib/MCE/Shared/Server.pm',
-               'version' => '1.002'
+               'version' => '1.003'
             }
          }
       } ) : () ),
