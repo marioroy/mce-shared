@@ -3,10 +3,14 @@
 use strict;
 use warnings;
 
-use Test::More tests => 21;
-use MCE::Hobo;
-use MCE::Shared;
+use Test::More;
 use Time::HiRes qw( sleep time );
+
+BEGIN {
+   use_ok 'MCE::Hobo';
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Condvar';
+}
 
 my $cv = MCE::Shared->condvar();
 
@@ -82,4 +86,6 @@ is( $cv->append('ba'), 4, 'shared condvar, check append' );
 is( $cv->get(), '20ba', 'shared condvar, check value after append' );
 is( $cv->getset('foo'), '20ba', 'shared condvar, check getset' );
 is( $cv->get(), 'foo', 'shared condvar, check value after getset' );
+
+done_testing;
 

@@ -6,12 +6,13 @@
 
 package MCE::Shared::Minidb;
 
+use 5.010001;
 use strict;
 use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.001';
+our $VERSION = '1.002';
 
 use MCE::Shared::Base;
 use MCE::Shared::Ordhash;
@@ -418,7 +419,7 @@ sub dump {
       # purge tombstones
       $self->[0]->purge(), $self->[1]->purge();
 
-      local ( $SIG{__DIE__}, $@ ) = ( sub { } );
+      local $@; local $SIG{__DIE__};
       eval { Storable::nstore($self, $file) };
 
       warn($@), return if $@;
@@ -439,7 +440,7 @@ sub restore {
    if ( length $file ) {
       require Storable unless $INC{'Storable.pm'};
 
-      local ( $SIG{__DIE__}, $@ ) = ( sub { } );
+      local $@; local $SIG{__DIE__};
       my $obj = eval { Storable::retrieve($file) };
       warn($@), return if $@;
 
@@ -1146,7 +1147,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.001
+This document describes MCE::Shared::Minidb version 1.002
 
 =head1 SYNOPSIS
 
@@ -1196,18 +1197,20 @@ inside the C<$db> object.
 
 =head1 SYNTAX for QUERY STRING
 
-Several methods in C<MCE::Shared::Minidb> take a query string. The format of
-the string is quoteless. Therefore, any quotes inside the string is treated
-literally.
+Several methods in C<MCE::Shared::Minidb> take a query string.
 
    o Basic demonstration: @keys = $db->hkeys( "key", "val =~ /pattern/" );
    o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   o Multiple expressions are delimited by :AND or :OR.
+   o Multiple expressions delimited by :AND or :OR
+   o Quoting optional inside the string
   
-     "key =~ /pattern/i :AND field =~ /pattern/i"
-     "key =~ /pattern/i :AND index =~ /pattern/i"
-     "key =~ /pattern/i :AND field eq foo bar"     # address eq "foo bar"
-     "index eq foo baz :OR key !~ /pattern/i"      # 9 eq "foo baz"
+     "key eq 'some key' :or (field > 5 :and field < 9)"
+     "key eq some key :or (field > 5 :and field < 9)"
+     "key =~ /pattern/i :and field =~ /pattern/i"
+     "key =~ /pattern/i :and index =~ /pattern/i"
+     "key =~ /pattern/i :and field eq 'foo bar'"   # address eq "foo bar"
+     "key =~ /pattern/i :and field eq foo bar"     # address eq "foo bar"
+     "index eq foo baz :or key !~ /pattern/i"      # 9 eq "foo baz"
 
      * key   matches on primary keys in the hash (H)oH or (H)oA
      * field matches on HoH->{key}{field} e.g. address
@@ -1218,8 +1221,6 @@ literally.
 =item * Primary keys (H)oH may have spaces, but not secondary field names.
 
 =item * The modifiers C<:AND> and C<:OR> may be mixed case. e.g. C<:And>
-
-=item * Mixing C<:AND> and C<:OR> in the query is not supported.
 
 =back
 

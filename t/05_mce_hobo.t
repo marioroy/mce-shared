@@ -3,9 +3,12 @@
 use strict;
 use warnings;
 
-use Test::More tests => 21;
+use Test::More;
 use Time::HiRes qw(sleep);
-use MCE::Hobo;
+
+BEGIN {
+   use_ok 'MCE::Hobo';
+}
 
 {
    my ( $cnt, @procs, @list, %ret );
@@ -99,4 +102,6 @@ use MCE::Hobo;
 }
 
 is ( MCE::Hobo->finish(), undef, 'check finish' );
+
+done_testing;
 

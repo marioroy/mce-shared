@@ -3,8 +3,12 @@
 use strict;
 use warnings;
 
-use Test::More tests => 10;
-use MCE::Shared;
+use Test::More;
+
+BEGIN {
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Sequence';
+}
                              # beg, end, step, fmt
 my $s1 = MCE::Shared->sequence( 1, 10            );
 my $s2 = MCE::Shared->sequence( 1, 10,  2, '%2d' );
@@ -105,4 +109,6 @@ cmp_array(
    [ @a2 ], [ qw/ 11 12 13 14 15 16 17 18 19 20 / ],
    'shared sequence, check sequence: chunk_size chunk 2'
 );
+
+done_testing;
 

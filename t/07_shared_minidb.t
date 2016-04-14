@@ -3,8 +3,12 @@
 use strict;
 use warnings;
 
-use Test::More tests => 197;
-use MCE::Shared;
+use Test::More;
+
+BEGIN {
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Minidb';
+}
 
 my (@keys, @vals, @rows, $iter);
 
@@ -1041,4 +1045,5 @@ is ( $db->lget('k1', 0), '77ba', 'shared minidb list, check value after lappend'
 is ( $db->lgetset('k1', 0, '77bc'), '77ba', 'shared minidb list, check lgetset' );
 is ( $db->lget('k1', 0), '77bc', 'shared minidb list, check value after lgetset' );
 
+done_testing;
 

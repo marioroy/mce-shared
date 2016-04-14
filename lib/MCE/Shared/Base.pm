@@ -6,385 +6,223 @@
 
 package MCE::Shared::Base;
 
+use 5.010001;
 use strict;
 use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.001';
+our $VERSION = '1.002';
+
+################################################################################
+#+----------------------------------------------------------------------------+#
+#|                                     ##                                     |#
+#|                                    #/\#                                    |#
+#|                                   #//\\#                                   |#
+#|                          #///////#///\\\#\\\\\\\#                          |#
+#|                 #///P///#///E///#///  \\\#\\\R\\\#\\\L\\\#                 |#
+#|        #///////#//// //#//// //#/////\\\\\#\\ \\\\#\\ \\\\#\\\\\\\#        |#
+#|       #//// //#///////#///////#//////\\\\\\#\\\\\\\#\\\\\\\#\\ \\\\#       |#
+#|        '==' => sub { $_[0] == $_[1] && looks_like_number ($_[0]) },        |#
+#|        '!=' => sub { $_[0] != $_[1] && looks_like_number ($_[0]) },        |#
+#|        '<'  => sub { $_[0] <  $_[1] && looks_like_number ($_[0]) },        |#
+#|        '<=' => sub { $_[0] <= $_[1] && looks_like_number ($_[0]) },        |#
+#|        '>'  => sub { $_[0] >  $_[1] && looks_like_number ($_[0]) },        |#
+#|        '>=' => sub { $_[0] >= $_[1] && looks_like_number ($_[0]) },        |#
+#|        'eq' => sub {              !ref ($_[0]) && $_[0] eq $_[1] },        |#
+#|        'ne' => sub {  +--+  +--+  !ref ($_[0]) && $_[0] ne $_[1] },        |#
+#|        'lt' => sub {  |  |  |  |  !ref ($_[0]) && $_[0] lt $_[1] },        |#
+#|        'le' => sub {  +--+  +--+  !ref ($_[0]) && $_[0] le $_[1] },        |#
+#|        'gt' => sub {              !ref ($_[0]) && $_[0] gt $_[1] },        |#
+#|        'ge' => sub {         ++   !ref ($_[0]) && $_[0] ge $_[1] },        |#
+#|        '=~' => sub {              !ref ($_[0]) && $_[0] =~ $_[1] },        |#
+#|        '!~' => sub {              !ref ($_[0]) && $_[0] !~ $_[1] },        |#
+#|            ####   /    Welcome;    \   ####   ####   ####   ####           |#
+#|           ####   /                  \   ####   ####   ####   ####          |#
+#|                 /                    \                                     |#
+#|                                            Perl Palace, MR 01/2016         |#
+#+----------------------------------------------------------------------------+#
+################################################################################
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
+## do not remove numeric from no warnings above
 
 use Scalar::Util qw( looks_like_number );
 use bytes;
 
-###############################################################################
-## ----------------------------------------------------------------------------
-## Find.     ** do not remove *numeric* from no warnings above **
+##  o Find feature
 ##
-###############################################################################
-
-my %rules = (                         ##
-                                     #/\#
-                                    #//\\#
-                           #///////#///\\\#\\\\\\\#
-                  #///P///#///E///#///  \\\#\\\R\\\#\\\L\\\#
-         #///////#//// //#//// //#/////\\\\\#\\ \\\\#\\ \\\\#\\\\\\\#
-        #//// //#///////#///////#//////\\\\\\#\\\\\\\#\\\\\\\#\\ \\\\#
-         '==' => sub { $_[0] == $_[1] && looks_like_number ($_[0]) },
-         '!=' => sub { $_[0] != $_[1] && looks_like_number ($_[0]) },
-         '<'  => sub { $_[0] <  $_[1] && looks_like_number ($_[0]) },
-         '<=' => sub { $_[0] <= $_[1] && looks_like_number ($_[0]) },
-         '>'  => sub { $_[0] >  $_[1] && looks_like_number ($_[0]) },
-         '>=' => sub { $_[0] >= $_[1] && looks_like_number ($_[0]) },
-         'eq' => sub {              !ref ($_[0]) && $_[0] eq $_[1] },
-         'ne' => sub {              !ref ($_[0]) && $_[0] ne $_[1] },
-         'lt' => sub {              !ref ($_[0]) && $_[0] lt $_[1] },
-         'le' => sub {              !ref ($_[0]) && $_[0] le $_[1] },
-         'gt' => sub {              !ref ($_[0]) && $_[0] gt $_[1] },
-         'ge' => sub {              !ref ($_[0]) && $_[0] ge $_[1] },
-         '=~' => sub {              !ref ($_[0]) && $_[0] =~ $_[1] },
-         '!~' => sub {              !ref ($_[0]) && $_[0] !~ $_[1] },
-             ####   /    Welcome;    \   ####   ####   ####   ####
-            ####   /                  \   ####   ####   ####   ####
-
-);                                         # Perl Palace, MR 01/2016
+##  o Used by MCE::Shared::{ Array, Hash, Minidb, and Ordhash }
+##    methods which take a query string for an argument.
+##
+##  o Basic demonstration: @keys = $oh->keys( "val =~ /pattern/" );
+##  o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
+##  o Multiple expressions delimited by :AND or :OR
+##  o Quoting optional inside the string
+##
+##    "key eq 'some key' :or (val > 5 :and val < 9)"
+##    "key eq some key :or (val > 5 :and val < 9)"
+##    "key =~ /pattern/i :and field =~ /pattern/i"
+##    "key =~ /pattern/i :and index =~ /pattern/i"
+##    "key =~ /pattern/i :and field eq 'foo bar'"   # address eq 'foo bar'
+##    "key =~ /pattern/i :and field eq foo bar"     # address eq foo bar
+##    "index eq 'foo baz' :or key !~ /pattern/i"    # 9 eq 'foo baz'
+##    "index eq foo baz :or key !~ /pattern/i"      # 9 eq foo baz
+##
+##    MCE::Shared::{ Array, Hash, Ordhash }
+##    * key matches on keys in the hash or index in the array
+##    * val matches on values
+##
+##    MCE::Shared::Minidb
+##    * key   matches on primary keys in the hash (H)oH or (H)oA
+##    * field matches on HoH->{key}{field} e.g. address
+##    * index matches on HoA->{key}[index] e.g. 9
+##
+##  o The modifiers :AND and :OR may be mixed case. e.g. :And
 
 sub _compile {
    my ( $query ) = @_;
-   my ( @f,@c,@e, $aflg );
+   my ( $len, @p ) = ( 0 );
 
-   # o Several methods in MCE::Shared::{ Array, Hash, Minidb, and Ordhash }
-   #   take a query string for an argument. The format of the string is
-   #   quoteless. Therefore, any quotes inside the string is treated
-   #   literally.
-   #
-   # o Basic demonstration: @keys = $oh->keys( "val =~ /pattern/" );
-   # o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   # o Multiple expressions are delimited by :AND or :OR.
-   #
-   #   "key =~ /pattern/i :AND field =~ /pattern/i"
-   #   "key =~ /pattern/i :AND index =~ /pattern/i"
-   #   "key =~ /pattern/i :AND field eq foo bar"     # address eq "foo bar"
-   #   "index eq foo baz :OR key !~ /pattern/i"      # 9 eq "foo baz"
-   #
-   #   MCE::Shared::{ Array, Hash, Ordhash }
-   #   * key matches on keys in the hash or index in the array
-   #   * val matches on values
-   #
-   #   MCE::Shared::{ Minidb }
-   #   * key   matches on primary keys in the hash (H)oH or (H)oA
-   #   * field matches on HoH->{key}{field} e.g. address
-   #   * index matches on HoA->{key}[index] e.g. 9
-   #
-   # o The modifiers :AND and :OR may be mixed case. e.g. :And
-   # o Mixing :AND and :OR in the query is not supported.
+   $query =~ s/^[\t ]+//;            # strip white-space
+   $query =~ s/[\t ]+$//;
+   $query =~ s/\([\t ]+/(/g;
+   $query =~ s/[\t ]+\)/)/g;
 
-   if ( length $query ) {
-      local $@;  $aflg = ( $query =~ / :and /i );
+   for ( split( /[\t ]:(?:and|or)[\t ]/i, $query ) ) {
+      $len += length;
 
-      for ( split( / :(?:and|or) /i, $query ) ) {
-         if ( /(.+)[ ]+(=~|!~)[ ]+(.+)/ ) {
-            if ( length($2) && exists($rules{$2}) ) {
-               push(@f,$1), push(@c,$rules{$2}), push(@e,eval("qr$3"));
-               pop(@f), pop(@c), pop(@e) if $@;
-            }
-         }
-         elsif ( /(.+)[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge)[ ]+(.+)/ ) {
-            if ( length($2) && exists($rules{$2}) ) {
-               push(@f,$1), push(@c,$rules{$2}), push(@e,$3);
-            }
-         }
+      if ( /([\(]*)([^\(]+)[\t ]+(=~|!~)[\t ]+(.*)/ ) {
+         push @p, "$1($2 $3 $4)"
+      }
+      elsif ( /([\(]*)([^\(]+)[\t ]+(==|!=|<|<=|>|>=)[\t ]+([^\)]+)(.*)/ ) {
+         push @p, "$1($2 $3 q($4) && looks_like_number($2))$5";
+      }
+      elsif ( /([\(]*)([^\(]+)[\t ]+(eq|ne|lt|le|gt|ge)[\t ]+([^\)]+)(.*)/ ) {
+         ( $4 eq 'undef' )
+            ? push @p, "$1(!ref($2) && $2 $3 undef)$5"
+            : push @p, "$1(!ref($2) && $2 $3 q($4))$5";
+      }
+      else {
+         push @p, $_;
       }
 
-      for ( @e ) {
-         $_ = undef if $_ eq 'undef';
-      }
+      $len += 6, push @p, " && " if ( lc ( substr $query, $len, 3 ) eq " :a" );
+      $len += 5, push @p, " || " if ( lc ( substr $query, $len, 3 ) eq " :o" );
    }
 
-   ( \@f,\@c,\@e, $aflg );
+   $query = join('', @p);
+   $query =~ s/q\([\'\"]([^\(\)]*)[\'\"]\)/q($1)/g;
+
+   $query;
 }
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Find items in array: called by MCE::Shared::Array.
+## Find items in ARRAY. Called by MCE::Shared::Array.
 ##
 ###############################################################################
 
 sub _find_array {
    my ( $data, $params, $query ) = @_;
-   my ( $field, $code, $expr, $aflg ) = _compile( $query );
+   my $q = _compile( $query );
 
-   # Single rule
-   if ( scalar @{ $field } == 1 ) {
-      my ( $f, $c, $e ) = ( $field->[0], $code->[0], $expr->[0] );
+   # array key
+   $q =~ s/key[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$_ $1/gi;
+   $q =~ s/(looks_like_number)\(key\)/$1(\$_)/gi;
+   $q =~ s/(!ref)\(key\)/$1(\$_)/gi;
 
-      if ( $f eq 'key' ) {
-         if ( $params->{'getkeys'} ) {
-            grep $c->( $_, $e ), 0 .. $#{ $data };
-         }
-         elsif ( $params->{'getvals'} ) {
-            map { $c->( $_, $e ) ? ( $data->[$_] ) : ()
-                } 0 .. $#{ $data };
-         }
-         else {
-            map { $c->( $_, $e ) ? ( $_ => $data->[$_] ) : ()
-                } 0 .. $#{ $data };
-         }
-      }
-      else {
-         if ( $params->{'getkeys'} ) {
-            map { $c->( $data->[$_], $e ) ? ( $_ ) : ()
-                } 0 .. $#{ $data };
-         }
-         elsif ( $params->{'getvals'} ) {
-            grep $c->( $_, $e ), @{ $data };
-         }
-         else {
-            map { $c->( $data->[$_], $e ) ? ( $_ => $data->[$_] ) : ()
-                } 0 .. $#{ $data };
-         }
-      }
+   # array value
+   $q =~ s/val[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$data->[\$_] $1/gi;
+   $q =~ s/(looks_like_number)\(val\)/$1(\$data->[\$_])/gi;
+   $q =~ s/(!ref)\(val\)/$1(\$data->[\$_])/gi;
+
+   local $SIG{__WARN__} = sub {
+      print {*STDERR} "\nfind error: $_[0]\n  query: $query\n  eval : $q\n";
+   };
+
+   # wants keys
+   if ( $params->{'getkeys'} ) {
+      eval qq{ map { ($q) ? (\$_) : () } 0 .. \$#{ \$data } };
    }
 
-   # Multiple rules
-   elsif ( scalar @{ $field } > 1 ) {
-      my $ok;
-
-      my $is = $aflg ?
-      sub {
-         $ok = 1;
-         for my $i ( 0 .. $#{ $field } ) {
-            $ok = $field->[$i] eq 'key'
-               ? $code->[$i]( $_, $expr->[$i] )
-               : $code->[$i]( $data->[$_], $expr->[$i] );
-            last unless $ok;
-         }
-         return;
-      } :
-      sub {
-         $ok = 0;
-         for my $i ( 0 .. $#{ $field } ) {
-            $ok = $field->[$i] eq 'key'
-               ? $code->[$i]( $_, $expr->[$i] )
-               : $code->[$i]( $data->[$_], $expr->[$i] );
-            last if $ok;
-         }
-         return;
-      };
-
-      if ( $params->{'getkeys'} ) {
-         map { $is->(), $ok ? ( $_ ) : ()
-             } 0 .. $#{ $data };
-      }
-      elsif ( $params->{'getvals'} ) {
-         map { $is->(), $ok ? ( $data->[$_] ) : ()
-             } 0 .. $#{ $data };
-      }
-      else {
-         map { $is->(), $ok ? ( $_ => $data->[$_] ) : ()
-             } 0 .. $#{ $data };
-      }
+   # wants values
+   elsif ( $params->{'getvals'} ) {
+      eval qq{ map { ($q) ? (\$data->[\$_]) : () } 0 .. \$#{ \$data } };
    }
 
-   # Not supported
+   # wants pairs
    else {
-      ();
+      eval qq{ map { ($q) ? (\$_ => \$data->[\$_]) : () } 0 .. \$#{ \$data } };
    }
 }
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Find items in hash: called by MCE::Shared::{ Hash, Minidb, Ordhash }.
+## Find items in HASH. Called by MCE::Shared::{ Hash, Minidb, Ordhash }.
 ##
 ###############################################################################
 
 sub _find_hash {
    my ( $data, $params, $query, $obj ) = @_;
-   my ( $field, $code, $expr, $aflg ) = _compile( $query );
+   my $q = _compile( $query );
+   my $grepvals = 0;
 
-   # Single rule
-   if ( scalar @{ $field } == 1 ) {
-      my ( $f, $c, $e ) = ( $field->[0], $code->[0], $expr->[0] );
+   # hash key
+   $q =~ s/key[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$_ $1/gi;
+   $q =~ s/(looks_like_number)\(key\)/$1(\$_)/gi;
+   $q =~ s/(!ref)\(key\)/$1(\$_)/gi;
 
-      if ( $f eq 'key' ) {
-         if ( $params->{'getkeys'} ) {
-            grep $c->( $_, $e ), $obj->keys;
-         }
-         elsif ( $params->{'getvals'} ) {
-            map { $c->( $_, $e ) ? ( $data->{$_} ) : ()
-                } $obj->keys;
-         }
-         else {
-            map { $c->( $_, $e ) ? ( $_ => $data->{$_} ) : ()
-                } $obj->keys;
-         }
-      }
-
-      elsif ( $params->{'hfind'} ) {                  # Minidb HoH
-         if ( $params->{'getkeys'} ) {
-            map { $c->( $data->{$_}{$f}, $e ) ? ( $_ ) : ()
-                } $obj->keys;
-         }
-         elsif ( $params->{'getvals'} ) {
-            map { $c->( $data->{$_}{$f}, $e ) ? ( $data->{$_} ) : ()
-                } $obj->keys;
-         }
-         else {
-            map { $c->( $data->{$_}{$f}, $e ) ? ( $_ => $data->{$_} ) : ()
-                } $obj->keys;
-         }
-      }
-
-      elsif ( $params->{'lfind'} ) {                  # Minidb HoA
-         if ( $params->{'getkeys'} ) {
-            map { $c->( $data->{$_}[$f], $e ) ? ( $_ ) : ()
-                } $obj->keys;
-         }
-         elsif ( $params->{'getvals'} ) {
-            map { $c->( $data->{$_}[$f], $e ) ? ( $data->{$_} ) : ()
-                } $obj->keys;
-         }
-         else {
-            map { $c->( $data->{$_}[$f], $e ) ? ( $_ => $data->{$_} ) : ()
-                } $obj->keys;
-         }
-      }
-
-      else {                                          # Hash/Ordhash
-         if ( $params->{'getkeys'} ) {
-            map { $c->( $data->{$_}, $e ) ? ( $_ ) : ()
-                } $obj->keys;
-         }
-         elsif ( $params->{'getvals'} ) {
-            grep $c->( $_, $e ), $obj->vals;
-         }
-         else {
-            map { $c->( $data->{$_}, $e ) ? ( $_ => $data->{$_} ) : ()
-                } $obj->keys;
-         }
-      }
+   # Minidb (HoH) field
+   if ( $params->{'hfind'} ) {
+      $q =~ s/\$_ /:%: /g;  # preserve $_ from hash key mods above
+      $q =~ s/([^:%\(\t ]+)[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$data->{\$_}{'$1'} $2/gi;
+      $q =~ s/:%: /\$_ /g;  # restore hash key mods
+      $q =~ s/(looks_like_number)\(([^\$\)]+)\)/$1(\$data->{\$_}{'$2'})/gi;
+      $q =~ s/(!ref)\(([^\$\)]+)\)/$1(\$data->{\$_}{'$2'})/gi;
    }
 
-   # Multiple rules
-   elsif ( scalar @{ $field } > 1 ) {
-      my $ok;
-
-      if ( $params->{'hfind'} ) {                     # Minidb HoH
-         my $is = $aflg ?
-         sub {
-            $ok = 1;
-            for my $i ( 0 .. $#{ $field } ) {
-               $ok = $field->[$i] eq 'key'
-                  ? $code->[$i]( $_, $expr->[$i] )
-                  : $code->[$i]( $data->{$_}{ $field->[$i] }, $expr->[$i] );
-               last unless $ok;
-            }
-            return;
-         } :
-         sub {
-            $ok = 0;
-            for my $i ( 0 .. $#{ $field } ) {
-               $ok = $field->[$i] eq 'key'
-                  ? $code->[$i]( $_, $expr->[$i] )
-                  : $code->[$i]( $data->{$_}{ $field->[$i] }, $expr->[$i] );
-               last if $ok;
-            }
-            return;
-         };
-
-         if ( $params->{'getkeys'} ) {
-            map { $is->(), $ok ? ( $_ ) : ()
-                } $obj->keys;
-         }
-         elsif ( $params->{'getvals'} ) {
-            map { $is->(), $ok ? ( $data->{$_} ) : ()
-                } $obj->keys;
-         }
-         else {
-            map { $is->(), $ok ? ( $_ => $data->{$_} ) : ()
-                } $obj->keys;
-         }
-      }
-
-      elsif ( $params->{'lfind'} ) {                  # Minidb HoA
-         my $is = $aflg ?
-         sub {
-            $ok = 1;
-            for my $i ( 0 .. $#{ $field } ) {
-               $ok = $field->[$i] eq 'key'
-                  ? $code->[$i]( $_, $expr->[$i] )
-                  : $code->[$i]( $data->{$_}[ $field->[$i] ], $expr->[$i] );
-               last unless $ok;
-            }
-            return;
-         } :
-         sub {
-            $ok = 0;
-            for my $i ( 0 .. $#{ $field } ) {
-               $ok = $field->[$i] eq 'key'
-                  ? $code->[$i]( $_, $expr->[$i] )
-                  : $code->[$i]( $data->{$_}[ $field->[$i] ], $expr->[$i] );
-               last if $ok;
-            }
-            return;
-         };
-
-         if ( $params->{'getkeys'} ) {
-            map { $is->(), $ok ? ( $_ ) : ()
-                } $obj->keys;
-         }
-         elsif ( $params->{'getvals'} ) {
-            map { $is->(), $ok ? ( $data->{$_} ) : ()
-                } $obj->keys;
-         }
-         else {
-            map { $is->(), $ok ? ( $_ => $data->{$_} ) : ()
-                } $obj->keys;
-         }
-      }
-
-      else {                                          # Hash/Ordhash
-         my $is = $aflg ?
-         sub {
-            $ok = 1;
-            for my $i ( 0 .. $#{ $field } ) {
-               $ok = $field->[$i] eq 'key'
-                  ? $code->[$i]( $_, $expr->[$i] )
-                  : $code->[$i]( $data->{$_}, $expr->[$i] );
-               last unless $ok;
-            }
-            return;
-         } :
-         sub {
-            $ok = 0;
-            for my $i ( 0 .. $#{ $field } ) {
-               $ok = $field->[$i] eq 'key'
-                  ? $code->[$i]( $_, $expr->[$i] )
-                  : $code->[$i]( $data->{$_}, $expr->[$i] );
-               last if $ok;
-            }
-            return;
-         };
-
-         if ( $params->{'getkeys'} ) {
-            map { $is->(), $ok ? ( $_ ) : ()
-                } $obj->keys;
-         }
-         elsif ( $params->{'getvals'} ) {
-            map { $is->(), $ok ? ( $data->{$_} ) : ()
-                } $obj->keys;
-         }
-         else {
-            map { $is->(), $ok ? ( $_ => $data->{$_} ) : ()
-                } $obj->keys;
-         }
-      }
+   # Minidb (HoA) field
+   elsif ( $params->{'lfind'} ) {
+      $q =~ s/\$_ /:%: /g;  # preserve $_ from hash key mods above
+      $q =~ s/([^:%\(\t ]+)[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$data->{\$_}['$1'] $2/gi;
+      $q =~ s/:%: /\$_ /g;  # restore hash key mods
+      $q =~ s/(looks_like_number)\(([^\$\)]+)\)/$1(\$data->{\$_}['$2'])/gi;
+      $q =~ s/(!ref)\(([^\$\)]+)\)/$1(\$data->{\$_}['$2'])/gi;
    }
 
-   # Not supported
+   # Hash/Ordhash value
+   elsif ( $params->{'getvals'} && $q !~ /\(\$_/ ) {
+      $grepvals = 1;
+      $q =~ s/val[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$_ $1/gi;
+      $q =~ s/(looks_like_number)\(val\)/$1(\$_)/gi;
+      $q =~ s/(!ref)\(val\)/$1(\$_)/gi;
+   }
    else {
-      ();
+      $q =~ s/val[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$data->{\$_} $1/gi;
+      $q =~ s/(looks_like_number)\(val\)/$1(\$data->{\$_})/gi;
+      $q =~ s/(!ref)\(val\)/$1(\$data->{\$_})/gi;
+   }
+
+   local $SIG{__WARN__} = sub {
+      print {*STDERR} "\nfind error: $_[0]\n  query: $query\n  eval : $q\n";
+   };
+
+   # wants keys
+   if ( $params->{'getkeys'} ) {
+      eval qq{ map { ($q) ? (\$_) : () } \$obj->keys };
+   }
+
+   # wants values
+   elsif ( $params->{'getvals'} ) {
+      $grepvals
+         ? eval qq{ grep { ($q) } \$obj->vals }
+         : eval qq{  map { ($q) ? (\$data->{\$_}) : () } \$obj->keys };
+   }
+
+   # wants pairs
+   else {
+      eval qq{ map { ($q) ? (\$_ => \$data->{\$_}) : () } \$obj->keys };
    }
 }
 
@@ -454,7 +292,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.001
+This document describes MCE::Shared::Base version 1.002
 
 =head1 DESCRIPTION
 

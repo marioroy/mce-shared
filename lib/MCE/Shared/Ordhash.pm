@@ -18,12 +18,13 @@
 
 package MCE::Shared::Ordhash;
 
+use 5.010001;
 use strict;
 use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.001';
+our $VERSION = '1.002';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -32,11 +33,13 @@ use MCE::Shared::Base;
 use bytes;
 
 # for marking a key to be garbage collected later
-use constant { _TOMBSTONE => undef };
+use constant {
+   _TOMBSTONE => undef,
+};
 
 use constant {
    _DATA => 0,  # unordered data
-   _KEYS => 1,  # ordered ids with keys
+   _KEYS => 1,  # ordered keys
    _INDX => 2,  # index into _KEYS (on demand, no impact to STORE)
    _BEGI => 3,  # begin ordered id for optimized shift/unshift
    _GCNT => 4,  # garbage count
@@ -118,7 +121,7 @@ sub DELETE {
    }
 
    # check the last key
-   if ( $key eq $keys->[-1] ) {
+   elsif ( $key eq $keys->[-1] ) {
       pop @{ $keys };
       delete $indx->{ $key } if %{ $indx };
 
@@ -136,50 +139,30 @@ sub DELETE {
       return delete $data->{ $key };
    }
 
-   # fill index, on-demand
+   # check the middle key
    my $off = delete $indx->{ $key } // do {
       return undef unless ( exists $data->{ $key } );
 
-      # with entire list
-      ( %{ $indx } ) ? undef : do {
-         $_[0]->purge() if ${ $gcnt };
+      # fill index, on-demand
+      %{ $indx } ? $_[0]->_fill_index : do {
+         $_[0]->purge if ${ $gcnt };
          my $i; $i = ${ $begi } = 0;
          $indx->{ $_ } = $i++ for @{ $keys };
-         delete $indx->{ $key };
       };
 
-   } // do {
-      # or from end of list
-      ( exists $indx->{ $keys->[-1] } ) ? undef : do {
-         my $i = ${ $begi } + $#{ $keys };
-         for my $k ( reverse @{ $keys } ) {
-            $i--, next unless ( defined $k );
-            last if ( exists $indx->{ $k } );
-            $indx->{ $k } = $i--;
-         }
-         delete $indx->{ $key };
-      };
-
-   } // do {
-      # or from start of list
-      my $i = ${ $begi };
-      for my $k ( @{ $keys } ) {
-         $i++, next unless ( defined $k );
-         last if ( exists $indx->{ $k } );
-         $indx->{ $k } = $i++;
-      }
       delete $indx->{ $key };
    };
 
-   # set tombstone
    $keys->[ $off - ${ $begi } ] = _TOMBSTONE;
 
-   # GC keys if 75% or more are tombstone
+   # GC keys if 75% or more are tombstones
    if ( ++${ $gcnt } >= ( @{ $keys } >> 2 ) * 3 ) {
       my $i; $i = ${ $begi } = ${ $gcnt } = 0;
+
       for my $k ( @{ $keys } ) {
          $keys->[ $i ] = $k, $indx->{ $k } = $i++ if ( defined $k );
       }
+
       splice @{ $keys }, $i;
    }
 
@@ -190,22 +173,14 @@ sub DELETE {
 
 sub FIRSTKEY {
    my ( $self ) = @_;
-   my @keys = ( ${ $self->[_GCNT] } )
-      ? grep defined($_), @{ $self->[_KEYS] }
-      : @{ $self->[_KEYS] };
-
-   $self->[_ITER] = sub {
-      return unless @keys;
-      return shift  @keys;
-   };
-
-   $self->[_ITER]->();
+   $self->[_ITER] = [ $self->keys ];
+   shift @{ $self->[_ITER] };
 }
 
 # NEXTKEY ( )
 
 sub NEXTKEY {
-   $_[0]->[_ITER]->();
+   shift @{ $_[0]->[_ITER] };
 }
 
 # EXISTS ( key )
@@ -230,7 +205,37 @@ sub CLEAR {
 # SCALAR ( )
 
 sub SCALAR {
-   @{ $_[0]->[_KEYS] } - ${ $_[0]->[_GCNT] };
+   scalar keys %{ $_[0]->[_DATA] };
+}
+
+# _fill_index ( )
+
+sub _fill_index {
+   my ( $data, $keys, $indx, $begi ) = @{ $_[0] };
+
+   # from end of list
+   if ( !exists $indx->{ $keys->[-1] } ) {
+      my $i = ${ $begi } + $#{ $keys };
+
+      for my $k ( reverse @{ $keys } ) {
+         $i--, next unless ( defined $k );
+         last if ( exists $indx->{ $k } );
+         $indx->{ $k } = $i--;
+      }
+   }
+
+   # from start of list
+   else {
+      my $i = ${ $begi };
+
+      for my $k ( @{ $keys } ) {
+         $i++, next unless ( defined $k );
+         last if ( exists $indx->{ $k } );
+         $indx->{ $k } = $i++;
+      }
+   }
+
+   return;
 }
 
 ###############################################################################
@@ -264,17 +269,28 @@ sub POP {
 # PUSH ( key, value [, key, value, ... ] )
 
 sub PUSH {
-   my $self = shift;
-   my ( $data, $keys ) = @{ $self };
-   my $key;
+   if ( @_ == 3 ) {
+      my ( $key, $data, $keys ) = ( $_[1], @{ $_[0] } );
 
-   while ( @_ ) {
-      $self->delete( $key ) if ( exists $data->{ $key = shift } );
+      $_[0]->delete( $key ) if ( exists $data->{ $key } );
       push @{ $keys }, "$key";
-      $data->{ $key } = shift;
-   }
+      $data->{ $key } = $_[2];
 
-   defined wantarray ? @{ $keys } - ${ $self->[_GCNT] } : ();
+      defined wantarray ? scalar keys %{ $data } : ();
+   }
+   else {
+      my $self = shift;
+      my ( $data, $keys ) = @{ $self };
+      my $key;
+
+      while ( @_ ) {
+         $self->delete( $key ) if ( exists $data->{ $key = shift } );
+         push @{ $keys }, "$key";
+         $data->{ $key } = shift;
+      }
+
+      defined wantarray ? scalar keys %{ $data } : ();
+   }
 }
 
 # SHIFT ( )
@@ -323,7 +339,7 @@ sub UNSHIFT {
       }
    }
 
-   defined wantarray ? @{ $keys } - ${ $self->[_GCNT] } : ();
+   defined wantarray ? scalar keys %{ $data } : ();
 }
 
 # SPLICE ( offset [, length [, key, value, ... ] ] )
@@ -333,7 +349,7 @@ sub SPLICE {
    my ( $data, $keys ) = @{ $self };
    return () unless ( defined $off );
 
-   $self->purge() if %{ $self->[_INDX] };
+   $self->purge if %{ $self->[_INDX] };
 
    my ( $key, @ret );
    my $size = scalar @{ $keys };
@@ -404,11 +420,8 @@ sub clone {
       }
    }
    else {
-      @keys = ( ${ $self->[_GCNT] } )
-         ? grep defined($_), @{ $self->[_KEYS] }
-         : @{ $self->[_KEYS] };
-
-      @data{ @keys } = @{ $self->[_DATA] }{ @keys };
+      @keys = $self->_keys;
+      %data = %{ $self->[_DATA] };
    }
 
    $self->clear() if $params->{'flush'};
@@ -432,9 +445,7 @@ sub iterator {
    my $data = $self->[_DATA];
 
    if ( ! @keys ) {
-      @keys = ( ${ $self->[_GCNT] } )
-         ? grep defined($_), @{ $self->[_KEYS] }
-         : @{ $self->[_KEYS] };
+      @keys = $self->keys;
    }
    elsif ( @keys == 1 && $keys[0] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
       @keys = $self->keys($keys[0]);
@@ -461,14 +472,22 @@ sub keys {
       if ( wantarray ) {
          my $data = $self->[_DATA];
          @_ ? map { exists $data->{ $_ } ? $_ : undef } @_
-            : ( ${ $self->[_GCNT] } )
-                  ? grep defined($_), @{ $self->[_KEYS] }
-                  : @{ $self->[_KEYS] };
+            : $self->_keys;
       }
       else {
-         @{ $self->[_KEYS] } - ${ $self->[_GCNT] };
+         scalar CORE::keys %{ $self->[_DATA] };
       }
    }
+}
+
+# _keys ( )
+
+sub _keys {
+   my ( $self ) = @_;
+
+   ${ $self->[_GCNT] }
+      ? grep defined($_), @{ $self->[_KEYS] }
+      : @{ $self->[_KEYS] };
 }
 
 # pairs ( key [, key, ... ] )
@@ -485,12 +504,10 @@ sub pairs {
       if ( wantarray ) {
          my $data = $self->[_DATA];
          @_ ? map { $_ => $data->{ $_ } } @_
-            : map { $_ => $data->{ $_ } } ( ${ $self->[_GCNT] } )
-                  ? grep defined($_), @{ $self->[_KEYS] }
-                  : @{ $self->[_KEYS] };
+            : map { $_ => $data->{ $_ } } $self->_keys;
       }
       else {
-         @{ $self->[_KEYS] } - ${ $self->[_GCNT] };
+         scalar CORE::keys %{ $self->[_DATA] };
       }
    }
 }
@@ -508,13 +525,10 @@ sub values {
    else {
       if ( wantarray ) {
          @_ ? @{ $self->[_DATA] }{ @_ }
-            : @{ $self->[_DATA] }{ ( ${ $self->[_GCNT] } )
-                  ? grep defined($_), @{ $self->[_KEYS] }
-                  : @{ $self->[_KEYS] }
-              };
+            : @{ $self->[_DATA] }{ $self->_keys };
       }
       else {
-         @{ $self->[_KEYS] } - ${ $self->[_GCNT] };
+         scalar CORE::keys %{ $self->[_DATA] };
       }
    }
 }
@@ -542,8 +556,7 @@ sub mdel {
 # mexists ( key [, key, ... ] )
 
 sub mexists {
-   my $self = shift;
-   my $data = $self->[_DATA];
+   my ( $data ) = @{ shift() };
    my $key;
 
    while ( @_ ) {
@@ -565,8 +578,7 @@ sub mget {
 # mset ( key, value [, key, value, ... ] )
 
 sub mset {
-   my $self = shift;
-   my ( $data, $keys ) = @{ $self };
+   my ( $data, $keys ) = @{ shift() };
    my $key;
 
    while ( @_ ) {
@@ -574,7 +586,7 @@ sub mset {
       $data->{ $key } = shift;
    }
 
-   defined wantarray ? @{ $keys } - ${ $self->[_GCNT] } : ();
+   defined wantarray ? scalar CORE::keys %{ $data } : ();
 }
 
 # purge ( )
@@ -617,23 +629,23 @@ sub sort {
    if ( defined wantarray ) {
       if ( $by_key ) {                                # by key
          if ( $alpha ) { ( $desc )
-          ? CORE::sort { $b cmp $a } $self->keys
-          : CORE::sort { $a cmp $b } $self->keys;
+          ? CORE::sort { $b cmp $a } $self->_keys
+          : CORE::sort { $a cmp $b } $self->_keys;
          }
          else { ( $desc )
-          ? CORE::sort { $b <=> $a } $self->keys
-          : CORE::sort { $a <=> $b } $self->keys;
+          ? CORE::sort { $b <=> $a } $self->_keys
+          : CORE::sort { $a <=> $b } $self->_keys;
          }
       }
       else {                                          # by value
          my $d = $self->[_DATA];
          if ( $alpha ) { ( $desc )
-          ? CORE::sort { $d->{$b} cmp $d->{$a} } $self->keys
-          : CORE::sort { $d->{$a} cmp $d->{$b} } $self->keys;
+          ? CORE::sort { $d->{$b} cmp $d->{$a} } $self->_keys
+          : CORE::sort { $d->{$a} cmp $d->{$b} } $self->_keys;
          }
          else { ( $desc )
-          ? CORE::sort { $d->{$b} <=> $d->{$a} } $self->keys
-          : CORE::sort { $d->{$a} <=> $d->{$b} } $self->keys;
+          ? CORE::sort { $d->{$b} <=> $d->{$a} } $self->_keys
+          : CORE::sort { $d->{$a} <=> $d->{$b} } $self->_keys;
          }
       }
    }
@@ -642,23 +654,23 @@ sub sort {
 
    elsif ( $by_key ) {                                # by key
       if ( $alpha ) { ( $desc )
-       ? $self->_reorder( CORE::sort { $b cmp $a } $self->keys )
-       : $self->_reorder( CORE::sort { $a cmp $b } $self->keys );
+       ? $self->_reorder( CORE::sort { $b cmp $a } $self->_keys )
+       : $self->_reorder( CORE::sort { $a cmp $b } $self->_keys );
       }
       else { ( $desc )
-       ? $self->_reorder( CORE::sort { $b <=> $a } $self->keys )
-       : $self->_reorder( CORE::sort { $a <=> $b } $self->keys );
+       ? $self->_reorder( CORE::sort { $b <=> $a } $self->_keys )
+       : $self->_reorder( CORE::sort { $a <=> $b } $self->_keys );
       }
    }
    else {                                             # by value
       my $d = $self->[_DATA];
       if ( $alpha ) { ( $desc )
-       ? $self->_reorder( CORE::sort { $d->{$b} cmp $d->{$a} } $self->keys )
-       : $self->_reorder( CORE::sort { $d->{$a} cmp $d->{$b} } $self->keys );
+       ? $self->_reorder( CORE::sort { $d->{$b} cmp $d->{$a} } $self->_keys )
+       : $self->_reorder( CORE::sort { $d->{$a} cmp $d->{$b} } $self->_keys );
       }
       else { ( $desc )
-       ? $self->_reorder( CORE::sort { $d->{$b} <=> $d->{$a} } $self->keys )
-       : $self->_reorder( CORE::sort { $d->{$a} <=> $d->{$b} } $self->keys );
+       ? $self->_reorder( CORE::sort { $d->{$b} <=> $d->{$a} } $self->_keys )
+       : $self->_reorder( CORE::sort { $d->{$a} <=> $d->{$b} } $self->_keys );
       }
    }
 }
@@ -760,7 +772,7 @@ sub getset {
 sub len {
    ( defined $_[1] )
       ? length $_[0]->[_DATA]{ $_[1] }
-      : @{ $_[0]->[_KEYS] } - ${ $_[0]->[_GCNT] };
+      : scalar CORE::keys %{ $_[0]->[_DATA] };
 }
 
 {
@@ -777,7 +789,6 @@ sub len {
    *{ __PACKAGE__.'::shift'   } = \&SHIFT;
    *{ __PACKAGE__.'::unshift' } = \&UNSHIFT;
    *{ __PACKAGE__.'::splice'  } = \&SPLICE;
-
    *{ __PACKAGE__.'::del'     } = \&delete;
    *{ __PACKAGE__.'::merge'   } = \&mset;
    *{ __PACKAGE__.'::vals'    } = \&values;
@@ -805,7 +816,7 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 =head1 VERSION
 
-This document describes MCE::Shared::Ordhash version 1.001
+This document describes MCE::Shared::Ordhash version 1.002
 
 =head1 SYNOPSIS
 
@@ -857,8 +868,9 @@ This document describes MCE::Shared::Ordhash version 1.001
 
    # search capability key/val { =~ !~ eq ne lt le gt ge == != < <= > >= }
    # key/val means to match against actual key/val respectively
-   # do not add quotes inside the string unless intended literally
-   # do not mix :AND(s) and :OR(s) together
+
+   @keys  = $oh->keys( "key eq 'some key' :or (val > 5 :and val < 9)" );
+   @keys  = $oh->keys( "key eq some key :or (val > 5 :and val < 9)" );
 
    @keys  = $oh->keys( "key =~ /$pattern/i" );
    @keys  = $oh->keys( "key !~ /$pattern/i" );
@@ -866,16 +878,17 @@ This document describes MCE::Shared::Ordhash version 1.001
    @keys  = $oh->keys( "val !~ /$pattern/i" );
 
    %pairs = $oh->pairs( "key == $number" );
-   %pairs = $oh->pairs( "key != $number :AND val > 100" );
-   %pairs = $oh->pairs( "key <  $number :OR key > $number" );
+   %pairs = $oh->pairs( "key != $number :and val > 100" );
+   %pairs = $oh->pairs( "key <  $number :or key > $number" );
    %pairs = $oh->pairs( "val <= $number" );
    %pairs = $oh->pairs( "val >  $number" );
    %pairs = $oh->pairs( "val >= $number" );
 
    @vals  = $oh->values( "key eq $string" );
    @vals  = $oh->values( "key ne $string with space" );
-   @vals  = $oh->values( "key lt $string :OR val =~ /$pat1|$pat2/" );
-   @vals  = $oh->values( "val le $string :AND val eq foo bar" );
+   @vals  = $oh->values( "key lt $string :or val =~ /$pat1|$pat2/" );
+   @vals  = $oh->values( "val le $string :and val eq 'foo bar'" );
+   @vals  = $oh->values( "val le $string :and val eq foo bar" );
    @vals  = $oh->values( "val gt $string" );
    @vals  = $oh->values( "val ge $string" );
 
@@ -909,16 +922,18 @@ ordered hash implementation.
 =head1 SYNTAX for QUERY STRING
 
 Several methods in C<MCE::Shared::Ordhash> take a query string for an argument.
-The format of the string is quoteless. Therefore, any quotes inside the string
-is treated literally.
 
    o Basic demonstration: @keys = $oh->keys( "val =~ /pattern/" );
    o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   o Multiple expressions are delimited by :AND or :OR.
+   o Multiple expressions delimited by :AND or :OR
+   o Quoting optional inside the string
 
-     "key =~ /pattern/i :AND val =~ /pattern/i"
-     "key =~ /pattern/i :AND val eq foo bar"     # val eq "foo bar"
-     "val eq foo baz :OR key !~ /pattern/i"
+     "key eq 'some key' :or (val > 5 :and val < 9)"
+     "key eq some key :or (val > 5 :and val < 9)"
+     "key =~ /pattern/i :and val =~ /pattern/i"
+     "key =~ /pattern/i :and val eq 'foo bar'"   # val eq "foo bar"
+     "key =~ /pattern/i :and val eq foo bar"     # val eq "foo bar"
+     "val eq foo baz :or key !~ /pattern/i"
 
      * key matches on keys in the hash
      * val matches on values
@@ -926,8 +941,6 @@ is treated literally.
 =over 3
 
 =item * The modifiers C<:AND> and C<:OR> may be mixed case. e.g. C<:And>
-
-=item * Mixing C<:AND> and C<:OR> in the query is not supported.
 
 =back
 

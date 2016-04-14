@@ -6,12 +6,13 @@
 
 package MCE::Shared::Hash;
 
+use 5.010001;
 use strict;
 use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.001';
+our $VERSION = '1.002';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -282,7 +283,6 @@ sub len {
    *{ __PACKAGE__.'::delete' } = \&DELETE;
    *{ __PACKAGE__.'::exists' } = \&EXISTS;
    *{ __PACKAGE__.'::clear'  } = \&CLEAR;
-
    *{ __PACKAGE__.'::del'    } = \&delete;
    *{ __PACKAGE__.'::merge'  } = \&mset;
    *{ __PACKAGE__.'::vals'   } = \&values;
@@ -304,7 +304,7 @@ MCE::Shared::Hash - Hash helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Hash version 1.001
+This document describes MCE::Shared::Hash version 1.002
 
 =head1 SYNOPSIS
 
@@ -341,8 +341,9 @@ This document describes MCE::Shared::Hash version 1.001
 
    # search capability key/val { =~ !~ eq ne lt le gt ge == != < <= > >= }
    # key/val means to match against actual key/val respectively
-   # do not add quotes inside the string unless intended literally
-   # do not mix :AND(s) and :OR(s) together
+
+   @keys  = $ha->keys( "key eq 'some key' :or (val > 5 :and val < 9)" );
+   @keys  = $ha->keys( "key eq some key :or (val > 5 :and val < 9)" );
 
    @keys  = $ha->keys( "key =~ /$pattern/i" );
    @keys  = $ha->keys( "key !~ /$pattern/i" );
@@ -350,16 +351,17 @@ This document describes MCE::Shared::Hash version 1.001
    @keys  = $ha->keys( "val !~ /$pattern/i" );
 
    %pairs = $ha->pairs( "key == $number" );
-   %pairs = $ha->pairs( "key != $number :AND val > 100" );
-   %pairs = $ha->pairs( "key <  $number :OR key > $number" );
+   %pairs = $ha->pairs( "key != $number :and val > 100" );
+   %pairs = $ha->pairs( "key <  $number :or key > $number" );
    %pairs = $ha->pairs( "val <= $number" );
    %pairs = $ha->pairs( "val >  $number" );
    %pairs = $ha->pairs( "val >= $number" );
 
    @vals  = $ha->values( "key eq $string" );
    @vals  = $ha->values( "key ne $string with space" );
-   @vals  = $ha->values( "key lt $string :OR val =~ /$pat1|$pat2/" );
-   @vals  = $ha->values( "val le $string :AND val eq foo bar" );
+   @vals  = $ha->values( "key lt $string :or val =~ /$pat1|$pat2/" );
+   @vals  = $ha->values( "val le $string :and val eq 'foo bar'" );
+   @vals  = $ha->values( "val le $string :and val eq foo bar" );
    @vals  = $ha->values( "val gt $string" );
    @vals  = $ha->values( "val ge $string" );
 
@@ -381,16 +383,18 @@ A hash helper class for use with L<MCE::Shared>.
 =head1 SYNTAX for QUERY STRING
 
 Several methods in C<MCE::Shared::Hash> take a query string for an argument.
-The format of the string is quoteless. Therefore, any quotes inside the string
-is treated literally.
 
    o Basic demonstration: @keys = $ha->keys( "val =~ /pattern/" );
    o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   o Multiple expressions are delimited by :AND or :OR.
+   o Multiple expressions delimited by :AND or :OR
+   o Quoting optional inside the string
 
-     "key =~ /pattern/i :AND val =~ /pattern/i"
-     "key =~ /pattern/i :AND val eq foo bar"     # val eq "foo bar"
-     "val eq foo baz :OR key !~ /pattern/i"
+     "key eq 'some key' :or (val > 5 :and val < 9)"
+     "key eq some key :or (val > 5 :and val < 9)"
+     "key =~ /pattern/i :and val =~ /pattern/i"
+     "key =~ /pattern/i :and val eq 'foo bar'"   # val eq "foo bar"
+     "key =~ /pattern/i :and val eq foo bar"     # val eq "foo bar"
+     "val eq foo baz :or key !~ /pattern/i"
 
      * key matches on keys in the hash
      * val matches on values
@@ -398,8 +402,6 @@ is treated literally.
 =over 3
 
 =item * The modifiers C<:AND> and C<:OR> may be mixed case. e.g. C<:And>
-
-=item * Mixing C<:AND> and C<:OR> in the query is not supported.
 
 =back
 

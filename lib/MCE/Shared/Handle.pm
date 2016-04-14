@@ -6,12 +6,13 @@
 
 package MCE::Shared::Handle;
 
+use 5.010001;
 use strict;
 use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.001';
+our $VERSION = '1.002';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 
@@ -127,7 +128,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.001
+This document describes MCE::Shared::Handle version 1.002
 
 =head1 SYNOPSIS
 

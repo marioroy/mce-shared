@@ -6,14 +6,17 @@
 
 package MCE::Shared;
 
+use 5.010001;
 use strict;
 use warnings;
 
 no warnings qw( threads recursion uninitialized );
 
-our $VERSION = '1.001';
+our $VERSION = '1.002';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
+## no critic (Subroutines::ProhibitSubroutinePrototypes)
+## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use Scalar::Util qw( blessed refaddr );
 use MCE::Shared::Server;
@@ -30,6 +33,12 @@ my $_imported;
 
 sub import {
    my $_class = shift;
+
+   no strict 'refs'; no warnings 'redefine';
+   my $_pkg = caller;
+
+   *{ $_pkg.'::mce_open' } = \&open;
+
    return if $_imported++;
 
    while ( my $_argument = shift ) {
@@ -63,7 +72,7 @@ sub share {
    $_count++;
 
    # blessed object, \@array, \%hash, or \$scalar
-   if ( $_class ) {
+   if ( $_class && Scalar::Util::reftype($_[0]) ne 'GLOB' ) {
       _incr_count($_[0]), return $_[0] if $_[0]->can('SHARED_ID');
 
       _croak("Running MCE::Queue via MCE::Shared is not supported.\n",
@@ -179,7 +188,7 @@ sub handle {
    my $_fh   = \do { local *HANDLE };
 
    tie *{ $_fh }, 'MCE::Shared::Object', $_item;
-   $_item->OPEN(@_) if @_;
+   if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
 
    $_fh;
 }
@@ -194,6 +203,33 @@ sub hash {
    &_deeply_share_h($_params, $_item, @_) if @_;
 
    $_item;
+}
+
+sub open (@) {
+   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
+   require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
+
+   my $_item;
+
+   if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } &&
+        tied(*{ $_[0] })->can('SHARED_ID')
+   ) {
+      $_item = tied *{ $_[0] };
+   }
+   elsif ( @_ ) {
+      $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
+      $_[0]  = \do { local *HANDLE };
+
+      tie *{ $_[0] }, 'MCE::Shared::Object', $_item;
+   }
+
+   shift; _croak("Not enough arguments for open") unless @_;
+
+   if ( !defined wantarray ) {
+      $_item->OPEN(@_) or _croak("open error: $!");
+   } else {
+      $_item->OPEN(@_);
+   }
 }
 
 sub ordhash {
@@ -248,9 +284,17 @@ sub TIESCALAR { shift; MCE::Shared->scalar(@_) }
 
 sub TIEHASH {
    shift;
-   my $_ordered = ( ref $_[0] eq 'HASH' && exists $_[0]->{'ordered'} )
-      ? shift()->{'ordered'}
-      : 0;
+   my ( $_ordered );
+
+   if ( ref $_[0] eq 'HASH' ) {
+      shift(), $_ordered = 1 if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} );
+   }
+   else {
+      shift(), shift(), $_ordered = 1 if (
+         @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) && $_[1]
+      );
+   }
+
    ( $_ordered )
       ? MCE::Shared->ordhash(@_)
       : MCE::Shared->hash(@_);
@@ -259,7 +303,7 @@ sub TIEHASH {
 sub TIEHANDLE {
    require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
    my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) ); shift;
-   $_item->OPEN(@_) if @_;
+   if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
    $_item;
 }
 
@@ -312,7 +356,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.001
+This document describes MCE::Shared version 1.002
 
 =head1 SYNOPSIS
 
@@ -330,6 +374,12 @@ This document describes MCE::Shared version 1.001
    my $va = MCE::Shared->scalar( $value );
    my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
    my $ob = MCE::Shared->share( $blessed_object );
+
+   # open call, MCE::Shared 1.002 and later
+
+   MCE::Shared->open( my $fh, ">", "/foo/bar.log" ) or die "$!";
+
+   mce_open my $fh, ">", "/foo/bar.log" or die "$!";
 
    # Tie construction
 
@@ -461,42 +511,52 @@ shared-manager process.
 =back
 
 C<array>, C<condvar>, C<handle>, C<hash>, C<minidb>, C<ordhash>, C<queue>,
-C<scalar>, and C<sequence> are sugar syntax for constructing a
-shared object.
+C<scalar>, and C<sequence> are sugar syntax for constructing a shared object.
 
-  # long form
+   # long form
 
-  use MCE::Shared;
+   use MCE::Shared;
 
-  use MCE::Shared::Array;
-  use MCE::Shared::Hash;
-  use MCE::Shared::OrdHash;
-  use MCE::Shared::Minidb;
-  use MCE::Shared::Queue;
-  use MCE::Shared::Scalar;
+   use MCE::Shared::Array;
+   use MCE::Shared::Hash;
+   use MCE::Shared::OrdHash;
+   use MCE::Shared::Minidb;
+   use MCE::Shared::Queue;
+   use MCE::Shared::Scalar;
 
-  my $ar = MCE::Shared->share( MCE::Shared::Array->new() );
-  my $ha = MCE::Shared->share( MCE::Shared::Hash->new() );
-  my $oh = MCE::Shared->share( MCE::Shared::Ordhash->new() );
-  my $db = MCE::Shared->share( MCE::Shared::Minidb->new() );
-  my $qu = MCE::Shared->share( MCE::Shared::Queue->new() );
-  my $va = MCE::Shared->share( MCE::Shared::Scalar->new() );
+   my $ar = MCE::Shared->share( MCE::Shared::Array->new() );
+   my $ha = MCE::Shared->share( MCE::Shared::Hash->new() );
+   my $oh = MCE::Shared->share( MCE::Shared::Ordhash->new() );
+   my $db = MCE::Shared->share( MCE::Shared::Minidb->new() );
+   my $qu = MCE::Shared->share( MCE::Shared::Queue->new() );
+   my $va = MCE::Shared->share( MCE::Shared::Scalar->new() );
 
-  # short form
+   # short form
 
-  use MCE::Shared;
+   use MCE::Shared;
 
-  my $ar = MCE::Shared->array( @list );
-  my $cv = MCE::Shared->condvar( 0 );
-  my $fh = MCE::Shared->handle( '>>', \*STDOUT );
-  my $ha = MCE::Shared->hash( @pairs );
-  my $oh = MCE::Shared->ordhash( @pairs );
-  my $db = MCE::Shared->minidb();
-  my $qu = MCE::Shared->queue( await => 1, fast => 0 );
-  my $va = MCE::Shared->scalar( $value );
-  my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
+   my $ar = MCE::Shared->array( @list );
+   my $cv = MCE::Shared->condvar( 0 );
+   my $fh = MCE::Shared->handle( '>>', \*STDOUT );
+   my $ha = MCE::Shared->hash( @pairs );
+   my $oh = MCE::Shared->ordhash( @pairs );
+   my $db = MCE::Shared->minidb();
+   my $qu = MCE::Shared->queue( await => 1, fast => 0 );
+   my $va = MCE::Shared->scalar( $value );
+   my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
 
 =over 3
+
+=item open
+
+=item mce_open
+
+The C<open> call in MCE::Shared 1.002 and later provides a native feel for
+opening a shared file handle. Opening a scalar reference is not supported.
+
+   MCE::Shared->open( my $fh, ">", "/foo/bar.log" ) or die "$!";
+
+   mce_open my $fh, ">", "/foo/bar.log" or die "$!";
 
 =item num_sequence
 

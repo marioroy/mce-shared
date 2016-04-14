@@ -3,11 +3,22 @@
 use strict;
 use warnings;
 
-use Test::More tests => 126;
-use MCE::Flow max_workers => 1;
-use MCE::Shared;
+use Test::More;
+
+BEGIN {
+   use_ok 'MCE::Flow';
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Array';
+}
+
+MCE::Flow::init {
+   max_workers => 1
+};
 
 tie my @a1, 'MCE::Shared', ( 10, '', '' );
+
+is( tied(@a1)->blessed, 'MCE::Shared::Array', 'shared array, tied ref' );
+
 tie my $e1, 'MCE::Shared';
 tie my $e2, 'MCE::Shared';
 tie my $d1, 'MCE::Shared';
@@ -513,4 +524,6 @@ cmp_array(
    [ $a5->range(-1, -1) ], [ 'three' ],
    'shared array, check range 5'
 );
+
+done_testing;
 

@@ -3,11 +3,21 @@
 use strict;
 use warnings;
 
-use Test::More tests => 163;
-use MCE::Flow max_workers => 1;
-use MCE::Shared;
+use Test::More;
 
-my $h1 = MCE::Shared->ordhash( k1 => 10, k2 => '', k3 => '' );
+BEGIN {
+   use_ok 'MCE::Flow';
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Ordhash';
+}
+
+MCE::Flow::init {
+   max_workers => 1
+};
+
+tie my %h1, 'MCE::Shared', { ordered => 1 }, ( k1 => 10, k2 => '', k3 => '' );
+
+is( tied(%h1)->blessed, 'MCE::Shared::Ordhash', 'shared ordhash, tied ref' );
 
 tie my $keys, 'MCE::Shared';
 tie my $e1,   'MCE::Shared';
@@ -33,27 +43,27 @@ sub cmp_array {
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
 MCE::Flow::run( sub {
-   $h1->{k1}  +=  5;
-   $h1->{k2}  .= '';
-   $h1->{k3}  .= 'foobar';
-   $keys       = join(' ', $h1->keys);
+   $h1{k1}  +=  5;
+   $h1{k2}  .= '';
+   $h1{k3}  .= 'foobar';
+   $keys     = join(' ', keys %h1);
    $h5->{n}    = 20;
 });
 
 MCE::Flow::finish;
 
-is( $h1->{k1}, 15, 'shared ordhash, check fetch, store' );
-is( $h1->{k2}, '', 'shared ordhash, check blank value' );
-is( $h1->{k3}, 'foobar', 'shared ordhash, check concatenation' );
+is( $h1{k1}, 15, 'shared ordhash, check fetch, store' );
+is( $h1{k2}, '', 'shared ordhash, check blank value' );
+is( $h1{k3}, 'foobar', 'shared ordhash, check concatenation' );
 is( $keys, 'k1 k2 k3', 'shared ordhash, check firstkey, nextkey' );
 is( $h5->{n}, 20, 'shared ordhash, check value' );
 
 MCE::Flow::run( sub {
-   $e1 = exists $h1->{'k2'} ? 1 : 0;
-   $d1 = delete $h1->{'k2'};
-   $e2 = exists $h1->{'k2'} ? 1 : 0;
-   %{$h1} = (); $s1 = keys %{$h1};
-   $h1->{ret} = [ 'wind', 'air' ];
+   $e1 = exists $h1{'k2'} ? 1 : 0;
+   $d1 = delete $h1{'k2'};
+   $e2 = exists $h1{'k2'} ? 1 : 0;
+   %h1 = (); $s1 = keys %h1;
+   $h1{ret} = [ 'wind', 'air' ];
 });
 
 MCE::Flow::finish;
@@ -62,37 +72,39 @@ is( $e1,  1, 'shared ordhash, check exists before delete' );
 is( $d1, '', 'shared ordhash, check delete' );
 is( $e2,  0, 'shared ordhash, check exists after delete' );
 is( $s1,  0, 'shared ordhash, check clear' );
-is( $h1->{ret}->[1], 'air', 'shared ordhash, check auto freeze/thaw' );
+is( $h1{ret}->[1], 'air', 'shared ordhash, check auto freeze/thaw' );
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
 ## Somewhere over the rainbow
 ##    Way up high / And the dreams that you dreamed of / ...
 
-$h1->clear;
+my $h2 = MCE::Shared->ordhash();
 
-$h1->push( s => 'where', o => 'the', r => 'way', u => 'high' );
+$h2->clear;
 
-is( join('', $h1->keys), 'soru', 'shared ordhash, check keys' );
-is( join('', $h1->vals), 'wherethewayhigh', 'shared ordhash, check values' );
+$h2->push( s => 'where', o => 'the', r => 'way', u => 'high' );
 
-$h1->push( a => 'the', d => 'that' );
+is( join('', $h2->keys), 'soru', 'shared ordhash, check keys' );
+is( join('', $h2->vals), 'wherethewayhigh', 'shared ordhash, check values' );
 
-is( join('', $h1->keys), 'soruad', 'shared ordhash, check push' );
+$h2->push( a => 'the', d => 'that' );
 
-$h1->unshift( 'lyrics' => 'to' );
+is( join('', $h2->keys), 'soruad', 'shared ordhash, check push' );
 
-is( join('', $h1->keys), 'lyricssoruad', 'shared ordhash, check unshift' );
+$h2->unshift( 'lyrics' => 'to' );
 
-$h1->del( $_ ) for qw( lyrics d r );
+is( join('', $h2->keys), 'lyricssoruad', 'shared ordhash, check unshift' );
 
-is( join('', $h1->keys), 'soua', 'shared ordhash, check delete' );
-is( join('', $h1->pop), 'athe', 'shared ordhash, check pop' );
-is( join('', $h1->shift), 'swhere', 'shared ordhash, check shift' );
+$h2->del( $_ ) for qw( lyrics d r );
 
-$h1->splice( 1, 0, 'you' => 'dreamed' );
+is( join('', $h2->keys), 'soua', 'shared ordhash, check delete' );
+is( join('', $h2->pop), 'athe', 'shared ordhash, check pop' );
+is( join('', $h2->shift), 'swhere', 'shared ordhash, check shift' );
 
-is( join('', $h1->pairs), 'otheyoudreameduhigh', 'shared ordhash, check splice' );
+$h2->splice( 1, 0, 'you' => 'dreamed' );
+
+is( join('', $h2->pairs), 'otheyoudreameduhigh', 'shared ordhash, check splice' );
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
@@ -596,4 +608,6 @@ is( $h5->mexists(qw/ 0 2 3 /),  1, 'shared ordhash, check mexists 1' );
 is( $h5->mexists(qw/ 0 8 3 /), '', 'shared ordhash, check mexists 2' );
 
 is( $h5->mdel(qw/ 3 2 1 0 /), 4, 'shared ordhash, check mdel' );
+
+done_testing;
 

@@ -3,12 +3,22 @@
 use strict;
 use warnings;
 
-use Test::More tests => 16;
-use MCE::Flow max_workers => 1;
-use MCE::Shared;
+use Test::More;
+
+BEGIN {
+   use_ok 'MCE::Flow';
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Scalar';
+}
+
+MCE::Flow::init {
+   max_workers => 1
+};
 
 tie my $s1, 'MCE::Shared', 10;
 tie my $s2, 'MCE::Shared', '';
+
+is( tied($s1)->blessed, 'MCE::Shared::Scalar', 'shared scalar, tied ref' );
 
 my $s5 = MCE::Shared->scalar( 0 );
 
@@ -41,4 +51,6 @@ is( $s5->append('ba'), 4, 'shared scalar, check append' );
 is( $s5->get(), '20ba', 'shared scalar, check value after append' );
 is( $s5->getset('foo'), '20ba', 'shared scalar, check getset' );
 is( $s5->get(), 'foo', 'shared scalar, check value after getset' );
+
+done_testing;
 

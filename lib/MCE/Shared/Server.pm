@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.001';
+our $VERSION = '1.002';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -21,7 +21,7 @@ our $VERSION = '1.001';
 
 use Carp ();
 use Time::HiRes qw( sleep );
-use Scalar::Util qw( blessed reftype weaken );
+use Scalar::Util qw( blessed weaken );
 use Socket qw( SOL_SOCKET SO_RCVBUF );
 use Storable ();
 use bytes;
@@ -34,7 +34,7 @@ BEGIN {
    $_freeze = \&Storable::freeze;
    $_thaw   = \&Storable::thaw;
 
-   local $@; local $SIG{__DIE__} = \&_NOOP;
+   local $@; local $SIG{__DIE__};
 
    if ($^O eq 'MSWin32' && !defined $threads::VERSION) {
       eval 'use threads; use threads::shared';
@@ -64,7 +64,6 @@ use constant {
    SHR_M_NEW => 'M~NEW',  # New share
    SHR_M_CID => 'M~CID',  # ClientID request
    SHR_M_DEE => 'M~DEE',  # Deeply shared
-   SHR_M_DNE => 'M~DNE',  # Done sharing
    SHR_M_INC => 'M~INC',  # Increment count
    SHR_M_OBJ => 'M~OBJ',  # Object request
    SHR_M_OB0 => 'M~OB0',  # Object request - thaw'less
@@ -113,12 +112,23 @@ sub  CLONE { $_tid = threads->tid() if $_has_threads }
 
 sub _use_sereal {
    local $@; eval 'use Sereal qw( encode_sereal decode_sereal )';
-   $_freeze = \&encode_sereal, $_thaw = \&decode_sereal unless $@;
+   if ( !$@ ) {
+      $_freeze = sub { encode_sereal( @_, { freeze_callbacks => 1 } ) };
+      $_thaw   = \&decode_sereal;
+   }
 }
 
 END {
    return unless ($_init_pid && $_init_pid eq "$$.$_tid");
-   _stop();
+
+   MCE::Flow::finish(1)   if $INC{'MCE/Flow.pm'};
+   MCE::Grep::finish(1)   if $INC{'MCE/Grep.pm'};
+   MCE::Loop::finish(1)   if $INC{'MCE/Loop.pm'};
+   MCE::Map::finish(1)    if $INC{'MCE/Map.pm'};
+   MCE::Step::finish(1)   if $INC{'MCE/Step.pm'};
+   MCE::Stream::finish(1) if $INC{'MCE/Stream.pm'};
+
+   MCE::Shared::stop();
 }
 
 {
@@ -128,7 +138,7 @@ END {
       my $_sig_name = $_[0];
       $MCE::Shared::Server::KILLED = 1;
 
-      $SIG{INT} = $SIG{__DIE__} = $SIG{__WARN__} = $SIG{$_[0]} = sub {};
+      $SIG{INT} = $SIG{__DIE__} = $SIG{__WARN__} = $SIG{$_[0]} = sub { };
       lock $_handler_cnt if $INC{'threads/shared.pm'};
 
       if (++$_handler_cnt == 1) {
@@ -260,7 +270,7 @@ sub _share {
    my ($_id, $_class) = (++$_next_id, delete $_params->{'class'});
 
    if ($_class eq ':construct_pdl:') {
-      local $@; local $SIG{__DIE__} = sub {};
+      local $@; local $SIG{__DIE__};
 
       $_class = 'PDL', $_item = eval q{
          use PDL; my $_func = pop @{ $_item };
@@ -280,7 +290,7 @@ sub _share {
       };
    }
    elsif (!exists $INC{ join('/',split(/::/,$_class)).'.pm' }) {
-      local $@; local $SIG{__DIE__} = sub {};
+      local $@; local $SIG{__DIE__};
       eval "use $_class ()";
    }
 
@@ -305,11 +315,10 @@ sub _start {
    return if $_svr_pid;
 
    $SIG{HUP} = $SIG{INT} = $SIG{PIPE} = $SIG{QUIT} = $SIG{TERM} = \&_trap
-      unless $INC{'MCE/Signal.pm'};
+      if (!$_is_MSWin32 && !$INC{'MCE/Signal.pm'});
 
    my $_data_channels = ($INC{'MCE.pm'} && MCE->wid()) ? 1 : DATA_CHANNELS;
    my $_is_child = $_has_threads ? 0 : 1;
-   my $_mgr_pid  = $$;
 
    $_SVR = { _data_channels => $_data_channels };
    local $_; $_init_pid = "$$.$_tid";
@@ -326,13 +335,12 @@ sub _start {
 
    if ($_is_child) {
       $_svr_pid = fork();
-      unless ($_svr_pid) {
-         $SIG{CHLD} = 'IGNORE' unless $_is_MSWin32;
-         _loop($_is_child, $_mgr_pid);
+      if (defined $_svr_pid && $_svr_pid == 0) {
+         _loop($_is_child);
       }
    }
    else {
-      $_svr_pid = threads->create(\&_loop, $_is_child, $_mgr_pid);
+      $_svr_pid = threads->create(\&_loop, $_is_child);
       $_svr_pid->detach() if defined $_svr_pid;
    }
 
@@ -350,17 +358,14 @@ sub _stop {
    %_all = (), %_obj = ();
 
    if (defined $_svr_pid) {
-      my $_chn  = 1;
-      $_svr_pid = undef; local $\ = undef if (defined $\);
-
-      print {$_SVR->{_dat_w_sock}->[0]} SHR_M_DNE.$LF . $_chn.$LF;
-      sleep($_is_MSWin32 ? 0.1 : 0.05);
-
       MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
+      waitpid($_svr_pid, 0) if !ref($_svr_pid);
 
       for my $_i (1 .. $_SVR->{_data_channels}) {
          $_SVR->{'_mutex_'.$_i}->DESTROY('shutdown');
       }
+
+      $_svr_pid = undef;
    }
 
    return;
@@ -403,10 +408,6 @@ sub _destroy {
    return;
 }
 
-sub _done {
-   %_all = (), %_obj = (), %_ob2 = (), %_ob3 = (), %_itr = ();
-}
-
 ###############################################################################
 ## ----------------------------------------------------------------------------
 ## Server loop.
@@ -414,22 +415,23 @@ sub _done {
 ###############################################################################
 
 sub _loop {
-   my ($_is_child, $_mgr_pid) = @_;
+   my ($_is_child) = @_;
    require POSIX if $_is_child;
 
    $_is_client = 0;
 
    $SIG{PIPE} = sub {
-      _done(); $_is_child ? POSIX::_exit($?) : CORE::exit($?);
+      $_is_child ? POSIX::_exit($?) : CORE::exit($?);
    };
 
    $SIG{HUP} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub {
-      $SIG{INT} = $SIG{$_[0]} = sub {};
+      $SIG{INT} = $SIG{$_[0]} = sub { };
 
       CORE::kill($_[0], $_is_MSWin32 ? -$$ : -getpgrp);
-      sleep 0.065 for (1..3);
+      sleep 0.065 for (1..15);
 
-      CORE::kill('KILL', $_mgr_pid, $$);
+      CORE::kill('KILL', $$);
+      CORE::exit(255);
    };
 
    $SIG{__DIE__} = sub {
@@ -451,12 +453,11 @@ sub _loop {
          }
       }
 
-      $SIG{INT} = $SIG{__DIE__} = $SIG{__WARN__} = sub {};
+      $SIG{INT} = $SIG{__DIE__} = $SIG{__WARN__} = sub { };
       my $_die_msg = (defined $_[0]) ? $_[0] : '';
       print {*STDERR} $_die_msg;
 
       CORE::kill('INT', $_is_MSWin32 ? -$$ : -getpgrp);
-      _done();
 
       $_is_child ? POSIX::_exit($?) : CORE::exit($?);
    };
@@ -465,10 +466,10 @@ sub _loop {
 
    my ($_id, $_fn, $_wa, $_key, $_len, $_le2, $_le3, $_ret, $_func);
    my ($_DAU_R_SOCK, $_CV, $_Q, $_cnt, $_pending, $_t, $_frozen);
-   my ($_client_id, $_done) = (0, 0);
 
    my $_DAT_R_SOCK = $_SVR->{_dat_r_sock}->[0];
    my $_channels   = $_SVR->{_dat_r_sock};
+   my $_client_id  = 0;
 
    my $_warn1 = sub {
       warn "Can't locate object method \"$_[0]\" via package \"$_[1]\"\n";
@@ -637,12 +638,6 @@ sub _loop {
          chomp(my $_id2 = <$_DAU_R_SOCK>);
 
          $_ob3{ "$_id1:deeply" }->{ $_id2 } = 1;
-
-         return;
-      },
-
-      SHR_M_DNE.$LF => sub {                      # Done sharing
-         _done(); $_done = 1;
 
          return;
       },
@@ -1010,7 +1005,7 @@ sub _loop {
       },
 
       SHR_O_OPN.$LF => sub {                      # Handle OPEN
-         my ($_fd, $_buf); local $!;
+         my ($_fd, $_buf, $_err); local $!;
 
          chomp($_id  = <$_DAU_R_SOCK>),
          chomp($_fd  = <$_DAU_R_SOCK>),
@@ -1029,14 +1024,20 @@ sub _loop {
          close $_obj{ $_id } if defined fileno($_obj{ $_id });
 
          if (@{ $_args } == 2) {
-            open $_obj{ $_id }, "$_args->[0]", $_args->[1]
-               or _croak("open error: $!");
-         } else {
-            open $_obj{ $_id }, $_args->[0]
-               or _croak("open error: $!");
+            open( $_obj{ $_id }, "$_args->[0]", $_args->[1] )
+               or do { $_err = Scalar::Util::dualvar($!,$!) };
+         }
+         else {
+            open( $_obj{ $_id }, $_args->[0] )
+               or do { $_err = Scalar::Util::dualvar($!,$!) };
          }
 
-         print {$_DAU_R_SOCK} $LF;
+         if ($_len = length($_err)) {
+            print {$_DAU_R_SOCK} $_len.$LF . (0+$_err).$LF . ''.$_err;
+         }
+         else {
+            print {$_DAU_R_SOCK} '0'.$LF . $LF;
+         }
 
          return;
       },
@@ -1048,8 +1049,8 @@ sub _loop {
          chomp($_a3 = <$_DAU_R_SOCK>);
 
          my $_fh = $_obj{ $_id };
+         $_ret = read($_fh, $_buf, $_a3);
 
-         $_ret = read($_fh, $_buf, $_a3) unless eof($_fh);
          print {$_DAU_R_SOCK} $_ret.$LF . length($_buf).$LF, $_buf;
 
          return;
@@ -1307,8 +1308,9 @@ sub _loop {
       my $_val_bytes = "\x00\x00\x00\x00";
       my $_ptr_bytes = unpack('I', pack('P', $_val_bytes));
       my $_nbytes; my $_count = 0;
+      my $_done = 0;
 
-      while (1) {
+      while (!$_done) {
          ioctl($_DAT_R_SOCK, 0x4004667f, $_ptr_bytes);  # MSWin32 FIONREAD
 
          unless ($_nbytes = unpack('I', $_val_bytes)) {
@@ -1319,32 +1321,28 @@ sub _loop {
             $_count = 0;
             do {
                sysread($_DAT_R_SOCK, $_func, 8);
+               $_done = 1, last() unless length($_func) == 8;
 
                $_DAU_R_SOCK = $_channels->[ substr($_func, -2, 2, '') ];
                $_output_function{$_func}();
 
-               last if $_done;
-
-            } while ($_nbytes -= 8);
+            } while (($_nbytes -= 8) >= 8);
          }
       }
    }
    else {
       while (1) {
          $_func = <$_DAT_R_SOCK>;
+         last() unless length($_func) == 6;
 
          $_DAU_R_SOCK = $_channels->[ <$_DAT_R_SOCK> ];
          $_output_function{$_func}();
-
-         last if $_done;
       }
    }
 
-   # Wait for the main thread to exit to not impact socket handles.
    # Exiting via POSIX's _exit to avoid END blocks.
 
-   sleep(3.0)      if ( $_has_threads && $_is_MSWin32 );
-   POSIX::_exit(0) if ( $_is_child );
+   $_is_child ? POSIX::_exit(0) : threads->exit(0);
 
    return;
 }
@@ -1499,7 +1497,7 @@ sub _init {
 ##
 ###############################################################################
 
-# Called by AUTOLOAD, enqueue, enqueuep, STORE, set, decr, incr, and len.
+# Called by AUTOLOAD, STORE, and set.
 
 sub _auto {
    my ( $_fn, $_id, $_wa, $_len, $_buf ) = ( shift, shift()->[0] );
@@ -1607,7 +1605,10 @@ sub _req3 {
    read $_DAU_W_SOCK, my($_buf), $_len;
    $_dat_un->();
 
-   $_thaw->($_buf);
+   my $_obj = $_thaw->($_buf);
+   undef $_buf;
+
+   $_obj;
 }
 
 # Called by dequeue and dequeue_nb.
@@ -1698,11 +1699,17 @@ sub _req7 {
 ##
 ###############################################################################
 
-# Autoload handler. $MCE::Shared::Object::AUTOLOAD equals:
-# MCE::Shared::Object::<method_name>
+our $AUTOLOAD;
 
 sub AUTOLOAD {
-   _auto(substr($MCE::Shared::Object::AUTOLOAD, 21), @_);
+   # $AUTOLOAD = MCE::Shared::Object::<method_name>
+   my $_fn = substr($AUTOLOAD, 21);
+
+   # save this method for future calls
+   no strict 'refs';
+   *$AUTOLOAD = sub { _auto($_fn, @_) };
+
+   goto &{ $AUTOLOAD };
 }
 
 # blessed ( )
@@ -1859,7 +1866,7 @@ sub iterator {
 
    # Not supported
    else {
-      return sub {};
+      return sub { };
    }
 }
 
@@ -2033,7 +2040,10 @@ sub OPEN {
    my ($_id, $_fd, $_buf) = (shift()->[0]);
    return unless defined $_[0];
 
-   if (@_ == 2 && ref $_[1] && defined($_fd = fileno($_[1]))) {
+   if (ref $_[-1] && Scalar::Util::reftype($_[-1]) ne 'GLOB') {
+      _croak("open error: not a GLOB reference");
+   }
+   elsif (@_ == 2 && ref $_[1] && defined($_fd = fileno($_[1]))) {
       $_buf = $_freeze->([ $_[0]."&=$_fd" ]);
    }
    elsif (!ref $_[-1]) {
@@ -2061,10 +2071,21 @@ sub OPEN {
 
    IO::FDPass::send( fileno $_DAU_W_SOCK, fileno $_fd ) if ($_fd > 2);
 
-   <$_DAU_W_SOCK>;
+   chomp(my $_len = <$_DAU_W_SOCK>);
+   chomp(my $_err = <$_DAU_W_SOCK>);
+
+   read($_DAU_W_SOCK, my($_str), $_len) if $_len;
+
    $_dat_un->();
 
-   return;
+   if ($_len) {
+      $! = Scalar::Util::dualvar($_err, $_str);
+      '';
+   }
+   else {
+      $! = Scalar::Util::dualvar(0, '');
+      1;
+   }
 }
 
 sub READ {
@@ -2223,9 +2244,9 @@ sub dequeue_nb {
    _req4('O~QUN', $_id.$LF . $_cnt.$LF, $_cnt);
 }
 
-sub enqueue  { _auto('enqueue',  @_) }
-sub enqueuep { _auto('enqueuep', @_) }
-sub pending  { _req5('pending',  @_) }
+sub pending {
+   _req5('pending', @_);
+}
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
@@ -2254,18 +2275,12 @@ sub FETCHSIZE {
 
 sub FIRSTKEY {
    my ( $self ) = @_;
-   my @_keys = $self->keys;
-
-   $self->[_ITER] = sub {
-      return unless @_keys;
-      return shift(@_keys);
-   };
-
-   $self->[_ITER]->();
+   $self->[_ITER] = [ $self->keys ];
+   shift @{ $self->[_ITER] };
 }
 
 sub NEXTKEY {
-   $_[0]->[_ITER]->();
+   shift @{ $_[0]->[_ITER] };
 }
 
 sub SCALAR {
@@ -2295,7 +2310,7 @@ sub STORE {
 }
 
 sub set {
-   if (ref($_[2]) && $_blessed->($_[2]) && $_[2]->can('SHARED_ID')) {
+   if ($_blessed->($_[2]) && $_[2]->can('SHARED_ID')) {
       _req2('M~DEE', $_[0]->[0].$LF, $_[2]->SHARED_ID().$LF);
       delete $_new{ $_[2]->SHARED_ID() };
    }
@@ -2305,15 +2320,12 @@ sub set {
 
 sub FETCH { _req6('FETCH', @_) }
 sub get   { _req6('get'  , @_) }
+
 sub CLEAR { _req7('CLEAR', @_) }
 sub clear { _req7('clear', @_) }
-sub decr  { _auto('decr' , @_) }
-sub incr  { _auto('incr' , @_) }
-sub len   { _auto('len'  , @_) }
 
 {
    no strict 'refs';
-
    *{ __PACKAGE__.'::store' } = \&STORE;
 }
 
@@ -2333,7 +2345,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.001
+This document describes MCE::Shared::Server version 1.002
 
 =head1 DESCRIPTION
 

@@ -1,6 +1,26 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.002 Thu Apr 14 05:00:00 EST 2016
+
+  [BUG FIXES]
+
+  * Reached *stable* on all major platforms for MCE::Shared 1.0x.
+
+  [NEW FEATURES]
+
+  * MCE::Shared exports mce_open for more native feel to making a shared
+    file handle.
+
+  * Improved search functionality in MCE::Shared::{ Array, Hash, Ordhash }
+    and MCE::Shared::Minidb. Thank you Demian Riccardi.
+
+  [ENHANCEMENTS]
+
+  * Enabled freeze callbacks for Sereal.
+  * Switched bug tracking to Github.
+  * Tweaked test scripts.
+
 1.001 Sat Mar 19 23:00:00 EST 2016
 
   * Completed IPC optimizations for 1.0.

@@ -3,10 +3,15 @@
 use strict;
 use warnings;
 
-use Test::More tests => 7;
-use MCE::Signal qw( $tmp_dir );
-use MCE::Shared;
+use Test::More;
 use bytes;
+
+use MCE::Signal qw( $tmp_dir );
+
+BEGIN {
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Handle';
+}
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
@@ -26,7 +31,9 @@ close $fh;
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
-open $fh, "<:raw", $tmp_file;
+# mce_open $fh, "<:raw", $tmp_file or die "open error: $!";
+
+MCE::Shared->open($fh, "<:raw", $tmp_file);
 
 $ret1 = eof $fh;
 
@@ -55,4 +62,6 @@ is( $ret4, ' 3', 'shared file, SEEK, READ' );
 is( $ret5, "\n", 'shared file, GETC' );
 
 unlink $tmp_file if -f $tmp_file;
+
+done_testing;
 

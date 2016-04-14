@@ -3,11 +3,22 @@
 use strict;
 use warnings;
 
-use Test::More tests => 139;
-use MCE::Flow max_workers => 1;
-use MCE::Shared;
+use Test::More;
 
-tie my %h1,   'MCE::Shared', ( k1 => 10, k2 => '', k3 => '' );
+BEGIN {
+   use_ok 'MCE::Flow';
+   use_ok 'MCE::Shared';
+   use_ok 'MCE::Shared::Hash';
+}
+
+MCE::Flow::init {
+   max_workers => 1
+};
+
+tie my %h1, 'MCE::Shared', ( k1 => 10, k2 => '', k3 => '' );
+
+is( tied(%h1)->blessed, 'MCE::Shared::Hash', 'shared hash, tied ref' );
+
 tie my $keys, 'MCE::Shared';
 tie my $e1,   'MCE::Shared';
 tie my $e2,   'MCE::Shared';
@@ -485,4 +496,6 @@ is( $h5->mexists(qw/ 0 2 3 /),  1, 'shared hash, check mexists 1' );
 is( $h5->mexists(qw/ 0 8 3 /), '', 'shared hash, check mexists 2' );
 
 is( $h5->mdel(qw/ 3 2 1 0 /), 4, 'shared hash, check mdel' );
+
+done_testing;
 
