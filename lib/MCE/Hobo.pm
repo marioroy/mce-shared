@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.004';
+our $VERSION = '1.005';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -458,8 +458,8 @@ sub yield {
    _croak('Usage: MCE::Hobo->yield()') if ref($_[0]);
    shift if ( defined $_[0] && $_[0] eq 'MCE::Hobo' );
 
-   ( $^O eq 'MSWin32' )
-      ? sleep($_[0] || 0.0010)
+   ( $^O eq 'MSWin32' || $^O eq 'cygwin' )
+      ? sleep($_[0] || 0.015)
       : sleep($_[0] || 0.0002);
 }
 
@@ -524,7 +524,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.004
+This document describes MCE::Hobo version 1.005
 
 =head1 SYNOPSIS
 
@@ -1008,8 +1008,8 @@ C<waitone> and C<waitall> respectively.
 
 =item MCE::Hobo->yield( floating_seconds )
 
-Let this hobo yield CPU time to other hobos. By default, the class method
-calls C<sleep(0.0002)> on Unix including Cygwin and C<sleep(0.001)> on Windows.
+Let this hobo yield CPU time to other hobos. By default, the class method calls
+C<sleep(0.0002)> on Unix and C<sleep(0.015)> on Windows including Cygwin.
 
    MCE::Hobo->yield();
    MCE::Hobo->yield(0.05);

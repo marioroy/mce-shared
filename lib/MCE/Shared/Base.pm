@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.004';
+our $VERSION = '1.005';
 
 ################################################################################
 #+----------------------------------------------------------------------------+#
@@ -292,7 +292,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.004
+This document describes MCE::Shared::Base version 1.005
 
 =head1 DESCRIPTION
 

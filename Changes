@@ -1,6 +1,13 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.005 Fri Apr 22 21:30:00 EST 2016
+
+  [ENHANCEMENTS]
+
+  * Time::HiRes sleep resolution is 15 milliseconds on Windows and Cygwin.
+    Adjusted timeout values accordingly. Thank you Daniel Dragan.
+
 1.004 Fri Apr 15 00:30:00 EST 2016
 
   * Bumped version for MCE to 1.705. Thank you smoke testers.

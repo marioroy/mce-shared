@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.004';
+our $VERSION = '1.005';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -147,7 +147,7 @@ END {
          if ($_sig_name eq 'PIPE') {
             sleep 0.015 for (1..2);
          } else {
-            sleep 0.065 for (1..3);
+            sleep 0.060 for (1..3);
          }
 
          CORE::kill('QUIT', $_is_MSWin32 ? -$$ : -getpgrp)
@@ -161,7 +161,7 @@ END {
             if ($_sig_name ne 'PIPE' && $INC{'MCE/Hobo.pm'});
       }
 
-      sleep 0.065 for (1..5);
+      sleep 0.060 for (1..5);
 
       CORE::exit($?);
    }
@@ -428,7 +428,7 @@ sub _loop {
       $SIG{INT} = $SIG{$_[0]} = sub { };
 
       CORE::kill($_[0], $_is_MSWin32 ? -$$ : -getpgrp);
-      sleep 0.065 for (1..15);
+      sleep 0.060 for (1..15);
 
       CORE::kill('KILL', $$);
       CORE::exit(255);
@@ -1315,7 +1315,7 @@ sub _loop {
 
          unless ($_nbytes = unpack('I', $_val_bytes)) {
             # delay so not to consume a CPU for non-blocking ioctl
-            $_count = 0, sleep 0.008 if ++$_count > 1618;
+            $_count = 0, sleep 0.015 if ++$_count > 1618;
          }
          else {
             $_count = 0;
@@ -2345,7 +2345,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.004
+This document describes MCE::Shared::Server version 1.005
 
 =head1 DESCRIPTION
 
