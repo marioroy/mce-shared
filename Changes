@@ -1,20 +1,32 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.006 Fri Apr 29 21:30:00 EST 2016
+
+  [BUG FIXES]
+
+  * Enabled deeply sharing by default when constructing a shared array
+    or hash. Thank you, Frank Wang.
+
+  [ENHANCEMENTS]
+
+  * Localized the output record separator in error and trap routines.
+  * Optimized READ in MCE::Shared::Server.
+
 1.005 Fri Apr 22 21:30:00 EST 2016
 
   [ENHANCEMENTS]
 
   * Time::HiRes sleep resolution is 15 milliseconds on Windows and Cygwin.
-    Adjusted timeout values accordingly. Thank you Daniel Dragan.
+    Adjusted timeout values accordingly. Thank you, Daniel Dragan.
 
 1.004 Fri Apr 15 00:30:00 EST 2016
 
-  * Bumped version for MCE to 1.705. Thank you smoke testers.
+  * Bumped version for MCE to 1.705. Thank you, smoke testers.
 
 1.003 Thu Apr 14 10:00:00 EST 2016
 
-  * Bumped version for Test::More to 0.88. Thank you Paul Howarth.
+  * Bumped version for Test::More to 0.88. Thank you, Paul Howarth.
 
 1.002 Thu Apr 14 05:00:00 EST 2016
 
@@ -28,7 +40,7 @@ Revision history for Perl module MCE::Shared.
     file handle.
 
   * Improved search functionality in MCE::Shared::{ Array, Hash, Ordhash }
-    and MCE::Shared::Minidb. Thank you Demian Riccardi.
+    and MCE::Shared::Minidb. Thank you, Demian Riccardi.
 
   [ENHANCEMENTS]
 

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.005';
+our $VERSION = '1.006';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -1049,9 +1049,9 @@ sub _loop {
          chomp($_a3 = <$_DAU_R_SOCK>);
 
          my $_fh = $_obj{ $_id };
-         $_ret = read($_fh, $_buf, $_a3);
+         read($_fh, $_buf, $_a3);
 
-         print {$_DAU_R_SOCK} $_ret.$LF . length($_buf).$LF, $_buf;
+         print {$_DAU_R_SOCK} length($_buf).$LF, $_buf;
 
          return;
       },
@@ -1067,13 +1067,15 @@ sub _loop {
          # anchoring ">" at the start of line
 
          if (!eof($_fh)) {
-            if (length $/ > 1 && substr($/, 0, 1) eq "\n" && !eof $_fh) {
+            if (length $/ > 1 && substr($/, 0, 1) eq "\n") {
                $_len = length($/) - 1;
+
                if (tell $_fh) {
                   $_buf = substr($/, 1), $_buf .= readline($_fh);
                } else {
                   $_buf = readline($_fh);
                }
+
                substr($_buf, -$_len, $_len, '')
                   if (substr($_buf, -$_len) eq substr($/, 1));
             }
@@ -2097,7 +2099,6 @@ sub READ {
    print {$_DAT_W_SOCK} 'O~REA'.$LF . $_chn.$LF;
    print {$_DAU_W_SOCK} $_id.$LF . $_[2].$LF;
 
-   chomp(my $_ret = <$_DAU_W_SOCK>);
    chomp(my $_len = <$_DAU_W_SOCK>);
 
    if ($_len) {
@@ -2106,12 +2107,11 @@ sub READ {
          : read($_DAU_W_SOCK, $_[1], $_len);
    }
    else {
-      my $_ref = \$_[1];
-      $$_ref = '';
+      my $_ref = \$_[1]; $$_ref = '';
    }
 
    $_dat_un->();
-   $_ret;
+   $_len;
 }
 
 sub READLINE {
@@ -2345,7 +2345,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.005
+This document describes MCE::Shared::Server version 1.006
 
 =head1 DESCRIPTION
 

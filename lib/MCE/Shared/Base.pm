@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.005';
+our $VERSION = '1.006';
 
 ################################################################################
 #+----------------------------------------------------------------------------+#
@@ -244,7 +244,7 @@ sub _croak {
    else {
       require Carp unless $INC{'Carp.pm'};
       $SIG{__DIE__} = \&_die;
-      local $\ = undef; goto &Carp::croak;
+      goto &Carp::croak;
    }
 }
 
@@ -267,6 +267,7 @@ sub _die {
       }
    }
 
+   local $\ = undef;
    print {*STDERR} $_[0] if defined $_[0];
 
    ($^O eq 'MSWin32')
@@ -292,7 +293,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.005
+This document describes MCE::Shared::Base version 1.006
 
 =head1 DESCRIPTION
 

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.005';
+our $VERSION = '1.006';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -482,6 +482,7 @@ sub _croak {
 }
 
 sub _error {
+   local $\;
    print {*STDERR} $_[1];
 
    undef;
@@ -502,6 +503,7 @@ sub _exit {
 }
 
 sub _trap {
+   local $\;
    $SIG{ $_[0] } = sub { };
    print {*STDERR} "Signal $_[0] received in process $$.$_tid\n";
 
@@ -524,7 +526,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.005
+This document describes MCE::Hobo version 1.006
 
 =head1 SYNOPSIS
 

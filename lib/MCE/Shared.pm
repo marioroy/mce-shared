@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized );
 
-our $VERSION = '1.005';
+our $VERSION = '1.006';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -169,10 +169,9 @@ sub array {
    my $_item   = &share($_params, MCE::Shared::Array->new());
 
    if ( scalar @_ ) {
-      if ( $_params->{_DEEPLY_} ) {
-         for ( my $i = 0; $i <= $#_; $i += 1 ) {
-            &_share($_params, $_item, $_[$i]) if ref($_[$i]);
-         }
+      $_params->{_DEEPLY_} = 1;
+      for ( my $i = 0; $i <= $#_; $i += 1 ) {
+         &_share($_params, $_item, $_[$i]) if ref($_[$i]);
       }
       $_item->push(@_);
    }
@@ -319,10 +318,9 @@ sub _croak {
 
 sub _deeply_share_h {
    my ( $_params, $_item ) = ( shift, shift );
-   if ( $_params->{_DEEPLY_} ) {
-      for ( my $i = 1; $i <= $#_; $i += 2 ) {
-         &_share($_params, $_item, $_[$i]) if ref($_[$i]);
-      }
+   $_params->{_DEEPLY_} = 1;
+   for ( my $i = 1; $i <= $#_; $i += 2 ) {
+      &_share($_params, $_item, $_[$i]) if ref($_[$i]);
    }
    $_item->mset(@_);
    return;
@@ -356,7 +354,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.005
+This document describes MCE::Shared version 1.006
 
 =head1 SYNOPSIS
 
@@ -375,7 +373,7 @@ This document describes MCE::Shared version 1.005
    my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
    my $ob = MCE::Shared->share( $blessed_object );
 
-   # open call, MCE::Shared 1.002 and later
+   # open function, MCE::Shared 1.002 and later
 
    MCE::Shared->open( my $fh, ">", "/foo/bar.log" ) or die "$!";
 
@@ -571,7 +569,7 @@ venturing into the actual code, notice the dump function making a call to
 C<export> explicitly for objects of type C<MCE::Shared::Object>. This is
 necessary in order to retrieve the data from the shared-manager process.
 
-The C<export> method is described later on under the Common API section.
+The C<export> method is described later under the Common API section.
 
    sub _dump {
       require Data::Dumper unless $INC{'Data/Dumper.pm'};
