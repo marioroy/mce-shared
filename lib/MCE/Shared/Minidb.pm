@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.006';
+our $VERSION = '1.006_01';
 
 use MCE::Shared::Base;
 use MCE::Shared::Ordhash;
@@ -459,63 +459,6 @@ sub restore {
    1;
 }
 
-# iterator ( ":lists" )
-# iterator ( ":lists", "query string" )
-# iterator ( ":lists", key, "query string" )
-# iterator ( ":lists", key [, key, ... ] )
-#
-# iterator ( ":hashes" )
-# iterator ( ":hashes", "query string" )
-# iterator ( ":hashes", key, "query string" )
-# iterator ( ":hashes", key [, key, ... ] )
-#
-# iterator ( ) same as ":hashes"
-
-sub iterator {
-   my ( $self, @keys ) = @_;
-   my $data;
-
-   if ( $keys[0] =~ /^:lists$/i ) {
-      $data = $self->[1][0];
-      shift @keys;
-      if ( ! @keys ) {
-         @keys = $self->lkeys();
-      }
-      elsif ( @keys == 1 && $keys[0] =~ /^(?:key|\S+)[ ]+\S\S?[ ]+\S/ ) {
-         @keys = $self->lkeys(@keys);
-      }
-      elsif ( @keys == 2 && $keys[1] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
-         $data = $self->[1][0]->{ $keys[0] };
-         @keys = $self->lkeys(@keys);
-         return sub {
-            return unless @keys;
-            my $key = shift(@keys);
-            return ( $key => $data->[ $key ] );
-         };
-      }
-   }
-   else {
-      $data = $self->[0][0];
-      shift @keys if ( $keys[0] =~ /^:hashes$/i );
-      if ( ! @keys ) {
-         @keys = $self->hkeys();
-      }
-      elsif ( @keys == 1 && $keys[0] =~ /^(?:key|\S+)[ ]+\S\S?[ ]+\S/ ) {
-         @keys = $self->hkeys(@keys);
-      }
-      elsif ( @keys == 2 && $keys[1] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
-         $data = $self->[0][0]->{ $keys[0] };
-         @keys = $self->hkeys(@keys);
-      }
-   }
-
-   return sub {
-      return unless @keys;
-      my $key = shift(@keys);
-      return ( $key => $data->{ $key } );
-   };
-}
-
 # select_aref ( ":lists", "select string" )
 # select_aref ( ":hashes", "select string" )
 # select_aref ( "select string" )  same as ":hashes"
@@ -730,6 +673,15 @@ sub happend {
    return unless length($key);
    $self->[0]->set($key, _new_hash()) unless exists($self->[0][0]{ $key });
    length( $self->[0][0]{ $key }{ $_[2] } .= $_[3] // '' );
+}
+
+# hassign ( key, field, value [, field, value, ... ] )
+
+sub hassign {
+   my ( $self, $key ) = ( shift, shift );
+   return unless length($key);
+   $self->[0]->set($key, _new_hash()) unless exists($self->[0][0]{ $key });
+   $self->[0][0]{ $key }->assign(@_);
 }
 
 # hdecr ( key, field )
@@ -1052,6 +1004,15 @@ sub lappend {
    length( $self->[1][0]{ $key }[ $_[2] ] .= $_[3] // '' );
 }
 
+# lassign ( key, value [, value, ... ] )
+
+sub lassign {
+   my ( $self, $key ) = ( shift, shift );
+   return unless length($key);
+   $self->[1]->set($key, _new_list()) unless exists($self->[1][0]{ $key });
+   $self->[1][0]{ $key }->assign(@_);
+}
+
 # ldecr ( key, index )
 
 sub ldecr {
@@ -1147,7 +1108,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.006
+This document describes MCE::Shared::Minidb version 1.006_01
 
 =head1 SYNOPSIS
 
@@ -1254,64 +1215,6 @@ Restores the in-memory content from a file.
 
    $db->restore( "content.dat" );
 
-=item iterator ( ":hashes", key, "query string" )
-
-=item iterator ( ":hashes", key [, key, ... ] )
-
-=item iterator ( ":hashes" [, "query string" ] )
-
-Returns a code reference for iterating a list of key-href pairs stored in the
-hash of hashes (HoH). The list of keys to return is set when the closure is
-constructed. Later keys added to the primary level hash are not included.
-Subsequently, the C<undef> value is returned for deleted keys.
-
-The syntax for the C<query string> is described above.
-
-   $iter = $db->iterator( ":hashes", "some_key", "key eq some_value" );
-   $iter = $db->iterator( ":hashes", "some_key", "val eq some_value" );
-
-   while ( my ( $key, $val ) = $iter->() ) {
-      ...
-   }
-
-   $iter = $db->iterator( ":hashes", "key1", "key2", "key3" );
-   $iter = $db->iterator( ":hashes", "some_field eq some_value" );
-   $iter = $db->iterator( ":hashes", "key =~ user" );
-   $iter = $db->iterator( ":hashes" );
-
-   while ( my ( $key, $href ) = $iter->() ) {
-      ...
-   }
-
-=item iterator ( ":lists", key, "query string" )
-
-=item iterator ( ":lists", key [, key, ... ] )
-
-=item iterator ( ":lists" [, "query string" ] )
-
-Returns a code reference for iterating a list of key-aref pairs stored in the
-hash of lists (HoA). The list of keys to return is set when the closure is
-constructed. Later keys added to the primary level hash are not included.
-Subsequently, the C<undef> value is returned for deleted keys.
-
-The syntax for the C<query string> is described above.
-
-   $iter = $db->iterator( ":lists", "some_key", "key eq some_value" );
-   $iter = $db->iterator( ":lists", "some_key", "val eq some_value" );
-
-   while ( my ( $key, $val ) = $iter->() ) {
-      ...
-   }
-
-   $iter = $db->iterator( ":lists", "key1", "key2", "key3" );
-   $iter = $db->iterator( ":lists", "some_index eq some_value" );
-   $iter = $db->iterator( ":lists", "key =~ user" );
-   $iter = $db->iterator( ":lists" );
-
-   while ( my ( $key, $aref ) = $iter->() ) {
-      ...
-   }
-
 =item select_aref ( ":hashes", "select string" )
 
 =item select_href ( ":hashes", "select string" )
@@ -1405,6 +1308,17 @@ HoA select synopsis:
 =head1 API DOCUMENTATION - HASHES ( HoH )
 
 =over 3
+
+=item hassign ( key, field, value [, field, value, ... ] )
+
+Clears the hash stored at key, then sets the value of a hash field and returns
+its new value. Multiple field_value pairs may be set at once. In that case, the
+number of fields is returned. This is equivalent to C<hclear>, C<hset>.
+
+   $val = $db->hassign( "some_key", "field", "value" );
+   $len = $db->hassign( "some_key", "f1" => "val1", "f2" => "val2" );
+
+API available since 1.007.
 
 =item hclear ( key )
 
@@ -1684,6 +1598,15 @@ Increments the value of key-field by the given number and returns its new value.
 =head1 API DOCUMENTATION - LISTS ( HoA )
 
 =over 3
+
+=item lassign ( key, value [, value, ... ] )
+
+Clears the list stored at key, then prepends one or multiple values and returns
+the new length. This is equivalent to C<lclear>, C<lpush>.
+
+   $len = $db->lassign( "some_key", "val1", "val2" );
+
+API available since 1.007.
 
 =item lclear ( key )
 

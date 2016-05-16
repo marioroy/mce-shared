@@ -607,7 +607,14 @@ cmp_array(
 is( $h5->mexists(qw/ 0 2 3 /),  1, 'shared ordhash, check mexists 1' );
 is( $h5->mexists(qw/ 0 8 3 /), '', 'shared ordhash, check mexists 2' );
 
-is( $h5->mdel(qw/ 3 2 1 0 /), 4, 'shared ordhash, check mdel' );
+is( $h5->assign( qw/ 4 four 5 five 6 six / ), 3, 'shared ordhash, check assign 1' );
+
+cmp_array(
+   [ $h5->vals() ], [ qw/ four five six / ],
+   'shared ordhash, check assign 2'
+);
+
+is( $h5->mdel(qw/ 4 5 6 /), 3, 'shared ordhash, check mdel' );
 
 done_testing;
 

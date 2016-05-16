@@ -24,7 +24,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.006';
+our $VERSION = '1.006_01';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -153,7 +153,7 @@ sub DELETE {
       delete $indx->{ $key };
    };
 
-   $keys->[ $off - ${ $begi } ] = _TOMBSTONE;
+   $keys->[ $off -= ${ $begi } ] = _TOMBSTONE;
 
    # GC keys if 75% or more are tombstones
    if ( ++${ $gcnt } >= ( @{ $keys } >> 2 ) * 3 ) {
@@ -535,9 +535,15 @@ sub values {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## mdel, mexists, mget, mset, purge, sort
+## assign, mdel, mexists, mget, mset, purge, sort
 ##
 ###############################################################################
+
+# assign ( key, value [, key, value, ... ] )
+
+sub assign {
+   $_[0]->clear; shift()->mset(@_);
+}
 
 # mdel ( key [, key, ... ] )
 
@@ -816,7 +822,7 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 =head1 VERSION
 
-This document describes MCE::Shared::Ordhash version 1.006
+This document describes MCE::Shared::Ordhash version 1.006_01
 
 =head1 SYNOPSIS
 
@@ -851,6 +857,7 @@ This document describes MCE::Shared::Ordhash version 1.006
    %pairs = $oh->pairs( @keys );
    @vals  = $oh->values( @keys );             # vals is an alias for values
 
+   $len   = $ha->assign( $key/$val pairs );   # equivalent to ->clear, ->mset
    $cnt   = $oh->mdel( @keys );
    @vals  = $oh->mget( @keys );
    $bool  = $oh->mexists( @keys );            # true if all keys exists
@@ -968,6 +975,15 @@ Constructs a new object, with an optional list of key-value pairs.
 
    $oh = MCE::Shared->ordhash( @pairs );
    $oh = MCE::Shared->ordhash( );
+
+=item assign ( key, value [, key, value, ... ] )
+
+Clears the hash, then sets multiple key-value pairs and returns the number of
+keys stored in the hash. This is equivalent to C<clear>, C<mset>.
+
+   $len = $ha->assign( "key1" => "val1", "key2" => "val2" );
+
+API available since 1.007.
 
 =item clear
 
@@ -1141,7 +1157,7 @@ ordered hash. If there are no keys in the hash, returns the undefined value.
 
    ( $key, $val ) = $oh->pop;
 
-   $val = $oh->shift;
+   $val = $oh->pop;
 
 =item purge
 
@@ -1320,7 +1336,7 @@ L<Hash::Ordered> by David Golden.
 MCE::Shared has only one shared-manager process which is by design. Therefore,
 refactored tombstone deletion with extras for lesser impact to the rest of the
 library. This module differs in personality from Hash::Ordered mainly for
-compatibility with the various classes included with MCE::Shared.
+compatibility with other classes included with MCE::Shared.
 
 The following simulates a usage pattern inside L<MCE::Hobo> involving random
 key deletion. For example, an application joining a list of Hobos provided by
@@ -1345,17 +1361,16 @@ C<MCE::Hobo->list_joinable>.
    printf "duration: %7.03f secs\n", time() - $start;
 
 Both the runtime and memory consumption are captured for the demonstration.
-Result for MCE::Shared::Hash is included for seeing how much longer a given
-ordered hash implementation takes in comparison.
+Result for MCE::Shared::Hash, an unordered hash, is included for comparison.
 
    for ( shuffle $oh->keys ) { $oh->delete($_) }
 
-   0.362 secs.  55 MB  MCE::Shared::Hash; unordered hash
-   0.626 secs. 126 MB  Tie::Hash::Indexed; (XS) ordered hash
-   0.720 secs.  74 MB  MCE::Shared::Ordhash; ordered hash **
-   1.032 secs.  74 MB  Hash::Ordered; ordered hash
-   1.756 secs. 161 MB  Tie::LLHash; ordered hash
-    > 42 mins.  79 MB  Tie::IxHash; ordered hash (stopped)
+   0.378 secs.  35 MB  MCE::Shared::Hash (unordered)
+   0.437 secs.  49 MB  Tie::Hash::Indexed (XS)
+   0.733 secs.  54 MB  MCE::Shared::Ordhash
+   1.065 secs.  60 MB  Hash::Ordered
+   1.752 secs. 112 MB  Tie::LLHash
+    > 42 mins.  66 MB  Tie::IxHash
 
 Using the same demonstration above, another usage pattern inside L<MCE::Hobo>
 involves orderly hash-key deletion. For example, waiting for and joining all
@@ -1363,12 +1378,12 @@ Hobos provided by C<MCE::Hobo->list>.
 
    for ( $oh->keys ) { $oh->delete($_) }
 
-   0.332 secs.  55 MB  MCE::Shared::Hash; unordered hash
-   0.447 secs.  67 MB  MCE::Shared::Ordhash; ordered hash **
-   0.503 secs. 126 MB  Tie::Hash::Indexed; (XS) ordered hash
-   0.802 secs.  74 MB  Hash::Ordered; ordered hash
-   1.337 secs. 161 MB  Tie::LLHash; ordered hash
-    > 42 mins.  79 MB  Tie::IxHash; ordered hash (stopped)
+   0.353 secs.  35 MB  MCE::Shared::Hash (unordered)
+   0.349 secs.  49 MB  Tie::Hash::Indexed (XS)
+   0.452 secs.  41 MB  MCE::Shared::Ordhash
+   0.797 secs.  54 MB  Hash::Ordered
+   1.338 secs. 112 MB  Tie::LLHash
+    > 42 mins.  66 MB  Tie::IxHash
 
 No matter if orderly or randomly, even backwards, hash-key deletion in
 C<MCE::Shared::Ordhash> performs reasonably well.
@@ -1380,14 +1395,51 @@ comparison.
    my $oh = Hash::Ordered->new();
       $oh->set($_,$_);   $oh->keys;  $oh->delete($_);
 
-   my $oh = tie my %hash, 'Tie::Hash::Indexed';
-      $oh->STORE($_,$_); keys %hash; $oh->DELETE($_);
+   my $oh = Tie::Hash::Indexed->new();
+      $oh->set($_,$_);   $oh->keys;  $oh->delete($_);
 
    my $oh = Tie::IxHash->new();
       $oh->STORE($_,$_); $oh->Keys;  $oh->DELETE($_);
 
    my $oh = tie my %hash, 'Tie::LLHash';
       $oh->last($_,$_);  keys %hash; $oh->DELETE($_);
+
+Below, the version indicates the minimum version supported for for use with
+MCE::Shared. See documentation by respective module for interfacing via OO.
+The on-demand hash-like derefercing is provided by MCE::Shared.
+
+   use feature 'say';
+
+   use MCE::Hobo;
+   use MCE::Shared;
+
+   use Hash::Ordered;       # 0.010 or later
+   use Tie::Hash::Indexed;  # 0.05_02 or later
+
+   my $ho  = MCE::Shared->share( Hash::Ordered->new() );
+   my $thi = MCE::Shared->share( Tie::Hash::Indexed->new() );
+
+   sub parallel_task {
+      my ($id) = @_;
+
+      # OO interface
+      $ho->set("a:$id", "foo1");
+      $thi->set("a:$id", "baz1");
+
+      # hash-like dereferencing
+      $ho->{"b:$id"}  = "foo2";
+      $thi->{"b:$id"} = "baz2";
+
+      return;
+   }
+
+   MCE::Hobo->create('parallel_task', $_) for 1..4;
+   MCE::Hobo->waitall;
+
+   say $ho->{"a:1"};        # foo1
+   say $thi->{"a:2"};       # baz1
+   say $ho->get("b:3");     # foo2
+   say $thi->get("b:4");    # baz2
 
 =head1 SEE ALSO
 

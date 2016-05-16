@@ -498,7 +498,14 @@ cmp_array(
 is( $a5->mexists(qw/ 0 2 3 /),  1, 'shared array, check mexists 1' );
 is( $a5->mexists(qw/ 0 8 3 /), '', 'shared array, check mexists 2' );
 
-is( $a5->mdel(qw/ 3 2 1 0 /), 4, 'shared array, check mdel' );
+is( $a5->assign( qw/ four five six / ), 3, 'shared array, check assign 1' );
+
+cmp_array(
+   [ $a5->vals() ], [ qw/ four five six / ],
+   'shared array, check assign 2'
+);
+
+is( $a5->mdel(qw/ 2 1 0 /), 3, 'shared array, check mdel' );
 
 ##
 

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized );
 
-our $VERSION = '1.006';
+our $VERSION = '1.006_01';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -25,7 +25,6 @@ our @CARP_NOT = qw(
    MCE::Shared::Array   MCE::Shared::Condvar  MCE::Shared::Handle
    MCE::Shared::Hash    MCE::Shared::Minidb   MCE::Shared::Ordhash
    MCE::Shared::Queue   MCE::Shared::Scalar   MCE::Shared::Sequence
-
    MCE::Shared::Server  MCE::Shared::Object
 );
 
@@ -35,17 +34,20 @@ sub import {
    my $_class = shift;
 
    no strict 'refs'; no warnings 'redefine';
-   my $_pkg = caller;
-
-   *{ $_pkg.'::mce_open' } = \&open;
+   *{ caller().'::mce_open' } = \&open;
 
    return if $_imported++;
 
    while ( my $_argument = shift ) {
-      if ( lc $_argument eq 'sereal' ) {
-         MCE::Shared::Server::_use_sereal() if (shift eq '1');
+      my $_arg = lc $_argument;
+
+      if ( $_arg eq 'sereal' ) {
+         if ( shift eq '1' && !exists $INC{'PDL.pm'} ) {
+            MCE::Shared::Server::_use_sereal();
+         }
          next;
       }
+
       _croak("Error: ($_argument) invalid module option");
    }
 
@@ -80,7 +82,14 @@ sub share {
          if ($_class eq 'MCE::Queue');
 
       $_params->{'class'} = $_class;
-      $_item = MCE::Shared::Server::_new($_params, $_[0]);
+
+      if ( $_class eq 'Tie::Hash::Indexed' && $_[0]->can('as_list') ) {
+         # serialization fails via Sereal, sending key-value pairs instead
+         $_item = MCE::Shared::Server::_new($_params, [ $_[0]->as_list ])
+      }
+      else {
+         $_item = MCE::Shared::Server::_new($_params, $_[0]);
+      }
    }
    elsif ( ref $_[0] eq 'ARRAY' ) {
       if ( tied(@{ $_[0] }) && tied(@{ $_[0] })->can('SHARED_ID') ) {
@@ -184,7 +193,7 @@ sub handle {
    require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
 
    my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
-   my $_fh   = \do { local *HANDLE };
+   my $_fh   = \do { no warnings 'once'; local *FH };
 
    tie *{ $_fh }, 'MCE::Shared::Object', $_item;
    if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
@@ -211,14 +220,15 @@ sub open (@) {
    my $_item;
 
    if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } &&
-        tied(*{ $_[0] })->can('SHARED_ID')
-   ) {
+        ref tied(*{ $_[0] }) eq 'MCE::Shared::Object' ) {
       $_item = tied *{ $_[0] };
    }
    elsif ( @_ ) {
+      if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } ) {
+         close $_[0] if defined ( fileno $_[0] );
+      }
       $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
-      $_[0]  = \do { local *HANDLE };
-
+      $_[0]  = \do { no warnings 'once'; local *FH };
       tie *{ $_[0] }, 'MCE::Shared::Object', $_item;
    }
 
@@ -283,7 +293,7 @@ sub TIESCALAR { shift; MCE::Shared->scalar(@_) }
 
 sub TIEHASH {
    shift;
-   my ( $_ordered );
+   my $_ordered;
 
    if ( ref $_[0] eq 'HASH' ) {
       shift(), $_ordered = 1 if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} );
@@ -354,7 +364,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.006
+This document describes MCE::Shared version 1.006_01
 
 =head1 SYNOPSIS
 
@@ -374,8 +384,6 @@ This document describes MCE::Shared version 1.006
    my $ob = MCE::Shared->share( $blessed_object );
 
    # open function, MCE::Shared 1.002 and later
-
-   MCE::Shared->open( my $fh, ">", "/foo/bar.log" ) or die "$!";
 
    mce_open my $fh, ">", "/foo/bar.log" or die "$!";
 
@@ -437,25 +445,25 @@ This document describes MCE::Shared version 1.006
 
 =head1 DESCRIPTION
 
-This module provides data sharing capabilities for L<MCE> supporting
-threads and processes. L<MCE::Hobo>, included with the distribution,
-provides threads-like parallelization for running code asynchronously.
+This module provides data sharing capabilities for L<MCE> supporting threads
+and processes. L<MCE::Hobo> provides threads-like parallelization for running
+code asynchronously.
 
-C<MCE::Shared> enables extra functionality on systems with C<IO::FDPass>.
-Without it, MCE::Shared is unable to send file descriptors to the
+C<MCE::Shared> enables extra functionality on systems with C<IO::FDPass>
+installed. Without it, MCE::Shared is unable to send file descriptors to the
 shared-manager process for C<queue>, C<condvar>, and possibly C<handle>.
 
 As of this writing, the L<IO::FDPass> module is not a requirement for running
 C<MCE::Shared> nor is the check made during installation. The reason is that
-C<IO::FDPass> is not possible on Cygwin and not sure on AIX.
+C<IO::FDPass> is not possible on Cygwin and not sure about AIX.
 
 The following is a suggestion for systems without C<IO::FDPass>.
 This restriction applies to C<queue>, C<condvar>, and C<handle> only.
 
    use MCE::Shared;
 
-   # Construct shared queue(s) and condvar(s) first.
-   # These contain GLOB handles - freezing not allowed.
+   # Construct any shared queue(s) and condvar(s) first.
+   # These contain GLOB handles where freezing is not allowed.
 
    my $q1  = MCE::Shared->queue();
    my $q2  = MCE::Shared->queue();
@@ -463,15 +471,15 @@ This restriction applies to C<queue>, C<condvar>, and C<handle> only.
    my $cv1 = MCE::Shared->condvar();
    my $cv2 = MCE::Shared->condvar();
 
-   # Start the shared-manager manually.
+   # Afterwards, start the shared-manager manually.
 
    MCE::Shared->start();
 
-   # The shared-manager process knows of STDOUT, STDERR, STDIN
+   # The shared-manager process knows of \*STDOUT, \*STDERR, \*STDIN
 
-   my $fh1 = MCE::Shared->handle(">>", \*STDOUT);  # ok
-   my $fh2 = MCE::Shared->handle("<", "/path/to/sequence.fasta");  # ok
-   my $h1  = MCE::Shared->hash();
+   mce_open my $fh1, ">>", \*STDOUT;                  # ok
+   mce_open my $fh2, "<", "/path/to/sequence.fasta";  # ok
+   my $h1 = MCE::Shared->hash();                      # ok
 
 Otherwise, sharing is immediate and not delayed with C<IO::FDPass>. It is not
 necessary to share C<queue> and C<condvar> first or worry about starting the
@@ -545,16 +553,46 @@ C<scalar>, and C<sequence> are sugar syntax for constructing a shared object.
 
 =over 3
 
-=item open
+=item open ( filehandle, expr )
 
-=item mce_open
+=item open ( filehandle, mode, expr )
 
-The C<open> call in MCE::Shared 1.002 and later provides a native feel for
-opening a shared file handle. Opening a scalar reference is not supported.
+=item open ( filehandle, mode, reference )
 
-   MCE::Shared->open( my $fh, ">", "/foo/bar.log" ) or die "$!";
+In version 1.002 and later, constructs a new object by opening the file
+whose filename is given by C<expr>, and associates it with C<filehandle>.
+When omitting error checking at the application level, MCE::Shared emits
+a message and stop if open fails.
 
-   mce_open my $fh, ">", "/foo/bar.log" or die "$!";
+See L<MCE::Shared::Handle> for chunk IO demonstrations.
+
+   # non-shared
+   use MCE::Shared::Handle;
+
+   MCE::Shared::Handle->open( my $fh, "<", "file.log" ) or die "$!";
+   MCE::Shared::Handle::open  my $fh, "<", "file.log"   or die "$!";
+
+   # shared
+   use MCE::Shared;
+
+   MCE::Shared->open( my $fh, "<", "file.log" ) or die "$!";
+   MCE::Shared::open  my $fh, "<", "file.log"   or die "$!";
+
+Simple examples to open a file for reading:
+
+   # mce_open, exported
+   # creates a shared handle when MCE::Shared is present
+   # creates a non-shared handle, otherwise
+
+   mce_open my $fh, "< input.txt"     or die "open error: $!";
+   mce_open my $fh, "<", "input.txt"  or die "open error: $!";
+   mce_open my $fh, "<", \*STDIN      or die "open error: $!";
+
+and for writing:
+
+   mce_open my $fh, "> output.txt"    or die "open error: $!";
+   mce_open my $fh, ">", "output.txt" or die "open error: $!";
+   mce_open my $fh, ">", \*STDOUT     or die "open error: $!";
 
 =item num_sequence
 
@@ -750,35 +788,94 @@ C<pdl_float>, C<pdl_double>, C<pdl_ones>, C<pdl_sequence>, C<pdl_zeroes>,
 C<pdl_indx>, and C<pdl> are sugar syntax for PDL construction take place
 under the shared-manager process.
 
-   use PDL;
-   use PDL::IO::Storable;   # must load for freezing/thawing
+   use PDL;                 # must load PDL before MCE::Shared
+   use MCE::Shared;
 
-   use MCE::Shared;         # must load MCE::Shared after PDL
-   
-   # not efficient from memory copy/transfer and unnecessary destruction
+   # makes extra copy/transfer and unnecessary destruction
    my $ob1 = MCE::Shared->share( zeroes( 256, 256 ) );
 
-   # efficient
+   # do this instead, efficient
    my $ob1 = MCE::Shared->zeroes( 256, 256 );
 
 =over 3
 
 =item ins_inplace
 
-The C<ins_inplace> method applies to shared PDL objects. It supports two forms
-for writing bits back into the PDL object residing under the shared-manager
-process.
+The C<ins_inplace> method applies to shared PDL objects. It supports
+three forms for writing elements back to the PDL object, residing under
+the shared-manager process.
 
    # --- action taken by the shared-manager process
-   # ins_inplace(  2 args ):   $this->slice( $arg1 ) .= $arg2;
-   # ins_inplace( >2 args ):   ins( inplace( $this ), $what, @coords );
+   # ins_inplace(  1 arg  ):  ins( inplace( $this ), $what, 0, 0 );
+   # ins_inplace(  2 args ):  $this->slice( $arg1 ) .= $arg2;
+   # ins_inplace( >2 args ):  ins( inplace( $this ), $what, @coords );
 
    # --- use case
+   $o->ins_inplace( $result );                    #  1 arg
    $o->ins_inplace( ":,$start:$stop", $result );  #  2 args
    $o->ins_inplace( $result, 0, $seq_n );         # >2 args
 
-For further reading, the MCE-Cookbook on Github provides a couple PDL
-demonstrations.
+Operations such as C< + 5 > will not work on shared PDL objects. At this
+time, the OO interface is the only mechanism for communicating with the
+PDL piddle. For example, call C<slice>, C<sever>, or C<copy> to fetch
+elements. Call C<ins_inplace> to update elements.
+
+   # make a shared PDL piddle
+   my $b = MCE::Shared->pdl_sequence(20,20);
+
+   # fetch, add 10 to row 2 only
+   my $res1 = $b->slice(":,1:1") + 10;
+   $b->ins_inplace($res1, 0, 1);
+
+   # fetch, add 10 to rows 4 and 5
+   my $res2 = $b->slice(":,3:4") + 10;
+   $b->ins_inplace($res2, 0, 3);
+
+   # make non-shared, destroy/export
+   $b = $b->destroy;
+
+   print "$b\n";
+
+The following provide parallel demonstrations using C<MCE::Flow>.
+
+   use PDL;  # must load PDL before MCE::Shared
+
+   use MCE::Flow;
+   use MCE::Shared;
+
+   my $a = MCE::Shared->pdl_sequence(20,20);
+   my $b = MCE::Shared->pdl_zeroes(20,20);
+
+   # with chunking disabled
+
+   mce_flow_s {
+      max_workers => 4, chunk_size => 1
+   },
+   sub {
+      my $row = $_;
+      my $result = $a->slice(":,$row:$row") + 5;
+      $b->ins_inplace($result, 0, $row);
+   }, 0, 20 - 1;
+
+   # with chunking enabled
+
+   mce_flow_s {
+      max_workers => 4, chunk_size => 5, bounds_only => 1
+   },
+   sub {
+      my ($row1, $row2) = @{ $_ };
+      my $result = $a->slice(":,$row1:$row2") + 5;
+      $b->ins_inplace($result, 0, $row1);
+   }, 0, 20 - 1;
+
+   # make non-shared, destroy/export
+
+   $b = $b->destroy;
+
+   print "$b\n";
+
+See also L<PDL::ParallelCPU> and L<PDL::Parallel::threads>. For further
+reading, the MCE-Cookbook on Github provides two PDL demonstrations.
 
 L<https://github.com/marioroy/mce-cookbook>
 
@@ -877,10 +974,10 @@ This applies to shared array, hash, and ordhash.
 =item next
 
 The C<next> method provides parallel iteration between workers for shared
-C<array>, C<hash>, C<minidb>, C<ordhash>, and C<sequence>. In list context,
-returns the next key-value pair. This applies to C<array>, C<hash>, C<minidb>,
-and C<ordhash>. In scalar context, returns the next item. The C<undef> value
-is returned after iteration has completed.
+C<array>, C<hash>, C<ordhash>, and C<sequence>. In list context, returns the
+next key-value pair. This applies to C<array>, C<hash>, and C<ordhash>.
+In scalar context, returns the next item. The C<undef> value is returned
+after iteration has completed.
 
 Internally, the list of keys to return is set when the closure is constructed.
 Later keys added to the shared array or hash are not included. Subsequently,
@@ -981,11 +1078,9 @@ or L<MCE::Shared::Ordhash> when no arguments are given. Otherwise, resets the
 iterator with given criteria. The syntax for C<query string> is described in
 the shared module.
 
-   # rewind
-   $ar->rewind;
-   $oh->rewind;
-
    # array
+   $ar->rewind;
+
    $ar->rewind( 0, 1 );
    $ar->rewind( "val eq some_value" );
    $ar->rewind( "key >= 50 :AND val =~ /sun|moon|air|wind/" );
@@ -997,6 +1092,8 @@ the shared module.
    }
 
    # hash, ordhash
+   $oh->rewind;
+
    $oh->rewind( "key1", "key2" );
    $oh->rewind( "val eq some_value" );
    $oh->rewind( "key eq some_key :AND val =~ /sun|moon|air|wind/" );
@@ -1004,65 +1101,6 @@ the shared module.
    $oh->rewind( "key =~ /$pattern/" );
 
    while ( my ( $key, $value ) = $oh->next ) {
-      ...
-   }
-
-=item rewind ( ":hashes", key, "query string" )
-
-=item rewind ( ":hashes", key [, key, ... ] )
-
-=item rewind ( ":hashes", "query string" )
-
-=item rewind ( ":hashes" )
-
-=item rewind ( ":lists", key, "query string" )
-
-=item rewind ( ":lists", key [, key, ... ] )
-
-=item rewind ( ":lists", "query string" )
-
-=item rewind ( ":lists" )
-
-Rewinds the parallel iterator for L<MCE::Shared::Minidb> when no arguments
-are given. Otherwise, resets the iterator with given criteria. The syntax
-for C<query string> is described in the shared module.
-
-The default parallel iterator for C<minidb> is C<":hashes">.
-
-   # rewind
-   $db->rewind;
-
-   # hash of hashes
-   $db->rewind( ":hashes", "some_key", "key eq some_value" );
-   $db->rewind( ":hashes", "some_key", "val eq some_value" );
-
-   while ( my ( $key, $value ) = $db->next ) {
-      ...
-   }
-
-   $db->rewind( ":hashes", "key1", "key2", "key3" );
-   $db->rewind( ":hashes", "some_field eq some_value" );
-   $db->rewind( ":hashes", "key =~ user" );
-   $db->rewind( ":hashes" );
-
-   while ( my ( $key, $href ) = $db->next ) {
-      ...
-   }
-
-   # hash of lists
-   $db->rewind( ":lists", "some_key", "key eq some_value" );
-   $db->rewind( ":lists", "some_key", "val eq some_value" );
-
-   while ( my ( $key, $value ) = $db->next ) {
-      ...
-   }
-
-   $db->rewind( ":lists", "key1", "key2", "key3" );
-   $db->rewind( ":lists", "some_index eq some_value" );
-   $db->rewind( ":lists", "key =~ user" );
-   $db->rewind( ":lists" );
-
-   while ( my ( $key, $aref ) = $db->next ) {
       ...
    }
 

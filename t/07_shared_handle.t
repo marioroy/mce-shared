@@ -61,6 +61,32 @@ is( $ret3, '45', 'shared file, TELL' );
 is( $ret4, ' 3', 'shared file, SEEK, READ' );
 is( $ret5, "\n", 'shared file, GETC' );
 
+## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+
+mce_open $fh, ">:raw", $tmp_file or die "open error: $!";
+
+for (1..200) {
+   print $fh "some number $_ fe fi fo\n";
+}
+
+close $fh;
+
+mce_open $fh, "<:raw", $tmp_file or die "open error: $!";
+
+is( read($fh, $buf, "2k"), 2055, 'shared file, chunk 1 read' );
+is( substr($buf, -1, 1), "\n",   'shared file, chunk 1 last char' );
+
+is( read($fh, $buf, "2k"), 2062, 'shared file, chunk 2 read' );
+is( substr($buf, -1, 1), "\n",   'shared file, chunk 2 last char' );
+
+is( read($fh, $buf, "2k"),  775, 'shared file, chunk 3 read' );
+is( substr($buf, -1, 1), "\n",   'shared file, chunk 3 last char' );
+
+is( read($fh, $buf, "2k"),    0, 'shared file, EOF' );
+is( length($buf),             0, 'shared file, EOF length' );
+
+close $fh;
+
 unlink $tmp_file if -f $tmp_file;
 
 done_testing;

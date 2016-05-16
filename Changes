@@ -1,6 +1,36 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.006_01 Sat May 14 14:30:00 EST 2016
+
+  [NEW FEATURES]
+
+  * Added chunk IO capability to READ in MCE::Shared::Handle. Both non-shared
+    and shared handles are supported. See documentation for demonstrations.
+
+  * Added support for sharing Tie::Hash::Indexed through MCE::Shared.
+    Please use T::H::I v0.05_02 or later. Scroll towards the bottom of the
+    MCE::Shared::Ordhash documentation for demonstration.
+
+  * Added assign to MCE::Shared::{ Array, Hash, and Ordhash }. Ditto, added
+    hassign and lassign to MCE::Shared::{ Minidb }. Assign is inspired by
+    Tie::Hash::Indexed v0.05_02. Thank you, Marcus Holland-Moritz.
+
+  [ENHANCEMENTS]
+
+  * Improved exporting for shared MCE::Shared::{ Array, Hash, and Ordhash }.
+
+  * Now loads PDL::IO::Storable automatically when PDL is present. PDL must
+    come before MCE::Shared. Otherwise, load PDL::IO::Storable manually.
+
+  * Specifying Sereal for serialization falls back to Storable when PDL is
+    present. A warning is emitted indicating Sereal is not used.
+
+  [API CHANGES]
+
+  * Removed iterator and rewind functionality from MCE::Shared::Minidb.
+    This was done to streamline Minidb and MCE/Shared/Server.pm.
+
 1.006 Fri Apr 29 21:30:00 EST 2016
 
   [BUG FIXES]

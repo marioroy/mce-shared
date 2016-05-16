@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.006';
+our $VERSION = '1.006_01';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -189,9 +189,15 @@ sub values {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## mdel, mexists, mget, mset, range, sort
+## assign, mdel, mexists, mget, mset, range, sort
 ##
 ###############################################################################
+
+# assign ( value [, value, ... ] )
+
+sub assign {
+   $_[0]->clear; shift()->push(@_);
+}
 
 # mdel ( index [, index, ... ] )
 
@@ -388,7 +394,7 @@ MCE::Shared::Array - Array helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Array version 1.006
+This document describes MCE::Shared::Array version 1.006_01
 
 =head1 SYNOPSIS
 
@@ -423,6 +429,7 @@ This document describes MCE::Shared::Array version 1.006
    %pairs = $ar->pairs( @indices );
    @vals  = $ar->values( @indices );          # vals is an alias for values
 
+   $len   = $ar->assign( $idx/$val pairs );   # equivalent to ->clear, ->push
    $cnt   = $ar->mdel( @indices );
    @vals  = $ar->mget( @indices );
    $bool  = $ar->mexists( @indices );         # true if all indices exists
@@ -522,6 +529,15 @@ Constructs a new object, with an optional list of values.
 
    $ar = MCE::Shared->array( @list );
    $ar = MCE::Shared->array( );
+
+=item assign ( value [, value, ... ] )
+
+Clears the list, then appends one or multiple values and returns the new length.
+This is equivalent to C<clear>, C<push>.
+
+   $len = $ar->assign( "val1", "val2" );
+
+API available since 1.007.
 
 =item clear
 

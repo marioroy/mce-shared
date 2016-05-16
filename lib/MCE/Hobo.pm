@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.006';
+our $VERSION = '1.006_01';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -78,7 +78,7 @@ sub import {
       $_THAW   = shift, next if ( $_arg eq 'thaw' );
 
       if ( $_arg eq 'sereal' ) {
-         if ( shift eq '1' ) {
+         if ( shift eq '1' && !exists $INC{'PDL.pm'} ) {
             local $@; eval 'use Sereal qw( encode_sereal decode_sereal )';
             if ( !$@ ) {
                $_FREEZE = sub { encode_sereal( @_, { freeze_callbacks => 1 } ) };
@@ -526,7 +526,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.006
+This document describes MCE::Hobo version 1.006_01
 
 =head1 SYNOPSIS
 

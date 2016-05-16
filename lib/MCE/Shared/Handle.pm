@@ -12,12 +12,20 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.006';
+our $VERSION = '1.006_01';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 
 use MCE::Shared::Base;
 use bytes;
+
+sub import {
+   if (!exists $INC{'MCE/Shared.pm'}) {
+      no strict 'refs'; no warnings 'redefine';
+      *{ caller().'::mce_open' } = \&open;
+   }
+   return;
+}
 
 sub _croak {
    goto &MCE::Shared::Base::_croak;
@@ -27,12 +35,12 @@ sub TIEHANDLE {
    my $class = shift;
 
    if (ref $_[0] eq 'ARRAY') {
-      # For use with MCE::Shared to reach the Server process
-      # without a GLOB initially.
+      # For use with MCE::Shared in order to reach the Server process.
+      # Basically, without a GLOB initially.
       bless $_[0], $class;
    }
    else {
-      my $fh = \do { local *HANDLE };
+      my $fh = \do { no warnings 'once'; local *FH };
       bless $fh, $class;
 
       if (@_ == 2 && ref $_[1] && defined(my $_fd = fileno($_[1]))) {
@@ -45,15 +53,11 @@ sub TIEHANDLE {
    }
 }
 
-sub new {
-   my $class = shift;
-   my $fh = \do { local *HANDLE };
-   tie *{ $fh }, $class, @_;
-
-   (@_ && !defined(fileno $fh)) ? undef : $fh;
-}
-
-# Based on Tie::StdHandle.
+###############################################################################
+## ----------------------------------------------------------------------------
+## Based on Tie::StdHandle.
+##
+###############################################################################
 
 sub EOF     { eof($_[0]) }
 sub TELL    { tell($_[0]) }
@@ -61,20 +65,104 @@ sub FILENO  { fileno($_[0]) }
 sub SEEK    { seek($_[0], $_[1], $_[2]) }
 sub CLOSE   { close($_[0]) }
 sub BINMODE { binmode($_[0]) }
+sub GETC    { getc($_[0]) }
 
 sub OPEN {
-   $_[0]->CLOSE if defined($_[0]->FILENO);
-   @_ == 2 ? open($_[0], $_[1]) : open($_[0], $_[1], $_[2]);
+   $_[0]->CLOSE if defined ( $_[0]->FILENO );
+   @_ == 2
+      ? CORE::open($_[0], $_[1])
+      : CORE::open($_[0], $_[1], $_[2]);
 }
 
-sub READ { &CORE::read(shift(), \shift(), @_) }
-sub GETC { getc($_[0]) }
+sub open (@) {
+   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared::Handle' );
+   my $item;
+
+   if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } &&
+        ref tied(*{ $_[0] }) eq __PACKAGE__ ) {
+      $item = tied *{ $_[0] };
+   }
+   elsif ( @_ ) {
+      if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } ) {
+         close $_[0] if defined ( fileno $_[0] );
+      }
+      $_[0] = \do { no warnings 'once'; local *FH };
+      $item = tie *{ $_[0] }, __PACKAGE__;
+   }
+
+   shift; _croak("Not enough arguments for open") unless @_;
+
+   if ( !defined wantarray ) {
+      $item->OPEN(@_) or _croak("open error: $!");
+   } else {
+      $item->OPEN(@_);
+   }
+}
+
+sub READ {
+   my ($fh, $len, $auto) = ($_[0], $_[2]);
+
+   if (lc(substr $len, -1, 1) eq 'm') {
+      $auto = 1;  chop $len;  $len *= 1024 * 1024;
+   } elsif (lc(substr $len, -1, 1) eq 'k') {
+      $auto = 1;  chop $len;  $len *= 1024;
+   }
+
+   # normal use-case
+
+   if (!$auto) {
+      return @_ == 4 ? read($fh, $_[1], $len, $_[3]) : read($fh, $_[1], $len);
+   }
+
+   # chunk IO, read up to record separator or eof
+   # support special case; e.g. $/ = "\n>" for bioinformatics
+   # anchoring ">" at the start of line
+
+   my ($tmp, $ret);
+
+   if (!eof($fh)) {
+      if (length $/ > 1 && substr($/, 0, 1) eq "\n") {
+         my $len = length($/) - 1;
+
+         if (tell $fh) {
+            $tmp = substr($/, 1);
+            $ret = read($fh, $tmp, $len, length($tmp));
+         } else {
+            $ret = read($fh, $tmp, $len);
+         }
+
+         if (defined $ret) {
+            $.   += 1 if eof($fh);
+            $tmp .= readline($fh);
+
+            substr($tmp, -$len, $len, '')
+               if (substr($tmp, -$len) eq substr($/, 1));
+         }
+      }
+      elsif (defined ($ret = CORE::read($fh, $tmp, $len))) {
+         $.   += 1 if eof($fh);
+         $tmp .= readline($fh);
+      }
+   }
+   else {
+      $tmp = '', $ret = 0;
+   }
+
+   if (defined $ret) {
+      my $pos = $_[3] || 0;
+      substr($_[1], $pos, length($_[1]) - $pos, $tmp);
+      length($tmp);
+   }
+   else {
+      undef;
+   }
+}
 
 sub READLINE {
    # support special case; e.g. $/ = "\n>" for bioinformatics
    # anchoring ">" at the start of line
 
-   if (length $/ > 1 && substr($/, 0, 1) eq "\n" && !eof $_[0]) {
+   if (length $/ > 1 && substr($/, 0, 1) eq "\n" && !eof($_[0])) {
       my ($len, $buf) = (length($/) - 1);
 
       if (tell $_[0]) {
@@ -82,6 +170,7 @@ sub READLINE {
       } else {
          $buf = readline($_[0]);
       }
+
       substr($buf, -$len, $len, '')
          if (substr($buf, -$len) eq substr($/, 1));
 
@@ -128,21 +217,32 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.006
+This document describes MCE::Shared::Handle version 1.006_01
 
 =head1 SYNOPSIS
+
+   # non-shared
+   use MCE::Shared::Handle;
+
+   MCE::Shared::Handle->open( my $fh, "<", "bio.fasta" );
+   MCE::Shared::Handle::open  my $fh, "<", "bio.fasta";
+
+   mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
    # shared
    use MCE::Shared;
 
-   my $fh = MCE::Shared->handle( "<", "sample.fasta" );
+   MCE::Shared->open( my $fh, "<", "bio.fasta" );
+   MCE::Shared::open  my $fh, "<", "bio.fasta";
+
+   mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
    # demo
    use MCE::Hobo;
    use MCE::Shared;
 
-   my $ofh = MCE::Shared->handle( '>>', \*STDOUT );
-   my $ifh = MCE::Shared->handle( '<', '/path/to/input/file' );
+   mce_open my $ofh, ">>", \*STDOUT  or die "open error: $!";
+   mce_open my $ifh, "<", "file.log" or die "open error: $!";
 
    # output is serialized (not garbled), but not ordered
    sub parallel {
@@ -185,31 +285,159 @@ Helper class for L<MCE::Shared>.
 
 =over 3
 
-=item new ( expr )
+=item open ( filehandle, expr )
 
-=item new ( mode, expr )
+=item open ( filehandle, mode, expr )
 
-=item new ( mode, reference )
+=item open ( filehandle, mode, reference )
 
-Constructs a new object by opening the file whose filename is given by C<expr>,
-and returns a C<filehandle>. Unlike C<open>, MCE::Shared will emit an error
-message and stop if an error occurs during opening of the file.
+In version 1.007 and later, constructs a new object by opening the file
+whose filename is given by C<expr>, and associates it with C<filehandle>.
+When omitting error checking at the application level, MCE::Shared emits
+a message and stop if open fails.
 
+   # non-shared
+   use MCE::Shared::Handle;
+
+   MCE::Shared::Handle->open( my $fh, "<", "file.log" ) or die "$!";
+   MCE::Shared::Handle::open  my $fh, "<", "file.log"   or die "$!";
+
+   # shared
    use MCE::Shared;
 
-Simple examples to open a shared file for reading:
+   MCE::Shared->open( my $fh, "<", "file.log" ) or die "$!";
+   MCE::Shared::open  my $fh, "<", "file.log"   or die "$!";
 
-   $fh = MCE::Shared->handle( "< input.txt" );
-   $fh = MCE::Shared->handle( "<", "input.txt" );
-   $fh = MCE::Shared->handle( "<", \*STDIN );
+Simple examples to open a file for reading:
+
+   # mce_open, exported
+   # creates a shared handle when MCE::Shared is present
+   # creates a non-shared handle, otherwise
+
+   mce_open my $fh, "< input.txt"     or die "open error: $!";
+   mce_open my $fh, "<", "input.txt"  or die "open error: $!";
+   mce_open my $fh, "<", \*STDIN      or die "open error: $!";
 
 and for writing:
 
-   $fh = MCE::Shared->handle( "> output.txt" );
-   $fh = MCE::Shared->handle( ">", "output.txt" );
-   $fh = MCE::Shared->handle( ">", \*STDOUT );
+   mce_open my $fh, "> output.txt"    or die "open error: $!";
+   mce_open my $fh, ">", "output.txt" or die "open error: $!";
+   mce_open my $fh, ">", \*STDOUT     or die "open error: $!";
 
 =back
+
+=head1 CHUNK IO
+
+Starting with C<MCE::Shared> v1.007, chunk IO is possible for both non-shared
+and shared handles. Chunk IO is enabled by the trailing 'k' or 'm' for read
+size.
+
+Also, chunk IO supports the special "\n>"-like record separator. That anchors
+">" at the start of the line. Workers receive record(s) beginning with ">" and
+ending with "\n".
+
+   # non-shared handle ---------------------------------------------
+
+   use MCE::Shared::Handle;
+
+   mce_open my $fh, '<', 'bio.fasta' or die "open error: $!";
+
+   # shared handle -------------------------------------------------
+
+   use MCE::Shared;
+
+   mce_open my $fh, '<', 'bio.fasta' or die "open error: $!";
+
+   # 'k' or 'm' indicates kilobytes or megabytes respectively.
+   # Read continues reading until reaching the record separator or EOF.
+   # Optionally, one may specify the record separator.
+
+   $/ = "\n>";
+
+   while ( read($fh, my($buf), '2k') ) {
+      print "# chunk number: $.\n";
+      print "$buf\n";
+   }
+
+C<$.> contains the chunk_id above or the record_number below. C<readline($fh)>
+or C<<$fh>> may be used for reading a single record.
+
+   while ( my $buf = <$fh> ) {
+      print "# record number: $.\n";
+      print "$buf\n";
+   }
+
+The following provides a parallel demonstration. Workers receive the next chunk
+from the shared-manager process where the actual read takes place. MCE::Shared
+also works with C<threads>, C<forks>, and likely other parallel modules.
+
+   use MCE::Hobo;       # (change to) use threads; (or) use forks;
+   use MCE::Shared;
+   use feature qw( say );
+
+   my $pattern  = 'something';
+   my $hugefile = 'somehuge.log';
+
+   my $result = MCE::Shared->array();
+   mce_open my $fh, "<", $hugefile or die "open error: $!";
+
+   sub task {
+      # the trailing 'k' or 'm' for size enables chunk IO
+      while ( read $fh, my( $slurp_chunk ), "640k" ) {
+         my $chunk_id = $.;
+         # process chunk only if a match is found; ie. fast scan
+         # optionally, comment out the if statement and closing brace
+         if ( $slurp_chunk =~ /$pattern/m ) {
+            my @matches;
+            while ( $slurp_chunk =~ /([^\n]+\n)/mg ) {
+               my $line = $1; # save $1 to not lose the value
+               push @matches, $line if ( $line =~ /$pattern/ );
+            }
+            $result->push( @matches ) if @matches;
+         }
+      }
+   }
+
+   MCE::Hobo->create('task') for 1 .. 4;
+
+   # do something else
+
+   MCE::Hobo->waitall();
+
+   say $result->len();
+
+For comparison, the same thing using C<MCE::Flow>. MCE workers read the file
+directly when given a plain path, so will have lesser overhead. However, the
+run time is similar if one were to pass a file handle instead to mce_flow_f.
+
+The benefit of chunk IO is from lesser IPC for the shared-manager process
+(above). Likewise, for the mce-manager process (below).
+
+   use MCE::Flow;
+   use feature qw( say );
+
+   my $pattern  = 'something';
+   my $hugefile = 'somehuge.log';
+
+   my @result = mce_flow_f {
+      max_workers => 4, chunk_size => '640k',
+      use_slurpio => 1,
+   },
+   sub {
+      my ( $mce, $slurp_ref, $chunk_id ) = @_;
+      # process chunk only if a match is found; ie. fast scan
+      # optionally, comment out the if statement and closing brace
+      if ( $$slurp_ref =~ /$pattern/m ) {
+         my @matches;
+         while ( $$slurp_ref =~ /([^\n]+\n)/mg ) {
+            my $line = $1; # save $1 to not lose the value
+            push @matches, $line if ( $line =~ /$pattern/ );
+         }
+         MCE->gather( @matches ) if @matches;
+      }
+   }, $hugefile;
+
+   say scalar( @result );
 
 =head1 LIMITATION
 

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.006';
+our $VERSION = '1.006_01';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -178,9 +178,15 @@ sub values {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## mdel, mexists, mget, mset
+## assign, mdel, mexists, mget, mset
 ##
 ###############################################################################
+
+# assign ( key, value [, key, value, ... ] )
+
+sub assign {
+   $_[0]->clear; shift()->mset(@_);
+}
 
 # mdel ( key [, key, ... ] )
 
@@ -304,7 +310,7 @@ MCE::Shared::Hash - Hash helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Hash version 1.006
+This document describes MCE::Shared::Hash version 1.006_01
 
 =head1 SYNOPSIS
 
@@ -334,6 +340,7 @@ This document describes MCE::Shared::Hash version 1.006
    %pairs = $ha->pairs( @keys );
    @vals  = $ha->values( @keys );             # vals is an alias for values
 
+   $len   = $ha->assign( $key/$val pairs );   # equivalent to ->clear, ->mset
    $cnt   = $ha->mdel( @keys );
    @vals  = $ha->mget( @keys );
    $bool  = $ha->mexists( @keys );            # true if all keys exists
@@ -428,6 +435,15 @@ Constructs a new object, with an optional list of key-value pairs.
 
    $ha = MCE::Shared->hash( @pairs );
    $ha = MCE::Shared->hash( );
+
+=item assign ( key, value [, key, value, ... ] )
+
+Clears the hash, then sets multiple key-value pairs and returns the number of
+keys stored in the hash. This is equivalent to C<clear>, C<mset>.
+
+   $len = $ha->assign( "key1" => "val1", "key2" => "val2" );
+
+API available since 1.007.
 
 =item clear
 
