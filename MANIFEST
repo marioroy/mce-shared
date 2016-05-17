@@ -4,6 +4,8 @@ Copying
 LICENSE
 MANIFEST
 MANIFEST.SKIP
+META.json
+META.yml
 README.md
 lib/MCE/Hobo.pm
 lib/MCE/Shared.pm
@@ -29,4 +31,3 @@ t/07_shared_queue_norm.t
 t/07_shared_queue_prio.t
 t/07_shared_scalar.t
 t/07_shared_sequence.t
-META.yml

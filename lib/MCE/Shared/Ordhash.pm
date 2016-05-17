@@ -24,7 +24,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.006_01';
+our $VERSION = '1.006_02';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -822,7 +822,7 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 =head1 VERSION
 
-This document describes MCE::Shared::Ordhash version 1.006_01
+This document describes MCE::Shared::Ordhash version 1.006_02
 
 =head1 SYNOPSIS
 
@@ -1404,42 +1404,35 @@ comparison.
    my $oh = tie my %hash, 'Tie::LLHash';
       $oh->last($_,$_);  keys %hash; $oh->DELETE($_);
 
-Below, the version indicates the minimum version supported for for use with
-MCE::Shared. See documentation by respective module for interfacing via OO.
-The on-demand hash-like derefercing is provided by MCE::Shared.
+Hash::Ordered is supported for use with MCE::Shared. The on-demand hash-like
+dereferencing is provided by MCE::Shared.
 
    use feature 'say';
 
    use MCE::Hobo;
    use MCE::Shared;
 
-   use Hash::Ordered;       # 0.010 or later
-   use Tie::Hash::Indexed;  # 0.05_02 or later
+   use Hash::Ordered;  # 0.010 or later
 
-   my $ho  = MCE::Shared->share( Hash::Ordered->new() );
-   my $thi = MCE::Shared->share( Tie::Hash::Indexed->new() );
+   my $ho = MCE::Shared->share( Hash::Ordered->new() );
 
    sub parallel_task {
       my ($id) = @_;
 
       # OO interface
-      $ho->set("a:$id", "foo1");
-      $thi->set("a:$id", "baz1");
+      $ho->set("$id", "foo") if ($id == 1);
 
       # hash-like dereferencing
-      $ho->{"b:$id"}  = "foo2";
-      $thi->{"b:$id"} = "baz2";
+      $ho->{"$id"} = "baz"   if ($id == 2);
 
       return;
    }
 
-   MCE::Hobo->create('parallel_task', $_) for 1..4;
+   MCE::Hobo->create("parallel_task", $_) for 1..2;
    MCE::Hobo->waitall;
 
-   say $ho->{"a:1"};        # foo1
-   say $thi->{"a:2"};       # baz1
-   say $ho->get("b:3");     # foo2
-   say $thi->get("b:4");    # baz2
+   say $ho->{"1"};     # foo
+   say $ho->get("2");  # baz
 
 =head1 SEE ALSO
 

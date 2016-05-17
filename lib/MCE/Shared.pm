@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized );
 
-our $VERSION = '1.006_01';
+our $VERSION = '1.006_02';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -82,14 +82,7 @@ sub share {
          if ($_class eq 'MCE::Queue');
 
       $_params->{'class'} = $_class;
-
-      if ( $_class eq 'Tie::Hash::Indexed' && $_[0]->can('as_list') ) {
-         # serialization fails via Sereal, sending key-value pairs instead
-         $_item = MCE::Shared::Server::_new($_params, [ $_[0]->as_list ])
-      }
-      else {
-         $_item = MCE::Shared::Server::_new($_params, $_[0]);
-      }
+      $_item = MCE::Shared::Server::_new($_params, $_[0]);
    }
    elsif ( ref $_[0] eq 'ARRAY' ) {
       if ( tied(@{ $_[0] }) && tied(@{ $_[0] })->can('SHARED_ID') ) {
@@ -364,7 +357,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.006_01
+This document describes MCE::Shared version 1.006_02
 
 =head1 SYNOPSIS
 
@@ -715,7 +708,7 @@ The object must not contain any C<GLOB>'s or C<CODE_REF>'s or the transfer
 will fail.
 
 Unlike with C<threads::shared>, objects are not deeply shared. The shared
-object is accessible only through the OO interface.
+object is accessible through the OO interface.
 
    use MCE::Shared;
    use Hash::Ordered;

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.006_01';
+our $VERSION = '1.006_02';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -140,7 +140,7 @@ sub create {
 
    if ( $INC{'MCE.pm'} && $MCE::MCE->{use_threads} && MCE->wid() ) {
       return $self->_error(
-         "spawning MCE::Hobo by threaded MCE worker is not supported\n"
+         "spawning MCE::Hobo by MCE, spawned as threads, is not supported\n"
       );
    }
 
@@ -173,6 +173,8 @@ sub create {
    ## spawn a hobo process  --- --- --- --- --- --- --- --- --- --- --- --- ---
 
    my $_id = $_STAT->incr("$mgr_id:id");
+      $_id = $_STAT->set("$mgr_id:id", 1) if ($_id > 2e9);
+
    my $pid = fork();
 
    if ( !defined $pid ) {
@@ -191,7 +193,7 @@ sub create {
       local $| = 1;
 
       $SIG{QUIT} = \&_exit; $SIG{TERM} = $SIG{INT} = $SIG{HUP} = \&_trap;
-      MCE::Shared::init() if ( !$INC{'MCE.pm'} || !MCE->wid() );
+      MCE::Shared::init($_id);
 
       $_SELF = $self, $_SELF->{WRK_ID} = $wrk_id, $_SELF->{PID} = $$;
       $_LIST = undef;
@@ -526,7 +528,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.006_01
+This document describes MCE::Hobo version 1.006_02
 
 =head1 SYNOPSIS
 

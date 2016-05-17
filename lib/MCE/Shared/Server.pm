@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.006_01';
+our $VERSION = '1.006_02';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -107,13 +107,13 @@ my $LF = "\012"; Internals::SvREADONLY($LF, 1);
 
 my $_is_MSWin32 = ($^O eq 'MSWin32') ? 1 : 0;
 my $_tid = $_has_threads ? threads->tid() : 0;
+my $_oid = "$$.$_tid";
 
 my %_iter_allow = (qw/
-   Hash::Ordered        1
    MCE::Shared::Array   1
    MCE::Shared::Hash    1
    MCE::Shared::Ordhash 1
-   Tie::Hash::Indexed   1
+   Hash::Ordered        1
 /);
 
 sub _croak { goto &Carp::croak }
@@ -306,9 +306,6 @@ sub _share {
       $_obj{ $_id } = Symbol::gensym();
       bless $_obj{ $_id }, 'MCE::Shared::Handle';
    }
-   elsif ($_class eq 'Tie::Hash::Indexed' && ref($_item) eq 'ARRAY') {
-      $_obj{ $_id } = Tie::Hash::Indexed->new(@{ $_item });
-   }
    else {
       $_obj{ $_id } = $_item;
    }
@@ -325,11 +322,12 @@ sub _start {
    $SIG{HUP} = $SIG{INT} = $SIG{PIPE} = $SIG{QUIT} = $SIG{TERM} = \&_trap
       if (!$_is_MSWin32 && !$INC{'MCE/Signal.pm'});
 
-   my $_data_channels = ($INC{'MCE.pm'} && MCE->wid()) ? 1 : DATA_CHANNELS;
-   my $_is_child = $_has_threads ? 0 : 1;
+   local $_; $_init_pid = "$$.$_tid";
+
+   my $_data_channels = ($_oid eq $_init_pid) ? DATA_CHANNELS : 2;
+   my $_is_child = ($_has_threads && $^O eq 'MSWin32') ? 0 : 1;
 
    $_SVR = { _data_channels => $_data_channels };
-   local $_; $_init_pid = "$$.$_tid";
 
    MCE::Util::_sock_pair($_SVR, qw(_dat_r_sock _dat_w_sock), $_)
       for (0 .. $_data_channels);
@@ -369,7 +367,8 @@ sub _stop {
       MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
 
       if (!ref $_svr_pid) {
-         CORE::kill('PIPE', $_svr_pid), waitpid($_svr_pid, 0);
+         CORE::kill('PIPE', $_svr_pid);
+         waitpid($_svr_pid, 0);
       }
       for my $_i (1 .. $_SVR->{_data_channels}) {
          $_SVR->{'_mutex_'.$_i}->DESTROY('shutdown');
@@ -513,7 +512,7 @@ sub _loop {
    my $_iterator = sub {
       if (!exists $_itr{ $_id }) {
 
-         # MCE::Shared::{ Array, Hash, Ordhash }, Hash::Ordered, T::H::I
+         # MCE::Shared::{ Array, Hash, Ordhash }, Hash::Ordered
          if ($_iter_allow{ $_all{ $_id } } && $_obj{ $_id }->can('keys')) {
             my @_keys = ( exists $_itr{ "$_id:args" } )
                ? $_obj{ $_id }->keys( @{ $_itr{ "$_id:args" } } )
@@ -593,7 +592,7 @@ sub _loop {
 
       SHR_M_CID.$LF => sub {                      # ClientID request
          print {$_DAU_R_SOCK} (++$_client_id).$LF;
-         $_client_id = 0 if ($_client_id > 2e6);
+         $_client_id = 0 if ($_client_id > 2e9);
 
          return;
       },
@@ -816,10 +815,7 @@ sub _loop {
             my $_buf;
 
             # MCE::Shared::{ Array, Hash, Ordhash }, Hash::Ordered
-            if (
-               $_all{ $_id } =~ /^MCE::Shared::(?:Array|Hash|Ordhash)$/ ||
-               $_all{ $_id } eq 'Hash::Ordered'
-            ) {
+            if ($_iter_allow{ $_all{ $_id } } && $_obj{ $_id }->can('clone')) {
                $_buf = ($_len)
                   ? $_freeze->($_obj{ $_id }->clone(@{ $_thaw->($_keys) }))
                   : $_freeze->($_obj{ $_id });
@@ -833,14 +829,6 @@ sub _loop {
                   _cw_sock _cr_sock _mutex
                ) };
                $_buf = $_freeze->(\%_ret);
-            }
-
-            # Tie::Hash::Indexed
-            elsif (
-               $_all{ $_id } eq 'Tie::Hash::Indexed' &&
-               $_obj{ $_id }->can('as_list')
-            ) {
-               $_buf = $_freeze->([ $_obj{ $_id }->as_list ]);
             }
 
             # Other
@@ -1399,10 +1387,9 @@ use constant {
 };
 
 my %_hash_deref_allow = (qw/
-   Hash::Ordered        1
    MCE::Shared::Hash    1
    MCE::Shared::Ordhash 1
-   Tie::Hash::Indexed   1
+   Hash::Ordered        1
 /);
 
 use overload (
@@ -1795,15 +1782,6 @@ sub export {
          $_item->set($_item->get()->export($_lkup));
       }
    }
-   elsif ( $_class eq 'Tie::Hash::Indexed' && ref($_item) eq 'ARRAY' ) {
-      my $size = @{ $_item };
-      for ( my $i = 1; $i < $size; $i += 2 ) {
-         if ( $_blessed->($_item->[$i]) && $_item->[$i]->can('export') ) {
-            $_item->[$i] = $_item->[$i]->export($_lkup);
-         }
-      }
-      return Tie::Hash::Indexed->new(@{ $_item });
-   }
    else {
       if    ( $_class eq 'MCE::Shared::Hash'    ) { $_data = $_item      }
       elsif ( $_class eq 'MCE::Shared::Ordhash' ) { $_data = $_item->[0] }
@@ -1825,7 +1803,7 @@ sub iterator {
    my ( $self, @keys ) = @_;
    my $pkg = $self->blessed();
 
-   # MCE::Shared::{ Array, Hash, Ordhash }, Hash::Ordered, T::H::I
+   # MCE::Shared::{ Array, Hash, Ordhash }, Hash::Ordered
    if ( $_iter_allow{ $pkg } && eval qq{ $pkg->can('keys') } ) {
       if ( ! @keys ) {
          @keys = $self->keys;
@@ -2314,7 +2292,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.006_01
+This document describes MCE::Shared::Server version 1.006_02
 
 =head1 DESCRIPTION
 
