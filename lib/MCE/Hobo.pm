@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.006_02';
+our $VERSION = '1.007';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -132,16 +132,17 @@ sub create {
 
    ## error checking -- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
-   if ( $^O eq 'MSWin32' && $INC{'MCE.pm'} && MCE->wid() ) {
-      return $self->_error(
-         "spawning MCE::Hobo by MCE worker is not supported on MSWin32\n"
-      );
-   }
-
-   if ( $INC{'MCE.pm'} && $MCE::MCE->{use_threads} && MCE->wid() ) {
-      return $self->_error(
-         "spawning MCE::Hobo by MCE, spawned as threads, is not supported\n"
-      );
+   if ( $INC{'MCE.pm'} && MCE->wid() ) {
+      if ( $^O eq 'MSWin32' ) {
+         return $self->_error(
+            "spawning MCE Hobo by MCE worker is not supported on MSWin32\n"
+         );
+      }
+      if ( $MCE::MCE->{use_threads} ) {
+         return $self->_error(
+            "spawning MCE Hobo by threaded MCE worker is not supported\n"
+         );
+      }
    }
 
    if ( ref($func) ne 'CODE' && !length($func) ) {
@@ -173,8 +174,6 @@ sub create {
    ## spawn a hobo process  --- --- --- --- --- --- --- --- --- --- --- --- ---
 
    my $_id = $_STAT->incr("$mgr_id:id");
-      $_id = $_STAT->set("$mgr_id:id", 1) if ($_id > 2e9);
-
    my $pid = fork();
 
    if ( !defined $pid ) {
@@ -505,8 +504,7 @@ sub _exit {
 }
 
 sub _trap {
-   local $\;
-   $SIG{ $_[0] } = sub { };
+   local $\; $SIG{ $_[0] } = sub { };
    print {*STDERR} "Signal $_[0] received in process $$.$_tid\n";
 
    _exit();
@@ -528,7 +526,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.006_02
+This document describes MCE::Hobo version 1.007
 
 =head1 SYNOPSIS
 

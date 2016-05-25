@@ -1,7 +1,7 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.006_02 Tue May 17 14:00:00 EST 2016
+1.007 Wed May 25 16:00:00 EST 2016
 
   [NEW FEATURES]
 
@@ -16,6 +16,7 @@ Revision history for Perl module MCE::Shared.
 
   [ENHANCEMENTS]
 
+  * Close shared file-handles when stopping the shared-manager process.
   * Improved exporting for shared MCE::Shared::{ Array, Hash, and Ordhash }.
 
   * Now loads PDL::IO::Storable automatically when PDL is present. PDL must

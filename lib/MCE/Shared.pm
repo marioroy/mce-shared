@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized );
 
-our $VERSION = '1.006_02';
+our $VERSION = '1.007';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -132,7 +132,11 @@ sub share {
 
 sub start { MCE::Shared::Server::_start() }
 sub stop  { MCE::Shared::Server::_stop()  }
-sub init  { MCE::Shared::Object::_init()  }
+
+sub init {
+   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
+   MCE::Shared::Object::_init(@_);
+}
 
 sub condvar {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
@@ -357,7 +361,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.006_02
+This document describes MCE::Shared version 1.007
 
 =head1 SYNOPSIS
 
@@ -829,7 +833,7 @@ elements. Call C<ins_inplace> to update elements.
 
    print "$b\n";
 
-The following provide parallel demonstrations using C<MCE::Flow>.
+The following provides parallel demonstrations using C<MCE::Flow>.
 
    use PDL;  # must load PDL before MCE::Shared
 

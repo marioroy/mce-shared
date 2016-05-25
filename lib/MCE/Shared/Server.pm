@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.006_02';
+our $VERSION = '1.007';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -208,7 +208,10 @@ sub _new {
 
    my ($_buf, $_id, $_len);
 
-   my $_chn        = 1;
+   my $_chn = ($_has_threads)
+      ? $_tid % $_SVR->{_data_channels} + 1
+      : abs($$) % $_SVR->{_data_channels} + 1;
+
    my $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
    my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}->[$_chn];
@@ -256,7 +259,10 @@ sub _new {
 sub _incr_count {
    return unless $_svr_pid;
 
-   my $_chn        = 1;
+   my $_chn = ($_has_threads)
+      ? $_tid % $_SVR->{_data_channels} + 1
+      : abs($$) % $_SVR->{_data_channels} + 1;
+
    my $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
    my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}->[$_chn];
@@ -324,7 +330,7 @@ sub _start {
 
    local $_; $_init_pid = "$$.$_tid";
 
-   my $_data_channels = ($_oid eq $_init_pid) ? DATA_CHANNELS : 2;
+   my $_data_channels = ($_oid eq $_init_pid) ? DATA_CHANNELS : 4;
    my $_is_child = ($_has_threads && $^O eq 'MSWin32') ? 0 : 1;
 
    $_SVR = { _data_channels => $_data_channels };
@@ -365,11 +371,8 @@ sub _stop {
 
    if (defined $_svr_pid) {
       MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
+      waitpid($_svr_pid, 0) if !ref($_svr_pid);
 
-      if (!ref $_svr_pid) {
-         CORE::kill('PIPE', $_svr_pid);
-         waitpid($_svr_pid, 0);
-      }
       for my $_i (1 .. $_SVR->{_data_channels}) {
          $_SVR->{'_mutex_'.$_i}->DESTROY('shutdown');
       }
@@ -1305,8 +1308,6 @@ sub _loop {
             $_warn2->($_fn, blessed($_obj{ $_id }));
          }
 
-         print {$_DAU_R_SOCK} $LF;
-
          return;
       },
 
@@ -1322,27 +1323,39 @@ sub _loop {
 
       my $_val_bytes = "\x00\x00\x00\x00";
       my $_ptr_bytes = unpack('I', pack('P', $_val_bytes));
-      my $_nbytes; my $_count = 0;
+      my $_nbytes; my $_count = 1; my $_retries = 0;
       my $_done = 0;
 
       while (!$_done) {
-         ioctl($_DAT_R_SOCK, 0x4004667f, $_ptr_bytes);  # MSWin32 FIONREAD
 
-         unless ($_nbytes = unpack('I', $_val_bytes)) {
-            # delay so not to consume a CPU for non-blocking ioctl
-            $_count = 0, sleep 0.015 if ++$_count > 1618;
+         RETRY: {
+            ioctl($_DAT_R_SOCK, 0x4004667f, $_ptr_bytes);  # MSWin32 FIONREAD
+
+            unless ($_nbytes = unpack('I', $_val_bytes)) {
+               # delay so not to consume a CPU from non-blocking ioctl
+               if ($_count) {
+                  if (++$_count > 1280) {
+                     $_count = 1, sleep 0.015;
+                     $_count = 0 if ++$_retries == 3;
+                  }
+               }
+               else {
+                  sleep 0.045;
+               }
+               redo RETRY;
+            }
          }
-         else {
-            $_count = 0;
-            do {
-               sysread($_DAT_R_SOCK, $_func, 8);
-               $_done = 1, last() unless length($_func) == 8;
 
-               $_DAU_R_SOCK = $_channels->[ substr($_func, -2, 2, '') ];
-               $_output_function{$_func}();
+         $_count = 1, $_retries = 0;
 
-            } while (($_nbytes -= 8) >= 8);
-         }
+         do {
+            sysread($_DAT_R_SOCK, $_func, 8);
+            $_done = 1, last() unless length($_func) == 8;
+
+            $_DAU_R_SOCK = $_channels->[ substr($_func, -2, 2, '') ];
+            $_output_function{$_func}();
+
+         } while (($_nbytes -= 8) >= 8);
       }
    }
    else {
@@ -1356,6 +1369,10 @@ sub _loop {
    }
 
    # Exiting via POSIX's _exit to avoid END blocks.
+
+   for ( values %_obj ) {
+      close $_ if ( ref($_) eq 'MCE::Shared::Handle' && defined fileno($_) );
+   }
 
    $_is_child ? POSIX::_exit(0) : threads->exit(0);
 
@@ -1430,8 +1447,8 @@ my $_ready   = \&MCE::Util::_sock_ready;
 # Hook for threads.
 
 sub CLONE {
-   %_new = ();
-   &_init(threads->tid()) if ($_has_threads && !$INC{'MCE.pm'});
+   $_tid = threads->tid() if $_has_threads;
+   %_new = (), &_init($_tid) if (!$INC{'MCE.pm'} || MCE->wid == 0);
 }
 
 # Private functions.
@@ -1494,7 +1511,7 @@ sub _get_client_id {
 sub _init {
    return unless defined $_SVR;
 
-   my $_wid = $_[0] || &_get_client_id();
+   my $_wid = $_[0] // &_get_client_id();
       $_wid = $$ if ( $_wid !~ /\d+/ );
 
    $_chn        = abs($_wid) % $_SVR->{_data_channels} + 1;
@@ -1701,8 +1718,6 @@ sub _req7 {
    $_dat_ex->();
    print {$_DAT_W_SOCK} 'O~CLR'.$LF . $_chn.$LF;
    print {$_DAU_W_SOCK} $self->[0].$LF . $_fn.$LF;
-
-   <$_DAU_W_SOCK>;
    $_dat_un->();
 
    return;
@@ -1774,6 +1789,7 @@ sub export {
    my $_data;
 
    if ( $_class eq 'MCE::Shared::Array' ) {
+      ## no critic
       map { $_ = $_->export($_lkup) if $_blessed->($_) && $_->can('export') }
          @{ $_item };
    }
@@ -1787,6 +1803,7 @@ sub export {
       elsif ( $_class eq 'MCE::Shared::Ordhash' ) { $_data = $_item->[0] }
       elsif ( $_class eq 'Hash::Ordered'        ) { $_data = $_item->[0] }
 
+      ## no critic
       map { $_ = $_->export($_lkup) if $_blessed->($_) && $_->can('export') }
          values %{ $_data } if defined( $_data );
    }
@@ -2292,7 +2309,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.006_02
+This document describes MCE::Shared::Server version 1.007
 
 =head1 DESCRIPTION
 
