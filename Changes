@@ -1,6 +1,11 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.008 Wed May 25 22:00:00 EST 2016
+
+  * Applied correction in META.json.
+  * Bumped MCE dependency to 1.707.
+
 1.007 Wed May 25 16:00:00 EST 2016
 
   [NEW FEATURES]
