@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.008';
+our $VERSION = '1.100';
 
 use MCE::Shared::Base;
 use MCE::Shared::Ordhash;
@@ -1108,7 +1108,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.008
+This document describes MCE::Shared::Minidb version 1.100
 
 =head1 SYNOPSIS
 
@@ -1361,7 +1361,7 @@ Determines if a key exists in the first level hash (H)oH.
 
 =item hget ( key, field [, field, ... ] )
 
-Gets the values of all given hash fields. The C<undef> value is retuned for
+Gets the values of all given hash fields. The C<undef> value is returned for
 fields which do not exists in the hash stored at key. Likewise, the C<undef>
 value is returned if the key does not exists in the first level hash (H)oH.
 
@@ -1660,7 +1660,7 @@ Determines if a key exists in the first level hash (H)oA.
 
 =item lget ( key, index [, index, ... ] )
 
-Gets the values of all given list indices. The C<undef> value is retuned for
+Gets the values of all given list indices. The C<undef> value is returned for
 indices which do not exists in the list stored at key. Likewise, the C<undef>
 value is returned if the key does not exists in the first level hash (H)oA.
 

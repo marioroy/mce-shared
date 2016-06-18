@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.008';
+our $VERSION = '1.100';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -611,7 +611,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.008
+This document describes MCE::Shared::Queue version 1.100
 
 =head1 SYNOPSIS
 
@@ -905,7 +905,7 @@ numbers, not the data.
 
 =back
 
-=head1 ACKNOWLEDGEMENTS
+=head1 ACKNOWLEDGMENTS
 
 =over 3
 

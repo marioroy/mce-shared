@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.008';
+our $VERSION = '1.100';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -310,7 +310,7 @@ MCE::Shared::Hash - Hash helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Hash version 1.008
+This document describes MCE::Shared::Hash version 1.100
 
 =head1 SYNOPSIS
 
@@ -441,7 +441,8 @@ Constructs a new object, with an optional list of key-value pairs.
 Clears the hash, then sets multiple key-value pairs and returns the number of
 keys stored in the hash. This is equivalent to C<clear>, C<mset>.
 
-   $len = $ha->assign( "key1" => "val1", "key2" => "val2" );
+   $len = $ha->assign( "key1" => "val1", "key2" => "val2" );  # 2
+   $len = %{$ha} = ( "key1" => "val1", "key2" => "val2" );    # 4
 
 API available since 1.007.
 
@@ -530,9 +531,13 @@ Returns all keys in the hash when no arguments are given. Otherwise, returns
 the given keys in the same order. Keys that do not exist will have the C<undef>
 value. In scalar context, returns the size of the hash.
 
-   @keys = $ha->keys;
    @keys = $ha->keys( "key1", "key2" );
-   $len  = $ha->keys;
+
+   @keys = $ha->keys;     # faster
+   @keys = keys %{$ha};   # involves TIE overhead
+
+   $len  = $ha->keys;     # ditto
+   $len  = keys %{$ha};
 
 =item keys ( "query string" )
 
@@ -587,18 +592,19 @@ in the hash.
 
 C<merge> is an alias for C<mset>.
 
-=item pairs ( "query string" )
+=item pairs ( key [, key, ... ] )
 
 Returns key-value pairs in the hash when no arguments are given. Otherwise,
 returns key-value pairs for the given keys in the same order. Keys that do not
 exist will have the C<undef> value. In scalar context, returns the size of the
 hash.
 
-   @pairs = $ha->pairs;
    @pairs = $ha->pairs( "key1", "key2" );
+
+   @pairs = $ha->pairs;
    $len   = $ha->pairs;
 
-=item pairs ( key [, key, ... ] )
+=item pairs ( "query string" )
 
 Returns only key-value pairs that match the given criteria. It returns an
 empty list if the search found nothing. The syntax for the C<query string> is
@@ -622,9 +628,13 @@ Returns all values in the hash when no arguments are given. Otherwise, returns
 values for the given keys in the same order. Keys that do not exist will have
 the C<undef> value. In scalar context, returns the size of the hash.
 
-   @vals = $ha->values;
    @vals = $ha->values( "key1", "key2" );
-   $len  = $ha->values;
+
+   @vals = $ha->values;     # faster
+   @vals = values %{$ha};   # involves TIE overhead
+
+   $len  = $ha->values;     # ditto
+   $len  = values %{$ha};
 
 =item values ( "query string" )
 

@@ -17,7 +17,7 @@ MCE::Flow::init {
 
 tie my %h1, 'MCE::Shared', { ordered => 1 }, ( k1 => 10, k2 => '', k3 => '' );
 
-is( tied(%h1)->blessed, 'MCE::Shared::Ordhash', 'shared ordhash, tied ref' );
+is( tied(%h1)->blessed(), 'MCE::Shared::Ordhash', 'shared ordhash, tied ref' );
 
 tie my $keys, 'MCE::Shared';
 tie my $e1,   'MCE::Shared';
@@ -81,9 +81,7 @@ is( $h1{ret}->[1], 'air', 'shared ordhash, check auto freeze/thaw' );
 
 my $h2 = MCE::Shared->ordhash();
 
-$h2->clear;
-
-$h2->push( s => 'where', o => 'the', r => 'way', u => 'high' );
+$h2->assign( s => 'where', o => 'the', r => 'way', u => 'high' );
 
 is( join('', $h2->keys), 'soru', 'shared ordhash, check keys' );
 is( join('', $h2->vals), 'wherethewayhigh', 'shared ordhash, check values' );
@@ -125,9 +123,7 @@ is( join('', $h2->pairs), 'otheyoudreameduhigh', 'shared ordhash, check splice' 
 ##          '2' => '3',
 ## }
 
-$h5->clear();
-
-$h5->mset( qw(
+$h5->assign( qw(
    Make me a channel of Your peace...
    Where there's despair in life let me bring hope...
    Where there is darkness only light...
@@ -367,9 +363,7 @@ is( $h5->vals('val >= 18'), 1, 'shared ordhash, check find vals >= match (vals)'
 
 ## find undef
 
-$h5->clear();
-
-$h5->mset( qw/ spring summer fall winter / );
+$h5->assign( qw/ spring summer fall winter / );
 $h5->set( key => undef );
 
 cmp_array(
@@ -400,7 +394,7 @@ cmp_array(
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
-$h5->clear(); $h5->mset( 1 => 1, 6 => 3, 2 => 6, 5 => 5, 4 => 4, 10 => 10 );
+$h5->assign( 1 => 1, 6 => 3, 2 => 6, 5 => 5, 4 => 4, 10 => 10 );
 
 ## sorted keys: by val
 
@@ -568,7 +562,7 @@ cmp_array(
 
 my @list;
 
-$h5->clear(); $h5->mset( 0, 'over', 1, 'the', 2, 'rainbow', 3, 77 );
+$h5->assign( 0, 'over', 1, 'the', 2, 'rainbow', 3, 77 );
 
 while ( my $val = $h5->next ) { push @list, $val; }
 

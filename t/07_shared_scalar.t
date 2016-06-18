@@ -18,7 +18,7 @@ MCE::Flow::init {
 tie my $s1, 'MCE::Shared', 10;
 tie my $s2, 'MCE::Shared', '';
 
-is( tied($s1)->blessed, 'MCE::Shared::Scalar', 'shared scalar, tied ref' );
+is( tied($s1)->blessed(), 'MCE::Shared::Scalar', 'shared scalar, tied ref' );
 
 my $s5 = MCE::Shared->scalar( 0 );
 

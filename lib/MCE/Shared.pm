@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized );
 
-our $VERSION = '1.008';
+our $VERSION = '1.100';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -28,28 +28,9 @@ our @CARP_NOT = qw(
    MCE::Shared::Server  MCE::Shared::Object
 );
 
-my $_imported;
-
 sub import {
-   my $_class = shift;
-
    no strict 'refs'; no warnings 'redefine';
    *{ caller().'::mce_open' } = \&open;
-
-   return if $_imported++;
-
-   while ( my $_argument = shift ) {
-      my $_arg = lc $_argument;
-
-      if ( $_arg eq 'sereal' ) {
-         if ( shift eq '1' && !exists $INC{'PDL.pm'} ) {
-            MCE::Shared::Server::_use_sereal();
-         }
-         next;
-      }
-
-      _croak("Error: ($_argument) invalid module option");
-   }
 
    return;
 }
@@ -179,7 +160,7 @@ sub array {
       for ( my $i = 0; $i <= $#_; $i += 1 ) {
          &_share($_params, $_item, $_[$i]) if ref($_[$i]);
       }
-      $_item->push(@_);
+      $_item->assign(@_);
    }
 
    $_item;
@@ -329,7 +310,7 @@ sub _deeply_share_h {
    for ( my $i = 1; $i <= $#_; $i += 2 ) {
       &_share($_params, $_item, $_[$i]) if ref($_[$i]);
    }
-   $_item->mset(@_);
+   $_item->assign(@_);
    return;
 }
 
@@ -361,7 +342,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.008
+This document describes MCE::Shared version 1.100
 
 =head1 SYNOPSIS
 
@@ -711,18 +692,21 @@ process and returns a C<MCE::Shared::Object> containing the C<SHARED_ID>.
 The object must not contain any C<GLOB>'s or C<CODE_REF>'s or the transfer
 will fail.
 
-Unlike with C<threads::shared>, objects are not deeply shared. The shared
-object is accessible through the OO interface.
-
    use MCE::Shared;
+   use MCE::Shared::Ordhash;
+
+   my $oh1 = MCE::Shared->share( MCE::Shared::Ordhash->new() );
+   my $oh2 = MCE::Shared->ordhash();       # same thing
+
+   $oh1->assign( @pairs );
+   $oh2->assign( @pairs );
+
    use Hash::Ordered;
 
    my ($ho_shared, $ho_nonshared);
 
    $ho_shared = MCE::Shared->share( Hash::Ordered->new() );
-
-   $ho_shared->push( @pairs );             # OO interface only
-   $ho_shared->mset( @pairs );
+   $ho_shared->push( @pairs );
 
    $ho_nonshared = $ho_shared->export();   # back to non-shared
    $ho_nonshared = $ho_shared->destroy();  # including destruction

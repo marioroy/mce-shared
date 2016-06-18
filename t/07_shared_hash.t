@@ -17,7 +17,7 @@ MCE::Flow::init {
 
 tie my %h1, 'MCE::Shared', ( k1 => 10, k2 => '', k3 => '' );
 
-is( tied(%h1)->blessed, 'MCE::Shared::Hash', 'shared hash, tied ref' );
+is( tied(%h1)->blessed(), 'MCE::Shared::Hash', 'shared hash, tied ref' );
 
 tie my $keys, 'MCE::Shared';
 tie my $e1,   'MCE::Shared';
@@ -93,9 +93,7 @@ is( $h1{ret}->[1], 'air', 'shared hash, check auto freeze/thaw' );
 ##          '2' => '3',
 ## }
 
-$h5->clear();
-
-$h5->mset( qw(
+$h5->assign( qw(
    Make me a channel of Your peace...
    Where there's despair in life let me bring hope...
    Where there is darkness only light...
@@ -335,9 +333,7 @@ is( $h5->vals('val >= 18'), 1, 'shared hash, check find vals >= match (vals)' );
 
 ## find undef
 
-$h5->clear();
-
-$h5->mset( qw/ spring summer fall winter / );
+$h5->assign( qw/ spring summer fall winter / );
 $h5->set( key => undef );
 
 cmp_array(
@@ -456,7 +452,7 @@ cmp_array(
 
 my @list;
 
-$h5->clear(); $h5->mset( 0, 'over', 1, 'the', 2, 'rainbow', 3, 77 );
+$h5->assign( 0, 'over', 1, 'the', 2, 'rainbow', 3, 77 );
 
 while ( my $val = $h5->next ) { push @list, $val; }
 

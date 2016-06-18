@@ -17,7 +17,7 @@ MCE::Flow::init {
 
 tie my @a1, 'MCE::Shared', ( 10, '', '' );
 
-is( tied(@a1)->blessed, 'MCE::Shared::Array', 'shared array, tied ref' );
+is( tied(@a1)->blessed(), 'MCE::Shared::Array', 'shared array, tied ref' );
 
 tie my $e1, 'MCE::Shared';
 tie my $e2, 'MCE::Shared';
@@ -112,11 +112,9 @@ is( $s2, 'moon', 'shared array, check pop' );
 ##      13 => '3',
 ## }
 
-$a5->clear();
-
-$a5->mset( qw(
-   0 me 1 channel 2 Your 3 Where 4 despair 5 life 6 me 7 hope...
-   8 there 9 darkness 10 light... 11 18 12 9 13 3
+$a5->assign( qw(
+   me channel Your Where despair life me hope...
+   there darkness light... 18 9 3
 ));
 
 ## find keys
@@ -307,9 +305,7 @@ is( $a5->vals('val >= 18'), 1, 'shared array, check find vals >= match (vals)' )
 
 ## find undef
 
-$a5->clear();
-
-$a5->mset( qw/ 0 summer 1 winter / );
+$a5->assign( qw/ summer winter / );
 $a5->set( 2, undef );
 
 cmp_array(
@@ -340,7 +336,7 @@ cmp_array(
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
-$a5->clear(); $a5->push( 1, 2, 3, 6, 5, 4, 10 );
+$a5->assign( 1, 2, 3, 6, 5, 4, 10 );
 
 ## sorted vals
 
@@ -468,7 +464,7 @@ cmp_array(
 
 my @list;
 
-$a5->clear(); $a5->mset( 0, 'over', 1, 'the', 2, 'rainbow', 3, 77 );
+$a5->assign( 'over', 'the', 'rainbow', 77 );
 
 while ( my $val = $a5->next ) { push @list, $val; }
 

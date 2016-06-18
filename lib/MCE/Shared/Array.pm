@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.008';
+our $VERSION = '1.100';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -394,7 +394,7 @@ MCE::Shared::Array - Array helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Array version 1.008
+This document describes MCE::Shared::Array version 1.100
 
 =head1 SYNOPSIS
 
@@ -536,6 +536,7 @@ Clears the list, then appends one or multiple values and returns the new length.
 This is equivalent to C<clear>, C<push>.
 
    $len = $ar->assign( "val1", "val2" );
+   $len = @{$ar} = ( "val1", "val2" );
 
 API available since 1.007.
 
@@ -575,15 +576,12 @@ strongly tied to the use of delete on lists.
 
    $ar->push(qw/ value0 value1 value2 value3 /);
 
-   $ar->exists( 2 );     # True
-   $ar->exists( 2, 3 );  # True
-   $ar->delete( 2 );     # value2
+   $ar->exists( 2 );   # True
+   $ar->delete( 2 );   # value2
+   $ar->exists( 2 );   # False
 
-   $ar->exists( 2 );     # False
-   $ar->exists( 2, 3 );  # False
-   $ar->exists( 3 );     # True
-
-   exists $ar->[ 3 ];
+   $ar->exists( 3 );   # True
+   exists $ar->[ 3 ];  # True
 
 =item flush ( index [, index, ... ] )
 
@@ -636,9 +634,13 @@ Returns all indices in the array when no arguments are given. Otherwise,
 returns the given indices in the same order. Indices that do not exist will
 have the C<undef> value. In scalar context, returns the size of the array.
 
-   @keys = $ar->keys;
    @keys = $ar->keys( 0, 1 );
-   $len  = $ar->keys;
+
+   @keys = $ar->keys;     # faster
+   @keys = keys @{$ar};   # involves TIE overhead
+
+   $len  = $ar->keys;     # ditto
+   $len  = keys @{$ar};
 
 =item keys ( "query string" )
 
@@ -692,18 +694,19 @@ Sets multiple index-value pairs in the list and returns the length of the list.
 
 C<merge> is an alias for C<mset>.
 
-=item pairs ( "query string" )
+=item pairs ( index [, index, ... ] )
 
 Returns index-value pairs in the array when no arguments are given. Otherwise,
 returns index-value pairs for the given indices in the same order. Indices that
 do not exist will have the C<undef> value. In scalar context, returns the size
 of the array.
 
-   @pairs = $ar->pairs;
    @pairs = $ar->pairs( 0, 1 );
+
+   @pairs = $ar->pairs;
    $len   = $ar->pairs;
 
-=item pairs ( index [, index, ... ] )
+=item pairs ( "query string" )
 
 Returns only index-value pairs that match the given criteria. It returns an
 empty list if the search found nothing. The syntax for the C<query string> is
@@ -720,6 +723,7 @@ Removes and returns the last value of the list. If there are no elements in the
 list, returns the undefined value.
 
    $val = $ar->pop;
+   $val = pop @{$ar};
 
 =item push ( value [, value, ... ] )
 
@@ -727,6 +731,7 @@ Appends one or multiple values to the tail of the list and returns the new
 length.
 
    $len = $ar->push( "val1", "val2" );
+   $len = push @{$ar}, "val1", "val2";
 
 =item set ( index, value )
 
@@ -741,6 +746,7 @@ Removes and returns the first value of the list. If there are no elements in the
 list, returns the undefined value.
 
    $val = $ar->shift;
+   $val = shift @{$ar};
 
 =item range ( start, stop )
 
@@ -795,6 +801,7 @@ Prepends one or multiple values to the head of the list and returns the new
 length.
 
    $len = $ar->unshift( "val1", "val2" );
+   $len = unshift @{$ar}, "val1", "val2";
 
 =item values ( index [, index, ... ] )
 
@@ -802,9 +809,13 @@ Returns all values in the array when no arguments are given. Otherwise, returns
 values for the given indices in the same order. Indices that do not exist will
 have the C<undef> value. In scalar context, returns the size of the array.
 
-   @vals = $ar->values;
    @vals = $ar->values( 0, 1 );
-   $len  = $ar->values;
+
+   @vals = $ar->values;     # faster
+   @vals = values @{$ar};   # involves TIE overhead
+
+   $len  = $ar->values;     # ditto
+   $len  = values @{$ar};
 
 =item values ( "query string" )
 

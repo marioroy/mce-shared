@@ -1,6 +1,17 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.100 Sat Jun 18 16:30:00 EST 2016
+
+  [ENHANCEMENTS]
+
+  * Use Sereal 3.008+ automatically if available on the box.
+
+  [NEW FEATURES]
+
+  * Added support for cyclical include of MCE Hobo by scoping the
+    configuration to the local package.
+
 1.008 Wed May 25 22:00:00 EST 2016
 
   * Applied correction in META.json.

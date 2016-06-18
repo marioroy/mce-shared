@@ -24,7 +24,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.008';
+our $VERSION = '1.100';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -822,7 +822,7 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 =head1 VERSION
 
-This document describes MCE::Shared::Ordhash version 1.008
+This document describes MCE::Shared::Ordhash version 1.100
 
 =head1 SYNOPSIS
 
@@ -857,7 +857,7 @@ This document describes MCE::Shared::Ordhash version 1.008
    %pairs = $oh->pairs( @keys );
    @vals  = $oh->values( @keys );             # vals is an alias for values
 
-   $len   = $ha->assign( $key/$val pairs );   # equivalent to ->clear, ->mset
+   $len   = $oh->assign( $key/$val pairs );   # equivalent to ->clear, ->mset
    $cnt   = $oh->mdel( @keys );
    @vals  = $oh->mget( @keys );
    $bool  = $oh->mexists( @keys );            # true if all keys exists
@@ -981,7 +981,8 @@ Constructs a new object, with an optional list of key-value pairs.
 Clears the hash, then sets multiple key-value pairs and returns the number of
 keys stored in the hash. This is equivalent to C<clear>, C<mset>.
 
-   $len = $ha->assign( "key1" => "val1", "key2" => "val2" );
+   $len = $oh->assign( "key1" => "val1", "key2" => "val2" );  # 2
+   $len = %{$oh} = ( "key1" => "val1", "key2" => "val2" );    # 4
 
 API available since 1.007.
 
@@ -1071,9 +1072,13 @@ Returns hash keys in the same insertion order when no arguments are given.
 Otherwise, returns the given keys in the same order. Keys that do not exist
 will have the C<undef> value. In scalar context, returns the size of the hash.
 
-   @keys = $oh->keys;
    @keys = $oh->keys( "key1", "key2" );
-   $len  = $oh->keys;
+
+   @keys = $oh->keys;     # faster
+   @keys = keys %{$oh};   # involves TIE overhead
+
+   $len  = $oh->keys;     # ditto
+   $len  = keys %{$oh};
 
 =item keys ( "query string" )
 
@@ -1135,8 +1140,9 @@ Otherwise, returns key-value pairs for the given keys in the same order. Keys
 that do not exist will have the C<undef> value. In scalar context, returns the
 size of the hash.
 
-   @pairs = $oh->pairs;
    @pairs = $oh->pairs( "key1", "key2" );
+
+   @pairs = $oh->pairs;
    $len   = $oh->pairs;
 
 =item pairs ( "query string" )
@@ -1242,9 +1248,13 @@ Otherwise, returns values for the given keys in the same order. Keys that do
 not exist will have the C<undef> value. In scalar context, returns the size
 of the hash.
 
-   @vals = $oh->values;
    @vals = $oh->values( "key1", "key2" );
-   $len  = $oh->values;
+
+   @vals = $oh->values;     # faster
+   @vals = values %{$oh};   # involves TIE overhead
+
+   $len  = $oh->values;     # ditto
+   $len  = values %{$oh};
 
 =item values ( "query string" )
 
@@ -1334,7 +1344,7 @@ consumption. The closest module on CPAN to pass in this regard is
 L<Hash::Ordered> by David Golden.
 
 MCE::Shared has only one shared-manager process which is by design. Therefore,
-refactored tombstone deletion with extras for lesser impact to the rest of the
+re-factored tombstone deletion with extras for lesser impact to the rest of the
 library. This module differs in personality from Hash::Ordered mainly for
 compatibility with other classes included with MCE::Shared.
 
