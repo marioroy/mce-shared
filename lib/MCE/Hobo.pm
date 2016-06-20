@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.101';
+our $VERSION = '1.102';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -99,13 +99,9 @@ my ( $_LIST, $_STAT, $_DATA ) = ( {}, {}, {} );
 ## Applies same tip found in threads::async.
 
 sub async (&;@) {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Hobo' );
-
-   my $self = ref($_[0]) eq 'HASH' ? shift : {};
-      $self->{pkg} = caller;
-
-   unshift @_, 'MCE::Hobo', $self;
-
+   unless ( defined $_[0] && $_[0] eq 'MCE::Hobo' ) {
+      unshift @_, 'MCE::Hobo';
+   }
    goto &create;
 }
 
@@ -114,7 +110,7 @@ sub create {
    my $self   = ref($_[0]) eq 'HASH' ? shift : {};
    my $func   = shift;
    my $mgr_id = "$$.$_tid";
-   my $pkg    = $self->{pkg} ? delete $self->{pkg} : caller;
+   my $pkg    = caller() eq 'MCE::Hobo' ? caller(1) : caller();
 
    $self->{MGR_ID} = $mgr_id;
 
@@ -308,7 +304,7 @@ sub join {
    my ($self) = @_;
    my $mgr_id = $self->{MGR_ID};
    my $wrk_id = $self->{WRK_ID};
-   my $pkg    = ( defined $_[1] ) ? $_[1] : caller;
+   my $pkg    = caller() eq 'MCE::Hobo' ? caller(1) : caller();
 
    if ( $mgr_id eq "$$.$_tid" && $wrk_id != $$ ) {
       if ( exists $self->{JOINED} ) {
@@ -362,7 +358,7 @@ sub kill {
 
 sub list {
    _croak('Usage: MCE::Hobo->list()') if ref($_[0]);
-   my $pkg = ( defined $_[1] ) ? $_[1] : caller;
+   my $pkg = caller() eq 'MCE::Hobo' ? caller(1) : caller();
 
    ( exists $_LIST->{$pkg} ) ? $_LIST->{$pkg}->vals : ();
 }
@@ -399,7 +395,7 @@ sub pid {
 sub result {
    my ($self) = @_;
    _croak('Usage: $hobo->result()') unless ref($self);
-   return $self->join() if ( !exists $self->{JOINED} );
+   return $self->join if ( !exists $self->{JOINED} );
 
    wantarray ? @{ $self->{RESULT} } : $self->{RESULT}->[-1];
 }
@@ -415,9 +411,9 @@ sub waitall {
    return () if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len );
 
    if ( defined wantarray ) {
-      map { MCE::Hobo->waitone($pkg) } 1 .. $_LIST->{$pkg}->len;
+      map { MCE::Hobo->waitone } 1 .. $_LIST->{$pkg}->len;
    } else {
-      $_->join($pkg) for MCE::Hobo->list($pkg);
+      $_->join for MCE::Hobo->list;
    }
 }
 
@@ -425,7 +421,7 @@ sub waitone {
    _croak('Usage: MCE::Hobo->waitone()') if ref($_[0]);
 
    my $mgr_id = "$$.$_tid";
-   my $pkg    = ( defined $_[1] ) ? $_[1] : caller;
+   my $pkg    = caller() eq 'MCE::Hobo' ? caller(1) : caller();
 
    return undef if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len );
    return undef if ( !$_DATA->{$pkg}->exists($mgr_id) );
@@ -510,7 +506,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.101
+This document describes MCE::Hobo version 1.102
 
 =head1 SYNOPSIS
 
