@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.100';
+our $VERSION = '1.101';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -77,7 +77,6 @@ use constant {
    SHR_M_NEW => 'M~NEW',  # New share
    SHR_M_CID => 'M~CID',  # ClientID request
    SHR_M_DEE => 'M~DEE',  # Deeply shared
-   SHR_M_DNE => 'M~DNE',  # Done sharing
    SHR_M_INC => 'M~INC',  # Increment count
    SHR_M_OBJ => 'M~OBJ',  # Object request
    SHR_M_OB0 => 'M~OB0',  # Object request - thaw'less
@@ -132,7 +131,7 @@ sub _croak { goto &Carp::croak }
 sub  CLONE { $_tid = threads->tid() if $_has_threads }
 
 END {
-   return unless ($_svr_pid && $_init_pid eq "$$.$_tid");
+   return unless ($_init_pid && $_init_pid eq "$$.$_tid");
 
    MCE::Flow->finish   ( __PACKAGE__ ) if $INC{'MCE/Flow.pm'};
    MCE::Grep->finish   ( __PACKAGE__ ) if $INC{'MCE/Grep.pm'};
@@ -368,23 +367,22 @@ sub _start {
 }
 
 sub _stop {
-   return unless ($_svr_pid && $_init_pid eq "$$.$_tid");
+   return unless ($_init_pid && $_init_pid eq "$$.$_tid");
    return if ($INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED);
    return if ($MCE::Shared::Server::KILLED);
 
    %_all = (), %_obj = ();
 
-   print {$_SVR->{_dat_w_sock}->[0]} SHR_M_DNE.$LF . '1'.$LF;
-   sleep($_is_MSWin32 ? 0.09 : 0.05);
+   if ($_svr_pid) {
+      MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
+      waitpid($_svr_pid, 0) if !ref($_svr_pid);
 
-   MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
-   waitpid($_svr_pid, 0) if !ref($_svr_pid);
+      for my $_i (1 .. $_SVR->{_data_channels}) {
+         $_SVR->{'_mutex_'.$_i}->DESTROY('shutdown');
+      }
 
-   for my $_i (1 .. $_SVR->{_data_channels}) {
-      $_SVR->{'_mutex_'.$_i}->DESTROY('shutdown');
+      $_init_pid = $_svr_pid = undef;
    }
-
-   $_svr_pid = undef;
 
    return;
 }
@@ -440,11 +438,14 @@ sub _loop {
 
    $SIG{PIPE} = sub {
       $SIG{PIPE} = sub { };
+      for ( values %_obj ) {
+         close $_ if ( ref($_) eq 'MCE::Shared::Handle' && defined fileno($_) );
+      }
       $_is_child ? POSIX::_exit($?) : CORE::exit($?);
    };
 
    $SIG{HUP} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub {
-      $SIG{INT} = $SIG{$_[0]} = sub { }, $_done = 1;
+      $SIG{INT} = $SIG{$_[0]} = sub { };
 
       CORE::kill($_[0], $_is_MSWin32 ? -$$ : -getpgrp);
       sleep 0.060 for (1..15);
@@ -612,12 +613,6 @@ sub _loop {
          chomp(my $_id2 = <$_DAU_R_SOCK>);
 
          $_ob3{ "$_id1:deeply" }->{ $_id2 } = 1;
-
-         return;
-      },
-
-      SHR_M_DNE.$LF => sub {                      # Done sharing
-         $_done = 1;
 
          return;
       },
@@ -2257,7 +2252,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.100
+This document describes MCE::Shared::Server version 1.101
 
 =head1 DESCRIPTION
 

@@ -1,6 +1,12 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.101 Mon Jun 20 01:00:00 EST 2016
+
+  [BUG FIXES]
+
+  * Reverted a small change in Shared/Server.pm introduced in 1.100.
+
 1.100 Sat Jun 18 16:30:00 EST 2016
 
   [ENHANCEMENTS]
