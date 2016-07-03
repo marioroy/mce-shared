@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.102';
+our $VERSION = '1.801';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -26,13 +26,11 @@ my ($_has_threads, $_freeze, $_thaw);
 BEGIN {
    local $@; local $SIG{__DIE__};
 
-   if ($^O eq 'MSWin32' && !defined $threads::VERSION) {
+   if ($^O eq 'MSWin32' && !$INC{'threads.pm'}) {
       eval 'use threads; use threads::shared';
    }
-   elsif (defined $threads::VERSION) {
-      unless (defined $threads::shared::VERSION) {
-         eval 'use threads::shared';
-      }
+   elsif ($INC{'threads.pm'} && !$INC{'threads/shared.pm'}) {
+      eval 'use threads::shared';
    }
 
    $_has_threads = $INC{'threads.pm'} ? 1 : 0;
@@ -53,6 +51,9 @@ BEGIN {
 
    return;
 }
+
+## POSIX is large. This will cover most platforms.
+use constant { _WNOHANG => $^O eq 'solaris' ? 64 : 1 };
 
 use Time::HiRes qw(sleep);
 use bytes;
@@ -128,10 +129,7 @@ sub create {
 
    if ( $self->{posix_exit} || ( $_has_threads && $_tid ) ) {
       $self->{posix_exit} = 1 unless ( $self->{posix_exit} );
-      require POSIX unless ( exists $INC{'POSIX.pm'} );
    }
-
-   $_LIST = {} if ( !defined $_LIST );
 
    if ( !exists $_LIST->{$pkg} ) {
       $_LIST->{$pkg} = MCE::Shared::Ordhash->new();         # non-shared
@@ -159,18 +157,22 @@ sub create {
    }
    elsif ( $pid ) {                                 # parent
       $self->{WRK_ID} = $pid, $_LIST->{$pkg}->set($pid, $self);
-      sleep 0.01 if ( $_has_threads && $_tid );
 
       return $self;
    }
    else {                                           # child
-      my $wrk_id = $$; local $| = 1;
+      my ($wrk_id, @args) = ($$, @_); local $| = 1;
 
-      $SIG{QUIT} = \&_exit; $SIG{TERM} = $SIG{INT} = $SIG{HUP} = \&_trap;
+      ## To avoid (Scalars leaked: N) messages; fixed in Perl 5.12.x
+      @_ = ();
+
+      $SIG{TERM} = $SIG{INT} = $SIG{HUP} = \&_trap; $SIG{QUIT} = \&_exit;
+
+      $ENV{PERL_MCE_IPC} = 'win32' if ($^O eq 'MSWin32');
+
       MCE::Shared::init($_id);
 
-      $_SELF = $self, $_SELF->{WRK_ID} = $wrk_id;
-      $_LIST = {};
+      %{ $_LIST } = (); $_SELF = $self, $_SELF->{WRK_ID} = $wrk_id;
 
       ## Sets the seed of the base generator uniquely between processes.
       ## The new seed is computed using the current seed and $_id value.
@@ -190,7 +192,7 @@ sub create {
       ## Run.
 
       $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, '');
-      my @res = eval { no strict 'refs'; $func->(@_) };
+      my @res = eval { no strict 'refs'; $func->(@args) };
 
       $_DATA->{$pkg}->get($mgr_id)->set($wrk_id, $_freeze->(\@res));
       $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, $@) if $@;
@@ -225,8 +227,8 @@ sub exit {
 
    if ( $mgr_id eq "$$.$_tid" && $wrk_id != $$ ) {
       return $self if ( exists $self->{JOINED} );
-      sleep 0.01 until $_STAT->{$pkg}->get($mgr_id)->exists($wrk_id);
-      sleep(0.01), CORE::kill('QUIT', $wrk_id);
+      sleep 0.015 until $_STAT->{$pkg}->get($mgr_id)->exists($wrk_id);
+      sleep(0.015), CORE::kill('QUIT', $wrk_id);
 
       $self;
    }
@@ -242,8 +244,8 @@ sub finish {
    _croak('Usage: MCE::Hobo->finish()') if ref($_[0]);
    my $pkg = ( defined $_[1] ) ? $_[1] : caller;
 
-   if ( $pkg eq 'MCE' || $pkg eq 'MCE::Shared::Server' ) {
-      MCE::Hobo->finish($_) for ( keys %{ $_LIST } );
+   if ( $pkg eq 'MCE' ) {
+      for my $k ( keys %{ $_LIST } ) { MCE::Hobo->finish($k); }
    }
    elsif ( exists $_LIST->{$pkg} ) {
       return if ( $INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED );
@@ -265,6 +267,8 @@ sub finish {
       delete $_LIST->{$pkg};
    }
 
+   @_ = ();
+
    return;
 }
 
@@ -272,11 +276,11 @@ sub is_joinable {
    _croak('Usage: $hobo->is_joinable()') unless ref($_[0]);
 
    my ($self) = @_;
-   my $mgr_id = $self->{MGR_ID};
+   my $mgr_id = $self->{MGR_ID}; local ($!, $?);
 
    if ( $mgr_id eq "$$.$_tid" && $self->{WRK_ID} != $$ ) {
       return undef if ( exists $self->{JOINED} );
-      ( waitpid($self->{WRK_ID}, 1) == 0 ) ? '' : 1;
+      ( waitpid($self->{WRK_ID}, _WNOHANG) == 0 ) ? '' : 1;
    }
    else {
       '';
@@ -287,11 +291,11 @@ sub is_running {
    _croak('Usage: $hobo->is_running()') unless ref($_[0]);
 
    my ($self) = @_;
-   my $mgr_id = $self->{MGR_ID};
+   my $mgr_id = $self->{MGR_ID}; local ($!, $?);
 
    if ( $mgr_id eq "$$.$_tid" && $self->{WRK_ID} != $$ ) {
       return undef if ( exists $self->{JOINED} );
-      ( waitpid($self->{WRK_ID}, 1) == 0 ) ? 1 : '';
+      ( waitpid($self->{WRK_ID}, _WNOHANG) == 0 ) ? 1 : '';
    }
    else {
       1;
@@ -313,7 +317,7 @@ sub join {
             : ();
       }
       else {
-         waitpid($self->{WRK_ID}, 0);
+         local ($!, $?); waitpid($self->{WRK_ID}, 0);
 
          my $result = $_DATA->{$pkg}->get($mgr_id)->del($wrk_id);
 
@@ -346,8 +350,8 @@ sub kill {
 
    if ( $mgr_id eq "$$.$_tid" && $wrk_id != $$ ) {
       return $self if ( exists $self->{JOINED} );
-      sleep 0.01 until $_STAT->{$pkg}->get($mgr_id)->exists($wrk_id);
-      sleep(0.01), CORE::kill($signal || 'INT', $wrk_id);
+      sleep 0.015 until $_STAT->{$pkg}->get($mgr_id)->exists($wrk_id);
+      sleep(0.015), CORE::kill($signal || 'INT', $wrk_id);
    }
    else {
       CORE::kill($signal || 'INT', $wrk_id);
@@ -365,19 +369,21 @@ sub list {
 
 sub list_joinable {
    _croak('Usage: MCE::Hobo->list_joinable()') if ref($_[0]);
-   my $pkg = caller;
+   my $pkg = caller; local ($!, $?, $_);
 
    ( exists $_LIST->{$pkg} )
-      ? map { ( waitpid($_->{WRK_ID}, 1) == 0 ) ? () : $_ } $_LIST->{$pkg}->vals
+      ? map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? () : $_ }
+              $_LIST->{$pkg}->vals
       : ();
 }
 
 sub list_running {
    _croak('Usage: MCE::Hobo->list_running()') if ref($_[0]);
-   my $pkg = caller;
+   my $pkg = caller; local ($!, $?, $_);
 
    ( exists $_LIST->{$pkg} )
-      ? map { ( waitpid($_->{WRK_ID}, 1) == 0 ) ? $_ : () } $_LIST->{$pkg}->vals
+      ? map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? $_ : () }
+              $_LIST->{$pkg}->vals
       : ();
 }
 
@@ -406,7 +412,7 @@ sub self {
 
 sub waitall {
    _croak('Usage: MCE::Hobo->waitall()') if ref($_[0]);
-   my $pkg = caller;
+   my $pkg = caller; local $_;
 
    return () if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len );
 
@@ -425,6 +431,8 @@ sub waitone {
 
    return undef if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len );
    return undef if ( !$_DATA->{$pkg}->exists($mgr_id) );
+
+   local ($!, $?);
 
    while (1) {
       my $wrk_id = CORE::wait();
@@ -445,7 +453,7 @@ sub yield {
    _croak('Usage: MCE::Hobo->yield()') if ref($_[0]);
    shift if ( defined $_[0] && $_[0] eq 'MCE::Hobo' );
 
-   ( $^O eq 'MSWin32' || $^O eq 'cygwin' )
+   ( $^O =~ /mswin|mingw|msys|cygwin/i )
       ? sleep($_[0] || 0.015)
       : sleep($_[0] || 0.0002);
 }
@@ -457,6 +465,7 @@ sub yield {
 ###############################################################################
 
 sub _croak {
+
    if ( defined $MCE::VERSION ) {
       goto &MCE::_croak;
    }
@@ -467,23 +476,30 @@ sub _croak {
 }
 
 sub _error {
+
    local $\; print {*STDERR} $_[1];
 
    undef;
 }
 
 sub _exit {
-   if ( $_has_threads && $^O eq 'MSWin32' ) {
-      threads->exit(0);
-   }
-   elsif ( $_SELF->{posix_exit} ) {
-      POSIX::_exit(0);
+
+   ## Check nested Hobo workers not yet joined.
+   MCE::Hobo->finish ( 'MCE' ) if $INC{'MCE/Hobo.pm'};
+
+   ## Exit child process.
+   $SIG{__DIE__}  = sub { } unless $_tid;
+   $SIG{__WARN__} = sub { };
+
+   if ( $_SELF->{posix_exit} && $^O ne 'MSWin32' ) {
+      CORE::kill('KILL', $$);
    }
 
    CORE::exit(0);
 }
 
 sub _trap {
+
    local $\; $SIG{ $_[0] } = sub { };
    print {*STDERR} "Signal $_[0] received in process $$\n";
 
@@ -506,7 +522,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.102
+This document describes MCE::Hobo version 1.801
 
 =head1 SYNOPSIS
 
@@ -638,8 +654,7 @@ entry point, and optionally ARGS for list of parameters. It will return the
 corresponding MCE::Hobo object, or undef if hobo creation failed.
 
 Options may be specified via a hash structure. At this time, C<posix_exit> is
-the only option supported which calls C<POSIX::_exit(0)> when finished. The
-default is C<CORE::exit(0)>. Set C<posix_exit> to avoid all END and destructor
+the only option supported. Set C<posix_exit> to avoid all END and destructor
 processing. Constructing a Hobo inside a thread implies C<posix_exit>.
 
 I<FUNCTION> may either be the name of a function, an anonymous subroutine, or

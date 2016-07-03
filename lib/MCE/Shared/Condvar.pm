@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.102';
+our $VERSION = '1.801';
 
 use MCE::Shared::Base;
 use MCE::Util ();
@@ -132,7 +132,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.102
+This document describes MCE::Shared::Condvar version 1.801
 
 =head1 SYNOPSIS
 
@@ -183,7 +183,7 @@ The following demonstrates barrier synchronization.
    my $count = MCE::Shared->condvar(0);
    my $state = MCE::Shared->scalar("ready");
 
-   my $microsecs = ($^O eq "cygwin") ? 0 : 200;
+   my $microsecs = ( lc $^O =~ /mswin|mingw|msys|cygwin/ ) ? 0 : 200;
 
    # The lock is released upon entering ->broadcast, ->signal, ->timedwait,
    # and ->wait. For performance reasons, the condition variable is *not*

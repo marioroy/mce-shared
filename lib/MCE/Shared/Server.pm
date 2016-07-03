@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.102';
+our $VERSION = '1.801';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -20,28 +20,27 @@ our $VERSION = '1.102';
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 
 use Carp ();
-use Time::HiRes qw( sleep );
+use Time::HiRes qw( sleep time );
 use Scalar::Util qw( blessed weaken );
 use Socket qw( SOL_SOCKET SO_RCVBUF );
 use bytes;
 
 no overloading;
 
-my ($_has_threads, $_freeze, $_thaw);
+my ($_has_threads, $_spawn_child, $_freeze, $_thaw);
 
 BEGIN {
    local $@; local $SIG{__DIE__};
 
-   if ($^O eq 'MSWin32' && !defined $threads::VERSION) {
+   if ($^O eq 'MSWin32' && !$INC{'threads.pm'}) {
       eval 'use threads; use threads::shared';
    }
-   elsif (defined $threads::VERSION) {
-      unless (defined $threads::shared::VERSION) {
-         eval 'use threads::shared';
-      }
+   elsif ($INC{'threads.pm'} && !$INC{'threads/shared.pm'}) {
+      eval 'use threads::shared';
    }
 
    $_has_threads = $INC{'threads.pm'} ? 1 : 0;
+   $_spawn_child = $_has_threads ? 0 : 1;
 
    eval 'use IO::FDPass' if !$INC{'IO/FDPass.pm'} && $^O ne 'cygwin';
    eval 'PDL::no_clone_skip_warning()' if $INC{'PDL.pm'};
@@ -87,6 +86,7 @@ use constant {
    SHR_M_EXP => 'M~EXP',  # Export request
    SHR_M_INX => 'M~INX',  # Iterator next
    SHR_M_IRW => 'M~IRW',  # Iterator rewind
+   SHR_M_STP => 'M~STP',  # Stop server
 
    SHR_O_CVB => 'O~CVB',  # Condvar broadcast
    SHR_O_CVS => 'O~CVS',  # Condvar signal
@@ -131,15 +131,7 @@ sub _croak { goto &Carp::croak }
 sub  CLONE { $_tid = threads->tid() if $_has_threads }
 
 END {
-   return unless ($_init_pid && $_init_pid eq "$$.$_tid");
-
-   MCE::Flow->finish   ( __PACKAGE__ ) if $INC{'MCE/Flow.pm'};
-   MCE::Grep->finish   ( __PACKAGE__ ) if $INC{'MCE/Grep.pm'};
-   MCE::Loop->finish   ( __PACKAGE__ ) if $INC{'MCE/Loop.pm'};
-   MCE::Map->finish    ( __PACKAGE__ ) if $INC{'MCE/Map.pm'};
-   MCE::Step->finish   ( __PACKAGE__ ) if $INC{'MCE/Step.pm'};
-   MCE::Stream->finish ( __PACKAGE__ ) if $INC{'MCE/Stream.pm'};
-   MCE::Hobo->finish   ( __PACKAGE__ ) if $INC{'MCE/Hobo.pm'};
+   MCE::Hobo->finish('MCE') if $INC{'MCE/Hobo.pm'};
 
    _stop();
 }
@@ -332,11 +324,9 @@ sub _start {
    $SIG{HUP} = $SIG{INT} = $SIG{PIPE} = $SIG{QUIT} = $SIG{TERM} = \&_trap
       if (!$_is_MSWin32 && !$INC{'MCE/Signal.pm'});
 
-   local $_; $_init_pid = "$$.$_tid";
+   $_init_pid = "$$.$_tid"; local $_;
 
    my $_data_channels = ($_oid eq $_init_pid) ? DATA_CHANNELS : 4;
-   my $_is_child = ($_has_threads && $^O eq 'MSWin32') ? 0 : 1;
-
    $_SVR = { _data_channels => $_data_channels };
 
    MCE::Util::_sock_pair($_SVR, qw(_dat_r_sock _dat_w_sock), $_)
@@ -349,15 +339,13 @@ sub _start {
 
    MCE::Shared::Object::_server_init();
 
-   if ($_is_child) {
+   if ($_spawn_child) {
       $_svr_pid = fork();
-      if (defined $_svr_pid && $_svr_pid == 0) {
-         _loop($_is_child);
-      }
+      _loop() if (defined $_svr_pid && $_svr_pid == 0);
    }
    else {
-      $_svr_pid = threads->create(\&_loop, $_is_child);
-      $_svr_pid->detach() if defined $_svr_pid;
+      $_svr_pid = threads->create(\&_loop);
+      $_svr_pid->detach() if (defined $_svr_pid);
    }
 
    _croak("cannot start the shared-manager process: $!")
@@ -367,15 +355,23 @@ sub _start {
 }
 
 sub _stop {
-   return unless ($_init_pid && $_init_pid eq "$$.$_tid");
+   return unless ($_is_client && $_init_pid && $_init_pid eq "$$.$_tid");
+
    return if ($INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED);
    return if ($MCE::Shared::Server::KILLED);
 
-   %_all = (), %_obj = ();
+   local ($!, $?); %_all = (), %_obj = ();
 
-   if ($_svr_pid) {
+   if (defined $_svr_pid) {
+      my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
+
+      local $\ = undef if (defined $\);
+      local $/ = $LF if ($/ ne $LF);
+
+      print {$_DAT_W_SOCK} SHR_M_STP.$LF.'0'.$LF;  <$_DAT_W_SOCK>;
+      ref $_svr_pid ? sleep(0.09) : waitpid($_svr_pid, 0);
+
       MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
-      waitpid($_svr_pid, 0) if !ref($_svr_pid);
 
       for my $_i (1 .. $_SVR->{_data_channels}) {
          $_SVR->{'_mutex_'.$_i}->DESTROY('shutdown');
@@ -430,19 +426,20 @@ sub _destroy {
 ##
 ###############################################################################
 
+sub _exit {
+   $SIG{__DIE__}  = sub { } unless $_tid;
+   $SIG{__WARN__} = sub { };
+
+   # Wait for the main thread to exit.
+   sleep 3.0 if $_is_MSWin32;
+
+   threads->exit(0) unless $_spawn_child;
+
+   CORE::kill('KILL', $$);
+}
+
 sub _loop {
-   my ($_done, $_is_child) = (0, @_);
-   require POSIX if $_is_child;
-
    $_is_client = 0;
-
-   $SIG{PIPE} = sub {
-      $SIG{PIPE} = sub { };
-      for ( values %_obj ) {
-         close $_ if ( ref($_) eq 'MCE::Shared::Handle' && defined fileno($_) );
-      }
-      $_is_child ? POSIX::_exit($?) : CORE::exit($?);
-   };
 
    $SIG{HUP} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub {
       $SIG{INT} = $SIG{$_[0]} = sub { };
@@ -452,6 +449,13 @@ sub _loop {
 
       CORE::kill('KILL', $$);
       CORE::exit(255);
+   };
+
+   $SIG{PIPE} = sub {
+      for my $_o ( values %_obj ) {
+         close $_o if ref($_o) eq 'MCE::Shared::Handle' && defined fileno($_o);
+      }
+      _exit();
    };
 
    $SIG{__DIE__} = sub {
@@ -479,17 +483,19 @@ sub _loop {
 
       CORE::kill('INT', $_is_MSWin32 ? -$$ : -getpgrp);
 
-      $_is_child ? POSIX::_exit($?) : CORE::exit($?);
+      ($_spawn_child && !$_is_MSWin32)
+         ? CORE::kill('KILL', $$)
+         : CORE::exit($?);
    };
 
    local $\ = undef; local $/ = $LF; $| = 1;
 
    my ($_id, $_fn, $_wa, $_key, $_len, $_le2, $_le3, $_ret, $_func);
    my ($_DAU_R_SOCK, $_CV, $_Q, $_cnt, $_pending, $_t, $_frozen);
+   my ($_client_id, $_done) = (0, 0);
 
    my $_DAT_R_SOCK = $_SVR->{_dat_r_sock}->[0];
    my $_channels   = $_SVR->{_dat_r_sock};
-   my $_client_id  = 0;
 
    my $_warn1 = sub {
       warn "Can't locate object method \"$_[0]\" via package \"$_[1]\"\n";
@@ -899,6 +905,12 @@ sub _loop {
          return;
       },
 
+      SHR_M_STP.$LF => sub {                      # Stop server
+         $_done = 1;
+
+         return;
+      },
+
       # -----------------------------------------------------------------------
 
       SHR_O_CVB.$LF => sub {                      # Condvar broadcast
@@ -907,7 +919,7 @@ sub _loop {
          $_CV = $_obj{ $_id };
          my $_hndl = $_CV->{_cw_sock};
 
-         for (1 .. $_CV->{_count}) { 1 until syswrite $_hndl, $LF }
+         for (1 .. $_CV->{_count}) { syswrite $_hndl, $LF }
          $_CV->{_count} = 0;
 
          print {$_DAU_R_SOCK} $LF;
@@ -921,7 +933,7 @@ sub _loop {
          $_CV = $_obj{ $_id };
 
          if ( $_CV->{_count} >= 0 ) {
-            1 until syswrite $_CV->{_cw_sock}, $LF;
+            syswrite $_CV->{_cw_sock}, $LF;
             $_CV->{_count} -= 1;
          }
 
@@ -1115,10 +1127,12 @@ sub _loop {
          $_Q->{_tsem} = $_t;
 
          if ($_Q->pending() <= $_t) {
-            1 until syswrite $_Q->{_aw_sock}, $LF;
+            syswrite $_Q->{_aw_sock}, $LF;
          } else {
             $_Q->{_asem} += 1;
          }
+
+         print {$_DAU_R_SOCK} $LF;
 
          return;
       },
@@ -1145,7 +1159,7 @@ sub _loop {
                $_pending = int($_pending / $_cnt) if ($_cnt);
                if ($_pending) {
                   $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
-                  for (1 .. $_pending) { 1 until syswrite $_Q->{_qw_sock}, $LF }
+                  for (1 .. $_pending) { syswrite $_Q->{_qw_sock}, $LF }
                }
                $_Q->{_dsem} = $_pending;
             }
@@ -1155,7 +1169,7 @@ sub _loop {
          }
          else {
             # Otherwise, never to exceed one byte in the channel
-            if ($_Q->_has_data()) { 1 until syswrite $_Q->{_qw_sock}, $LF }
+            if ($_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
          }
 
          if ($_cnt) {
@@ -1181,7 +1195,7 @@ sub _loop {
          }
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for (1 .. $_Q->{_asem}) { 1 until syswrite $_Q->{_aw_sock}, $LF }
+            for (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
             $_Q->{_asem} = 0;
          }
 
@@ -1223,7 +1237,7 @@ sub _loop {
          }
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for (1 .. $_Q->{_asem}) { 1 until syswrite $_Q->{_aw_sock}, $LF }
+            for (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
             $_Q->{_asem} = 0;
          }
 
@@ -1305,62 +1319,64 @@ sub _loop {
 
    # --------------------------------------------------------------------------
 
-   # Call on hash function; exit loop when finished.
+   # Call on hash function.
 
    if ($_is_MSWin32) {
       # The normal loop hangs on Windows when processes/threads start/exit.
       # Using ioctl() properly, http://www.perlmonks.org/?node_id=780083
 
-      my ($_bytes, $_cnt, $_retries) = ("\x00\x00\x00\x00", 1, 0);
-      my ($_ptr_bytes, $_nbytes) = (unpack('I', pack('P', $_bytes)));
+      my $_val_bytes = "\x00\x00\x00\x00";
+      my $_ptr_bytes = unpack( 'I', pack('P', $_val_bytes) );
+      my ($_count, $_nbytes, $_start) = (1);
 
       while (!$_done) {
-         ioctl($_DAT_R_SOCK, 0x4004667f, $_ptr_bytes);  # MSWin32 FIONREAD
+         $_start = time;
 
-         unless ($_nbytes = unpack('I', $_bytes)) {
-            # delay to not consume a CPU from non-blocking ioctl
-            if ($_cnt) {
-               if (++$_cnt > 900) {
-                  $_cnt = 1, sleep 0.015;
-                  $_cnt = 0 if ++$_retries == 2;
-               }
-               next;
+         # MSWin32 FIONREAD
+         IOCTL: ioctl($_DAT_R_SOCK, 0x4004667f, $_ptr_bytes);
+
+         unless ($_nbytes = unpack('I', $_val_bytes)) {
+            if ($_count) {
+                # delay after a while to not consume a CPU core
+                $_count = 0 if ++$_count % 50 == 0 && time - $_start > 0.005;
+            } else {
+                sleep 0.030;
             }
-            sleep 0.030;
-            next;
+            goto IOCTL;
          }
 
-         $_cnt = 1, $_retries = 0;
+         $_count = 1;
 
          do {
             sysread($_DAT_R_SOCK, $_func, 8);
             $_done = 1, last() unless length($_func) == 8;
-
             $_DAU_R_SOCK = $_channels->[ substr($_func, -2, 2, '') ];
+
             $_output_function{$_func}();
 
          } while (($_nbytes -= 8) >= 8);
       }
    }
+
    else {
       while (!$_done) {
          $_func = <$_DAT_R_SOCK>;
          last() unless length($_func) == 6;
-
          $_DAU_R_SOCK = $_channels->[ <$_DAT_R_SOCK> ];
+
          $_output_function{$_func}();
       }
    }
 
-   # Exiting via POSIX's _exit to avoid END blocks.
+   # Exit loop.
 
-   for ( values %_obj ) {
-      close $_ if ( ref($_) eq 'MCE::Shared::Handle' && defined fileno($_) );
+   for my $_o ( values %_obj ) {
+      close $_o if ref($_o) eq 'MCE::Shared::Handle' && defined fileno($_o);
    }
 
-   $_is_child ? POSIX::_exit(0) : threads->exit(0);
+   eval q{ print $_DAT_R_SOCK $LF };
 
-   return;
+   _exit();
 }
 
 ###############################################################################
@@ -1426,7 +1442,7 @@ no overloading;
 my ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_chn, $_dat_ex, $_dat_un);
 
 my $_blessed = \&Scalar::Util::blessed;
-my $_ready   = \&MCE::Util::_sock_ready;
+my $_rdy     = \&MCE::Util::_sock_ready;
 
 # Hook for threads.
 
@@ -1438,18 +1454,18 @@ sub CLONE {
 # Private functions.
 
 sub DESTROY {
-   if ($_is_client && defined $_svr_pid && defined $_[0]) {
-      my $_id = $_[0]->[_ID];
+   return unless ($_is_client && defined $_svr_pid && defined $_[0]);
 
-      if (exists $_new{ $_id }) {
-         my $_pid = $_has_threads ? $$ .'.'. $_tid : $$;
+   my $_id = $_[0]->[_ID];
 
-         if ($_new{ $_id } eq $_pid) {
-            return if ($INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED);
-            return if ($MCE::Shared::Server::KILLED);
+   if (exists $_new{ $_id }) {
+      my $_pid = $_has_threads ? $$ .'.'. $_tid : $$;
 
-            delete($_new{ $_id }), _req2('M~DES', $_id.$LF, '');
-         }
+      if ($_new{ $_id } eq $_pid) {
+         return if ($INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED);
+         return if ($MCE::Shared::Server::KILLED);
+
+         delete($_new{ $_id }), _req2('M~DES', $_id.$LF, '');
       }
    }
 
@@ -1472,8 +1488,8 @@ sub _server_init {
    $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
    $_DAU_W_SOCK = $_SVR->{_dat_w_sock}->[$_chn];
 
-   $_dat_ex = sub { 1 until sysread(  $_DAT_LOCK->{_r_sock}, my $_b, 1 ) };
-   $_dat_un = sub { 1 until syswrite( $_DAT_LOCK->{_w_sock}, '0' ) };
+   $_dat_ex = sub {  sysread ( $_DAT_LOCK->{_r_sock}, my $_b, 1 ) };
+   $_dat_un = sub { syswrite ( $_DAT_LOCK->{_w_sock}, '0' ) };
 
    return;
 }
@@ -1571,7 +1587,7 @@ sub _auto {
    $_dat_un->();
 }
 
-# Called by CLOSE, broadcast, signal, timedwait, and rewind.
+# Called by CLOSE, await, broadcast, signal, timedwait, and rewind.
 
 sub _req1 {
    local $\ = undef if (defined $\);
@@ -1587,8 +1603,7 @@ sub _req1 {
    $_ret;
 }
 
-# Called by DESTROY, STORE, PRINT, PRINTF, timedwait, wait, await,
-# ins_inplace, and destroy.
+# Called by DESTROY/i, STORE, PRINT, PRINTF, timedwait, wait, and ins_inplace.
 
 sub _req2 {
    local $\ = undef if (defined $\);
@@ -1873,8 +1888,8 @@ sub broadcast {
 
    sleep($_[1]) if defined $_[1];
 
-   $_CV->{_mutex}->unlock();
    _req1('O~CVB', $_id.$LF);
+   $_CV->{_mutex}->unlock();
 
    sleep(0);
 }
@@ -1889,8 +1904,8 @@ sub signal {
 
    sleep($_[1]) if defined $_[1];
 
-   $_CV->{_mutex}->unlock();
    _req1('O~CVS', $_id.$LF);
+   $_CV->{_mutex}->unlock();
 
    sleep(0);
 }
@@ -1908,17 +1923,17 @@ sub timedwait {
    _croak('Condvar: timedwait (timeout) is not an integer')
       if (!looks_like_number($_timeout) || int($_timeout) != $_timeout);
 
-   $_CV->{_mutex}->unlock();
    _req2('O~CVW', $_id.$LF, '');
+   $_CV->{_mutex}->unlock();
 
    local $@; eval {
       local $SIG{ALRM} = sub { die "alarm clock restart\n" };
       alarm $_timeout unless $_is_MSWin32;
 
       die "alarm clock restart\n"
-         if $_is_MSWin32 && $_ready->($_CV->{_cr_sock}, $_timeout);
+         if $_is_MSWin32 && $_rdy->($_CV->{_cr_sock}, $_timeout);
 
-      1 until sysread $_CV->{_cr_sock}, my($_next), 1;  # block
+      sysread $_CV->{_cr_sock}, my($_next), 1;  # block
 
       alarm 0;
    };
@@ -1942,11 +1957,11 @@ sub wait {
    return unless ( my $_CV = $_obj{ $_id } );
    return unless ( exists $_CV->{_cr_sock} );
 
-   $_CV->{_mutex}->unlock();
    _req2('O~CVW', $_id.$LF, '');
+   $_CV->{_mutex}->unlock();
 
-   $_ready->($_CV->{_cr_sock}) if $_is_MSWin32;
-   1 until sysread $_CV->{_cr_sock}, my($_next), 1;  # block
+   $_rdy->($_CV->{_cr_sock}) if $_is_MSWin32;
+   sysread $_CV->{_cr_sock}, my($_next), 1;  # block
 
    return 1;
 }
@@ -2113,7 +2128,7 @@ sub WRITE {
 sub await {
    my $_id = shift()->[_ID];
    return unless ( my $_Q = $_obj{ $_id } );
-   return unless ( exists $_Q->{_ar_sock} );
+   return unless ( exists $_Q->{_qr_sock} );
 
    my $_t = shift || 0;
 
@@ -2123,10 +2138,10 @@ sub await {
       if (!looks_like_number($_t) || int($_t) != $_t);
 
    $_t = 0 if ($_t < 0);
-   _req2('O~QUA', $_id.$LF . $_t.$LF, '');
+   _req1('O~QUA', $_id.$LF . $_t.$LF);
 
-   $_ready->($_Q->{_ar_sock}) if $_is_MSWin32;
-   1 until sysread $_Q->{_ar_sock}, my($_next), 1;  # block
+   $_rdy->($_Q->{_ar_sock}) if $_is_MSWin32;
+   sysread $_Q->{_ar_sock}, my($_next), 1;  # block
 
    return;
 }
@@ -2145,8 +2160,8 @@ sub dequeue {
       $_cnt = 1;
    }
 
-   $_ready->($_Q->{_qr_sock}) if $_is_MSWin32;
-   1 until sysread $_Q->{_qr_sock}, my($_next), 1;  # block
+   $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
+   sysread $_Q->{_qr_sock}, my($_next), 1;  # block
 
    _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt);
 }
@@ -2252,7 +2267,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.102
+This document describes MCE::Shared::Server version 1.801
 
 =head1 DESCRIPTION
 

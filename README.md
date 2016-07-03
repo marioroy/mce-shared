@@ -1,6 +1,6 @@
 ## MCE::Shared for Perl
 
-This document describes MCE::Shared version 1.102.
+This document describes MCE::Shared version 1.801.
 
 ### Description
 
@@ -106,7 +106,6 @@ MCE::Shared utilizes the following modules:
     IO::FDPass (optional)
     MCE::Mutex 1.702+
     MCE::Util 1.702+
-    POSIX
     Scalar::Util
     Socket
     Storable 2.04+
