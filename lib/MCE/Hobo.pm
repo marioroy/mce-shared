@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.802';
+our $VERSION = '1.803';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -35,7 +35,7 @@ BEGIN {
 
    $_has_threads = $INC{'threads.pm'} ? 1 : 0;
 
-   if ($] >= 5.012 && !exists $INC{'PDL.pm'}) {
+   if (!exists $INC{'PDL.pm'}) {
       eval 'use Sereal 3.008 qw( encode_sereal decode_sereal )';
       if ( !$@ ) {
          $_freeze = sub { encode_sereal( @_, { freeze_callbacks => 1 } ) };
@@ -51,7 +51,7 @@ BEGIN {
    return;
 }
 
-## POSIX is large. This will cover most platforms.
+## POSIX.pm is a big module. The following constant covers most platforms.
 use constant { _WNOHANG => $^O eq 'solaris' ? 64 : 1 };
 
 use Time::HiRes qw(sleep);
@@ -521,7 +521,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.802
+This document describes MCE::Hobo version 1.803
 
 =head1 SYNOPSIS
 

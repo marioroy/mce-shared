@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.802';
+our $VERSION = '1.803';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## do not remove numeric from no warnings above
@@ -113,17 +113,15 @@ sub _find_array {
 
    # wants keys
    if ( $params->{'getkeys'} ) {
-      eval qq{ map { ($q) ? (\$_) : () } 0 .. \$#{ \$data } };
+      eval qq{ map { ($q) ? (\$_) : () } 0 .. \@{ \$data } - 1 };
    }
-
    # wants values
    elsif ( $params->{'getvals'} ) {
-      eval qq{ map { ($q) ? (\$data->[\$_]) : () } 0 .. \$#{ \$data } };
+      eval qq{ map { ($q) ? (\$data->[\$_]) : () } 0 .. \@{ \$data } - 1 };
    }
-
    # wants pairs
    else {
-      eval qq{ map { ($q) ? (\$_ => \$data->[\$_]) : () } 0 .. \$#{ \$data } };
+      eval qq{ map { ($q) ? (\$_ => \$data->[\$_]) : () } 0 .. \@{ \$data } - 1 };
    }
 }
 
@@ -182,14 +180,12 @@ sub _find_hash {
    if ( $params->{'getkeys'} ) {
       eval qq{ map { ($q) ? (\$_) : () } \$obj->keys };
    }
-
    # wants values
    elsif ( $params->{'getvals'} ) {
       $grepvals
          ? eval qq{ grep { ($q) } \$obj->vals }
          : eval qq{  map { ($q) ? (\$data->{\$_}) : () } \$obj->keys };
    }
-
    # wants pairs
    else {
       eval qq{ map { ($q) ? (\$_ => \$data->{\$_}) : () } \$obj->keys };
@@ -263,7 +259,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.802
+This document describes MCE::Shared::Base version 1.803
 
 =head1 DESCRIPTION
 

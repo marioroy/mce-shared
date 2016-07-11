@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.802';
+our $VERSION = '1.803';
 
 use MCE::Shared::Base;
 use MCE::Shared::Ordhash;
@@ -284,7 +284,7 @@ sub _lselect_href {
       else {
          map { !exists $match{$_} ? () : do {
                   my ( $k, %ret ) = ( $_ );
-                  $ret{$_} = $data->{$k}[$_] for 0 .. $#{ $data->{$k} };
+                  $ret{$_} = $data->{$k}[$_] for 0 .. @{ $data->{$k} } - 1;
                   [ $k, \%ret ];
                };
              } ( length $o ? $self->lsort($o) : $self->lkeys() );
@@ -299,7 +299,7 @@ sub _lselect_href {
       }
       else {
          map { my ( $k, %ret ) = ( $_ );
-               $ret{$_} = $data->{$k}[$_] for 0 .. $#{ $data->{$k} };
+               $ret{$_} = $data->{$k}[$_] for 0 .. @{ $data->{$k} } - 1;
                [ $k, \%ret ];
              } ( length $o ? $self->lsort($o) : $self->lkeys() );
       }
@@ -1108,7 +1108,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.802
+This document describes MCE::Shared::Minidb version 1.803
 
 =head1 SYNOPSIS
 

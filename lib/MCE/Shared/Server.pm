@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.802';
+our $VERSION = '1.803';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -46,7 +46,7 @@ BEGIN {
    eval 'PDL::no_clone_skip_warning()' if $INC{'PDL.pm'};
    eval 'use PDL::IO::Storable' if $INC{'PDL.pm'};
 
-   if ($] >= 5.012 && !exists $INC{'PDL.pm'}) {
+   if (!exists $INC{'PDL.pm'}) {
       eval 'use Sereal 3.008 qw( encode_sereal decode_sereal )';
       if ( !$@ ) {
          $_freeze = sub { encode_sereal( @_, { freeze_callbacks => 1 } ) };
@@ -208,8 +208,8 @@ sub _new {
       : abs($$) % $_SVR->{_data_channels} + 1;
 
    my $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
-   my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
-   my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}->[$_chn];
+   my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
+   my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
    local $\ = undef if (defined $\);
    local $/ = $LF if ($/ ne $LF);
@@ -259,8 +259,8 @@ sub _incr_count {
       : abs($$) % $_SVR->{_data_channels} + 1;
 
    my $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
-   my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
-   my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}->[$_chn];
+   my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
+   my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
    local $\ = undef if (defined $\);
    local $/ = $LF if ($/ ne $LF);
@@ -333,7 +333,7 @@ sub _start {
    $_SVR->{'_mutex_'.$_} = MCE::Mutex->new()
       for (1 .. $_data_channels);
 
-   setsockopt($_SVR->{_dat_r_sock}->[0], SOL_SOCKET, SO_RCVBUF, 4096)
+   setsockopt($_SVR->{_dat_r_sock}[0], SOL_SOCKET, SO_RCVBUF, 4096)
       if ($^O ne 'aix' && $^O ne 'linux');
 
    MCE::Shared::Object::_server_init();
@@ -362,7 +362,7 @@ sub _stop {
    local ($!, $?); %_all = (), %_obj = ();
 
    if (defined $_svr_pid) {
-      my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
+      my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
 
       local $\ = undef if (defined $\);
       local $/ = $LF if ($/ ne $LF);
@@ -493,7 +493,7 @@ sub _loop {
    my ($_DAU_R_SOCK, $_CV, $_Q, $_cnt, $_pending, $_t, $_frozen);
    my ($_client_id, $_done) = (0, 0);
 
-   my $_DAT_R_SOCK = $_SVR->{_dat_r_sock}->[0];
+   my $_DAT_R_SOCK = $_SVR->{_dat_r_sock}[0];
    my $_channels   = $_SVR->{_dat_r_sock};
 
    my $_warn1 = sub {
@@ -653,7 +653,7 @@ sub _loop {
          }
          elsif ( $_wa ) {
             my $_ret = $_code->($_var, @{ $_thaw->($_buf) });
-            if ( !ref($_ret) && defined $_ret ) {
+            if ( !ref($_ret) && defined($_ret) ) {
                print {$_DAU_R_SOCK} length($_ret).'0'.$LF, $_ret;
             } else {
                my $_buf = $_freeze->([ $_ret ]);
@@ -684,7 +684,7 @@ sub _loop {
          }
          elsif ( $_wa ) {
             my $_ret = $_code->($_var);
-            if ( !ref($_ret) && defined $_ret ) {
+            if ( !ref($_ret) && defined($_ret) ) {
                print {$_DAU_R_SOCK} length($_ret).'0'.$LF, $_ret;
             } else {
                my $_buf = $_freeze->([ $_ret ]);
@@ -720,7 +720,7 @@ sub _loop {
          }
          elsif ( $_wa ) {
             my $_ret = $_code->($_var, $_arg1);
-            if ( !ref($_ret) && defined $_ret ) {
+            if ( !ref($_ret) && defined($_ret) ) {
                print {$_DAU_R_SOCK} length($_ret).'0'.$LF, $_ret;
             } else {
                my $_buf = $_freeze->([ $_ret ]);
@@ -758,7 +758,7 @@ sub _loop {
          }
          elsif ( $_wa ) {
             my $_ret = $_code->($_var, $_arg1, $_arg2);
-            if ( !ref($_ret) && defined $_ret ) {
+            if ( !ref($_ret) && defined($_ret) ) {
                print {$_DAU_R_SOCK} length($_ret).'0'.$LF, $_ret;
             } else {
                my $_buf = $_freeze->([ $_ret ]);
@@ -798,7 +798,7 @@ sub _loop {
          }
          elsif ( $_wa ) {
             my $_ret = $_code->($_var, $_arg1, $_arg2, $_arg3);
-            if ( !ref($_ret) && defined $_ret ) {
+            if ( !ref($_ret) && defined($_ret) ) {
                print {$_DAU_R_SOCK} length($_ret).'0'.$LF, $_ret;
             } else {
                my $_buf = $_freeze->([ $_ret ]);
@@ -1015,7 +1015,7 @@ sub _loop {
             $_auto = 1, chop $_a3; $_a3 *= 1024;
          }
 
-         local $/; read($_DAU_R_SOCK, $/, $_len) if ($_len);
+         local $/; read($_DAU_R_SOCK, $/, $_len) if $_len;
          my ($_fh, $_buf) = ($_obj{ $_id }); local ($!, $.);
 
          # support special case; e.g. $/ = "\n>" for bioinformatics
@@ -1065,7 +1065,7 @@ sub _loop {
          chomp($_id  = <$_DAU_R_SOCK>),
          chomp($_len = <$_DAU_R_SOCK>);
 
-         local $/; read($_DAU_R_SOCK, $/, $_len) if ($_len);
+         local $/; read($_DAU_R_SOCK, $/, $_len) if $_len;
          my ($_fh, $_buf) = ($_obj{ $_id }); local ($!, $.);
 
          # support special case; e.g. $/ = "\n>" for bioinformatics
@@ -1179,18 +1179,16 @@ sub _loop {
                print {$_DAU_R_SOCK} '-1'.$LF;
             }
          }
+         elsif (defined $_buf) {
+            if (!ref($_buf)) {
+               print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
+            } else {
+               $_buf = $_freeze->([ $_buf ]);
+               print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
+            }
+         }
          else {
-            if (defined $_buf) {
-               if (!ref($_buf)) {
-                  print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
-               } else {
-                  $_buf = $_freeze->([ $_buf ]);
-                  print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
-               }
-            }
-            else {
-               print {$_DAU_R_SOCK} '-1'.$LF;
-            }
+            print {$_DAU_R_SOCK} '-1'.$LF;
          }
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
@@ -1484,8 +1482,8 @@ sub TIESCALAR { $_[1] }
 sub _server_init {
    $_chn        = 1;
    $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
-   $_DAT_W_SOCK = $_SVR->{_dat_w_sock}->[0];
-   $_DAU_W_SOCK = $_SVR->{_dat_w_sock}->[$_chn];
+   $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
+   $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
    $_dat_ex = sub {  sysread ( $_DAT_LOCK->{_r_sock}, my $_b, 1 ) };
    $_dat_un = sub { syswrite ( $_DAT_LOCK->{_w_sock}, '0' ) };
@@ -1515,7 +1513,7 @@ sub _init {
 
    $_chn        = abs($_wid) % $_SVR->{_data_channels} + 1;
    $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
-   $_DAU_W_SOCK = $_SVR->{_dat_w_sock}->[$_chn];
+   $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
    %_new = ();
 
@@ -2266,7 +2264,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.802
+This document describes MCE::Shared::Server version 1.803
 
 =head1 DESCRIPTION
 
