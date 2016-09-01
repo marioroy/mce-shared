@@ -38,7 +38,7 @@ sub check_clear {
 
 sub check_enqueue {
    my ($description) = @_;
-   is( join('', @{ $q->_get_aref() }), '1234', $description );
+   is( join('', @{ $q->_get_aref() }), '12345', $description );
 }
 
 sub check_insert {
@@ -64,8 +64,8 @@ $q = $q1;
 
 sub check_dequeue_fifo {
    my (@r) = @_;
-   is( join('', @r), '123', 'fifo, check dequeue' );
-   is( join('', @{ $q->_get_aref() }), '4', 'fifo, check array' );
+   is( join('', @r), '1234', 'fifo, check dequeue' );
+   is( join('', @{ $q->_get_aref() }), '5', 'fifo, check array' );
 }
 
 mce_flow sub {
@@ -74,12 +74,13 @@ mce_flow sub {
 
    $q->enqueue('1', '2');
    $q->enqueue('3');
-   $q->enqueue('4');
+   $q->enqueue('4', '5');
 
    $w = MCE->do('check_enqueue', 'fifo, check enqueue');
 
    my @r = $q->dequeue(2);
    push @r, $q->dequeue;
+   push @r, $q->dequeue(1); # Dequeue 1 explicitly
 
    $w = MCE->do('check_dequeue_fifo', @r);
 
@@ -126,7 +127,7 @@ $q = $q2;
 
 sub check_dequeue_lifo {
    my (@r) = @_;
-   is( join('', @r), '432', 'lifo, check dequeue' );
+   is( join('', @r), '5432', 'lifo, check dequeue' );
    is( join('', @{ $q->_get_aref() }), '1', 'lifo, check array' );
 }
 
@@ -136,12 +137,13 @@ mce_flow sub {
 
    $q->enqueue('1', '2');
    $q->enqueue('3');
-   $q->enqueue('4');
+   $q->enqueue('4', '5');
 
    $w = MCE->do('check_enqueue', 'lifo, check enqueue');
 
    my @r = $q->dequeue(2);
    push @r, $q->dequeue;
+   push @r, $q->dequeue(1); # Dequeue 1 explicitly
 
    $w = MCE->do('check_dequeue_lifo', @r);
 
