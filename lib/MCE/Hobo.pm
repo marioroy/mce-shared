@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized redefine );
 
-our $VERSION = '1.803';
+our $VERSION = '1.804';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -126,8 +126,10 @@ sub create {
 
    $func = "main::$func" if ( !ref($func) && index($func,':') < 0 );
 
-   if ( $self->{posix_exit} || ( $_has_threads && $_tid ) ) {
-      $self->{posix_exit} = 1 unless ( $self->{posix_exit} );
+   if ( !exists $self->{posix_exit} ) {
+      $self->{posix_exit} = 1 if ( $_has_threads && $_tid );
+      $self->{posix_exit} = 1 if ( $INC{'CGI.pm'} || $INC{'FCGI.pm'} );
+      $self->{posix_exit} = 1 if ( $INC{'Tk.pm'} );
    }
 
    if ( !exists $_LIST->{$pkg} ) {
@@ -521,7 +523,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.803
+This document describes MCE::Hobo version 1.804
 
 =head1 SYNOPSIS
 

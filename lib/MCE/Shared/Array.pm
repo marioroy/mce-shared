@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.803';
+our $VERSION = '1.804';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -394,7 +394,7 @@ MCE::Shared::Array - Array helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Array version 1.803
+This document describes MCE::Shared::Array version 1.804
 
 =head1 SYNOPSIS
 

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.803';
+our $VERSION = '1.804';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -430,7 +430,7 @@ sub _exit {
    $SIG{__WARN__} = sub { };
 
    # Wait for the main thread to exit.
-   sleep 3.0 if $_is_MSWin32;
+   sleep 3.0 if ( $_is_MSWin32 || ($_has_threads && $INC{'Tk.pm'}) );
 
    threads->exit(0) unless $_spawn_child;
 
@@ -2264,7 +2264,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.803
+This document describes MCE::Shared::Server version 1.804
 
 =head1 DESCRIPTION
 
