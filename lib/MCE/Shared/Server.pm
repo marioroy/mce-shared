@@ -965,7 +965,7 @@ sub _loop {
          chomp($_id = <$_DAU_R_SOCK>);
 
          close $_obj{ $_id } if defined fileno($_obj{ $_id });
-         print {$_DAU_R_SOCK} $LF;
+         print {$_DAU_R_SOCK} '1'.$LF;
 
          return;
       },
