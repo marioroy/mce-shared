@@ -1,6 +1,13 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.805 Fri Sep 23 01:00:00 EST 2016
+
+  * Fixed close method in shared-handle to work with Perl5i.
+    Support for Perl5i is on Unix only. Do not use threads.
+
+  * Bumped MCE dependency to 1.805.
+
 1.804 Thu Sep 01 16:00:00 EST 2016
 
   * Fixed bug in MCE::Shared::Queue. Thank you, Mary Ehlers.

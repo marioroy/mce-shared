@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.804';
+our $VERSION = '1.805';
 
 use MCE::Shared::Base;
 use MCE::Shared::Ordhash;
@@ -1108,7 +1108,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.804
+This document describes MCE::Shared::Minidb version 1.805
 
 =head1 SYNOPSIS
 
