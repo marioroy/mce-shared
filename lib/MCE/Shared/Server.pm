@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.805';
+our $VERSION = '1.806';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -1335,7 +1335,7 @@ sub _loop {
          unless ($_nbytes = unpack('I', $_val_bytes)) {
             if ($_count) {
                 # delay after a while to not consume a CPU core
-                $_count = 0 if ++$_count % 50 == 0 && time - $_start > 0.005;
+                $_count = 0 if ++$_count % 50 == 0 && time - $_start > 0.030;
             } else {
                 sleep 0.030;
             }
@@ -2264,7 +2264,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.805
+This document describes MCE::Shared::Server version 1.806
 
 =head1 DESCRIPTION
 

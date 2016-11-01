@@ -1,6 +1,12 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.806 Tue Nov 01 16:00:00 EST 2016
+
+  * Added a new section titled LOCKING to the MCE::Shared documentation.
+
+  * Tweaked shared-manager-loop delay -- applies to MSWin32 only.
+
 1.805 Fri Sep 23 01:00:00 EST 2016
 
   * Fixed close method in shared-handle to work with Perl5i.

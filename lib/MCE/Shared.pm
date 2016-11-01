@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized );
 
-our $VERSION = '1.805';
+our $VERSION = '1.806';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -342,7 +342,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.805
+This document describes MCE::Shared version 1.806
 
 =head1 SYNOPSIS
 
@@ -1157,9 +1157,145 @@ called by the C<END> block automatically when the script terminates.
 
 =back
 
+=head1 LOCKING
+
+Application-level advisory locking is possible with L<MCE::Mutex>.
+
+   use strict;
+   use warnings;
+
+   use MCE::Hobo;
+   use MCE::Mutex;
+   use MCE::Shared;
+
+   my $mutex = MCE::Mutex->new();
+
+   tie my $cntr, 'MCE::Shared', 0;
+
+   sub work {
+      for ( 1 .. 1000 ) {
+         $mutex->lock;
+
+         # The next statement involves 2 IPC ops ( get and set ).
+         # Thus, locking is required.
+         $cntr++;
+
+         $mutex->unlock;
+      }
+   }
+
+   MCE::Hobo->create('work') for ( 1 .. 8 );
+
+   MCE::Hobo->waitall;
+
+   print $cntr, "\n"; # 8000
+
+However, locking is not necessary when using the OO interface. This is possible
+as MCE::Shared is implemented using a single-point of entry for commands sent
+to the shared-manager process. Furthermore, the shared classes include sugar
+methods for combining set and get in a single operation.
+
+   use strict;
+   use warnings;
+
+   use MCE::Hobo;
+   use MCE::Shared;
+
+   my $cntr = MCE::Shared->scalar( 0 );
+
+   sub work {
+      for ( 1 .. 1000 ) {
+         # The next statement increments the value without having
+         # to call set and get explicitly.
+         $cntr->incr;
+      }
+   }
+
+   MCE::Hobo->create('work') for ( 1 .. 8 );
+
+   MCE::Hobo->waitall;
+
+   print $cntr->get, "\n"; # 8000
+
+Another possibility when running threads is locking via L<threads::shared>.
+
+   use strict;
+   use warnings;
+
+   use threads;
+   use threads::shared;
+
+   use MCE::Flow;
+   use MCE::Shared;
+
+   my $mutex : shared;
+
+   tie my $cntr, 'MCE::Shared', 0;
+
+   sub work {
+      for ( 1 .. 1000 ) {
+         lock $mutex;
+
+         # the next statement involves 2 IPC ops ( get and set )
+         # thus, locking is required
+         $cntr++;
+      }
+   }
+
+   MCE::Flow->run( { max_workers => 8 }, \&work );
+
+   MCE::Flow->finish;
+
+   print $cntr, "\n"; # 8000
+
+Of the three demonstrations, the OO interface yields the best performance.
+This is from the lack of locking at the application level. The results were
+obtained from a MacBook Pro (Haswell) running at 2.6 GHz, 1600 MHz RAM.
+
+   Cent OS 7.2 VM
+
+      -- Perl v5.16.3
+      MCE::Mutex .... : 0.528 secs.
+      OO Interface .. : 0.062 secs.
+      threads::shared : 0.545 secs.
+
+   FreeBSD 10.0 VM
+
+      -- Perl v5.16.3
+      MCE::Mutex .... : 0.367 secs.
+      OO Interface .. : 0.083 secs.
+      threads::shared : 0.593 secs.
+
+   Mac OS X 10.11.6 ( Host OS )
+
+      -- Perl v5.18.2
+      MCE::Mutex .... : 0.397 secs.
+      OO Interface .. : 0.070 secs.
+      threads::shared : 0.463 secs.
+
+   Solaris 11.2 VM
+
+      -- Perl v5.12.5 installed with the OS
+      MCE::Mutex .... : 0.895 secs.
+      OO Interface .. : 0.099 secs.
+      threads::shared :              Perl not built to support threads
+
+      -- Perl v5.22.2 built with threads support
+      MCE::Mutex .... : 0.788 secs.
+      OO Interface .. : 0.086 secs.
+      threads::shared : 0.895 secs.
+
+   Windows 7 VM
+
+      -- Perl v5.22.2
+      MCE::Mutex .... : 1.045 secs.
+      OO Interface .. : 0.312 secs.
+      threads::shared : 1.061 secs.
+
 =head1 REQUIREMENTS
 
-MCE::Shared requires Perl 5.10.1 or later.
+MCE::Shared requires Perl 5.10.1 or later. The L<IO::FDPass> module is highly
+recommended on UNIX and Windows. This module does not install it by default.
 
 =head1 SOURCE AND FURTHER READING
 
