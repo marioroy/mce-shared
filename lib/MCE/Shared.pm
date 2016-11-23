@@ -10,9 +10,9 @@ use 5.010001;
 use strict;
 use warnings;
 
-no warnings qw( threads recursion uninitialized );
+no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.806';
+our $VERSION = '1.807';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -342,7 +342,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.806
+This document describes MCE::Shared version 1.807
 
 =head1 SYNOPSIS
 
@@ -1252,7 +1252,7 @@ Of the three demonstrations, the OO interface yields the best performance.
 This is from the lack of locking at the application level. The results were
 obtained from a MacBook Pro (Haswell) running at 2.6 GHz, 1600 MHz RAM.
 
-   Cent OS 7.2 VM
+   CentOS 7.2 VM
 
       -- Perl v5.16.3
       MCE::Mutex .... : 0.528 secs.

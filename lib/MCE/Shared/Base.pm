@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.806';
+our $VERSION = '1.807';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## do not remove numeric from no warnings above
@@ -259,7 +259,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.806
+This document describes MCE::Shared::Base version 1.807
 
 =head1 DESCRIPTION
 

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.806';
+our $VERSION = '1.807';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -149,9 +149,9 @@ END {
          CORE::kill($_sig_name, $_is_MSWin32 ? -$$ : -getpgrp);
 
          if ($_sig_name eq 'PIPE') {
-            sleep 0.015 for (1..2);
+            for my $_i (1..2) { sleep 0.015 }
          } else {
-            sleep 0.060 for (1..3);
+            for my $_i (1..3) { sleep 0.060 }
          }
 
          CORE::kill('QUIT', $_is_MSWin32 ? -$$ : -getpgrp)
@@ -165,7 +165,7 @@ END {
             if ($_sig_name ne 'PIPE' && $INC{'MCE/Hobo.pm'});
       }
 
-      sleep 0.060 for (1..5);
+      for my $_i (1..5) { sleep 0.060 }
 
       CORE::exit($?);
    }
@@ -191,12 +191,12 @@ sub _new {
             "requires the IO::FDPass module.\n\n"
          );
       }
-      for my $k (qw(
+      for my $_k (qw(
          _qw_sock _qr_sock _aw_sock _ar_sock _cw_sock _cr_sock _mutex
       )) {
-         if (defined $_[1]->{ $k }) {
-            $_hndls{ $k } = delete $_[1]->{ $k };
-            $_[1]->{ $k } = undef;
+         if (defined $_[1]->{ $_k }) {
+            $_hndls{ $_k } = delete $_[1]->{ $_k };
+            $_[1]->{ $_k } = undef;
          }
       }
    }
@@ -225,9 +225,9 @@ sub _new {
    <$_DAU_W_SOCK>;
 
    if (keys %_hndls) {
-      for my $k (qw( _qw_sock _qr_sock _aw_sock _cw_sock )) {
-         if (exists $_hndls{ $k }) {
-            IO::FDPass::send( fileno $_DAU_W_SOCK, fileno $_hndls{ $k } );
+      for my $_k (qw( _qw_sock _qr_sock _aw_sock _cw_sock )) {
+         if (exists $_hndls{ $_k }) {
+            IO::FDPass::send( fileno $_DAU_W_SOCK, fileno $_hndls{ $_k } );
             <$_DAU_W_SOCK>;
          }
       }
@@ -444,7 +444,7 @@ sub _loop {
       $SIG{INT} = $SIG{$_[0]} = sub { };
 
       CORE::kill($_[0], $_is_MSWin32 ? -$$ : -getpgrp);
-      sleep 0.060 for (1..15);
+      for my $_i (1..15) { sleep 0.060 }
 
       CORE::kill('KILL', $$);
       CORE::exit(255);
@@ -495,6 +495,13 @@ sub _loop {
 
    my $_DAT_R_SOCK = $_SVR->{_dat_r_sock}[0];
    my $_channels   = $_SVR->{_dat_r_sock};
+
+   my $_warn0 = sub {
+      if ( $_wa ) {
+         my $_buf = $_freeze->([ ]);
+         print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
+      }
+   };
 
    my $_warn1 = sub {
       warn "Can't locate object method \"$_[0]\" via package \"$_[1]\"\n";
@@ -583,13 +590,13 @@ sub _loop {
          print {$_DAU_R_SOCK} $LF;
 
          if ($_len) {
-            for my $k (qw( _qw_sock _qr_sock _aw_sock _cw_sock )) {
-               if (exists $_args->[0]->{ $k }) {
-                   delete $_args->[0]->{ $k };
+            for my $_k (qw( _qw_sock _qr_sock _aw_sock _cw_sock )) {
+               if (exists $_args->[0]->{ $_k }) {
+                   delete $_args->[0]->{ $_k };
                    $_fd = IO::FDPass::recv(fileno $_DAU_R_SOCK); $_fd >= 0
                      or _croak("cannot receive file handle: $!");
 
-                   open $_args->[0]->{ $k }, "+<&=$_fd"
+                   open $_args->[0]->{ $_k }, "+<&=$_fd"
                      or _croak("cannot convert file discriptor to handle: $!");
 
                    print {$_DAU_R_SOCK} $LF;
@@ -641,7 +648,7 @@ sub _loop {
 
          read($_DAU_R_SOCK, $_buf, $_len);
 
-         my $_var  = $_obj{ $_id };
+         my $_var  = $_obj{ $_id } || do { return $_warn0->($_fn) };
          my $_code = $_var->can($_fn) || do {
             return $_warn1->($_fn, blessed($_var));
          };
@@ -672,7 +679,7 @@ sub _loop {
          chomp($_fn = <$_DAU_R_SOCK>),
          chomp($_wa = <$_DAU_R_SOCK>);
 
-         my $_var  = $_obj{ $_id };
+         my $_var  = $_obj{ $_id } || do { return $_warn0->($_fn) };
          my $_code = $_var->can($_fn) || do {
             return $_warn1->($_fn, blessed($_var));
          };
@@ -708,7 +715,7 @@ sub _loop {
 
          read($_DAU_R_SOCK, $_arg1, $_len);
 
-         my $_var  = $_obj{ $_id };
+         my $_var  = $_obj{ $_id } || do { return $_warn0->($_fn) };
          my $_code = $_var->can($_fn) || do {
             return $_warn1->($_fn, blessed($_var));
          };
@@ -746,7 +753,7 @@ sub _loop {
          read($_DAU_R_SOCK, $_arg1, $_len),
          read($_DAU_R_SOCK, $_arg2, $_le2);
 
-         my $_var  = $_obj{ $_id };
+         my $_var  = $_obj{ $_id } || do { return $_warn0->($_fn) };
          my $_code = $_var->can($_fn) || do {
             return $_warn1->($_fn, blessed($_var));
          };
@@ -786,7 +793,7 @@ sub _loop {
          read($_DAU_R_SOCK, $_arg2, $_le2),
          read($_DAU_R_SOCK, $_arg3, $_le3);
 
-         my $_var  = $_obj{ $_id };
+         my $_var  = $_obj{ $_id } || do { return $_warn0->($_fn) };
          my $_code = $_var->can($_fn) || do {
             return $_warn1->($_fn, blessed($_var));
          };
@@ -918,7 +925,7 @@ sub _loop {
          $_CV = $_obj{ $_id };
          my $_hndl = $_CV->{_cw_sock};
 
-         for (1 .. $_CV->{_count}) { syswrite $_hndl, $LF }
+         for my $_i (1 .. $_CV->{_count}) { syswrite $_hndl, $LF }
          $_CV->{_count} = 0;
 
          print {$_DAU_R_SOCK} $LF;
@@ -957,6 +964,8 @@ sub _loop {
 
          $_CV = $_obj{ $_id };
          $_CV->{_count} += 1;
+
+         print {$_DAU_R_SOCK} $LF;
 
          return;
       },
@@ -1146,7 +1155,7 @@ sub _loop {
          my (@_items, $_buf);
 
          if ($_cnt) {
-            push(@_items, $_Q->_dequeue()) for (1 .. $_cnt);
+            for my $_i (1 .. $_cnt) { push(@_items, $_Q->_dequeue()) }
          } else {
             $_buf = $_Q->_dequeue();
          }
@@ -1158,7 +1167,7 @@ sub _loop {
                $_pending = int($_pending / $_cnt) if ($_cnt);
                if ($_pending) {
                   $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
-                  for (1 .. $_pending) { syswrite $_Q->{_qw_sock}, $LF }
+                  for my $_i (1 .. $_pending) { syswrite $_Q->{_qw_sock}, $LF }
                }
                $_Q->{_dsem} = $_pending;
             }
@@ -1192,7 +1201,7 @@ sub _loop {
          }
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
+            for my $_i (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
             $_Q->{_asem} = 0;
          }
 
@@ -1223,7 +1232,9 @@ sub _loop {
             }
          }
          else {
-            my @_items; push(@_items, $_Q->_dequeue()) for (1 .. $_cnt);
+            my @_items;
+
+            for my $_i (1 .. $_cnt) { push(@_items, $_Q->_dequeue()) }
 
             if (defined $_items[0]) {
                my $_buf = $_freeze->(\@_items);
@@ -1234,7 +1245,7 @@ sub _loop {
          }
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
+            for my $_i (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
             $_Q->{_asem} = 0;
          }
 
@@ -1275,7 +1286,10 @@ sub _loop {
 
          read($_DAU_R_SOCK, $_key, $_len) if $_len;
 
-         my $_var = $_obj{ $_id };
+         my $_var = $_obj{ $_id } || do {
+            print {$_DAU_R_SOCK} '-1'.$LF;
+            return;
+         };
 
          if ( my $_code = $_var->can($_fn) ) {
             $_len ? $_fetch->($_code->($_var, $_key))
@@ -1293,7 +1307,9 @@ sub _loop {
          chomp($_id = <$_DAU_R_SOCK>),
          chomp($_fn = <$_DAU_R_SOCK>);
 
-         my $_var = $_obj{ $_id };
+         my $_var = $_obj{ $_id } || do {
+            return;
+         };
 
          if ( my $_code = $_var->can($_fn) ) {
             if (exists $_ob3{ "$_id:deeply" }) {
@@ -1445,7 +1461,10 @@ my $_rdy     = \&MCE::Util::_sock_ready;
 
 sub CLONE {
    $_tid = threads->tid() if $_has_threads;
-   %_new = (), &_init($_tid) if (!$INC{'MCE.pm'} || MCE->wid == 0);
+
+   if (!$INC{'MCE.pm'} && !$INC{'MCE/Hobo.pm'}) {
+      %_new = (), &_init($_tid);
+   }
 }
 
 # Private functions.
@@ -1508,16 +1527,16 @@ sub _get_client_id {
 sub _init {
    return unless defined $_SVR;
 
-   my $_wid = $_[0] // &_get_client_id();
-      $_wid = $$ if ( $_wid !~ /\d+/ );
+   my $_id = $_[0] // &_get_client_id();
+      $_id = $$ if ( $_id !~ /\d+/ );
 
-   $_chn        = abs($_wid) % $_SVR->{_data_channels} + 1;
+   $_chn        = abs($_id) % $_SVR->{_data_channels} + 1;
    $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
    %_new = ();
 
-   return;
+   return $_id;
 }
 
 ###############################################################################
@@ -1584,7 +1603,7 @@ sub _auto {
    $_dat_un->();
 }
 
-# Called by CLOSE, await, broadcast, signal, timedwait, and rewind.
+# Called by CLOSE, await, broadcast, signal, timedwait, wait, and rewind.
 
 sub _req1 {
    local $\ = undef if (defined $\);
@@ -1600,7 +1619,7 @@ sub _req1 {
    $_ret;
 }
 
-# Called by DESTROY/i, STORE, PRINT, PRINTF, timedwait, wait, and ins_inplace.
+# Called by DESTROY, PRINT, PRINTF, STORE, destroy, ins_inplace, and set.
 
 sub _req2 {
    local $\ = undef if (defined $\);
@@ -1762,7 +1781,7 @@ sub export {
    }
 
    my $_item = $_lkup->{ $_id } = _req3('M~EXP', $_buf, $_tmp);
-   my $_data;
+   my $_data; local $_;
 
    if ( $_class eq 'MCE::Shared::Array' ) {
       ## no critic
@@ -1920,7 +1939,7 @@ sub timedwait {
    _croak('Condvar: timedwait (timeout) is not an integer')
       if (!looks_like_number($_timeout) || int($_timeout) != $_timeout);
 
-   _req2('O~CVW', $_id.$LF, '');
+   _req1('O~CVW', $_id.$LF);
    $_CV->{_mutex}->unlock();
 
    local $@; eval {
@@ -1954,7 +1973,7 @@ sub wait {
    return unless ( my $_CV = $_obj{ $_id } );
    return unless ( exists $_CV->{_cr_sock} );
 
-   _req2('O~CVW', $_id.$LF, '');
+   _req1('O~CVW', $_id.$LF);
    $_CV->{_mutex}->unlock();
 
    $_rdy->($_CV->{_cr_sock}) if $_is_MSWin32;
@@ -2264,7 +2283,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.806
+This document describes MCE::Shared::Server version 1.807
 
 =head1 DESCRIPTION
 

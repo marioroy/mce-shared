@@ -11,11 +11,11 @@ BEGIN {
 }
 
 {
-   my ( $cnt, @procs, @list, %ret );
+   my ( $cnt, @procs, @list, %ret ); local $_;
 
    ok( 1, "spawning asynchronously" );
 
-   push @procs, MCE::Hobo->new( sub { sleep 2; MCE::Hobo->tid } ) for 1 .. 3;
+   @procs = MCE::Hobo->new( sub { sleep 2; $_ } ) for ( 1 .. 3 );
 
    @list = MCE::Hobo->list_running;
    is ( scalar @list, 3, 'check list_running' );
@@ -32,24 +32,26 @@ BEGIN {
 
    for ( @list ) {
       ++$cnt;
-      is ( $_->is_running, 1, 'check is_running process'.$cnt );
-      is ( $_->is_joinable, '', 'check is_joinable process'.$cnt );
+      is ( $_->is_running, 1, 'check is_running hobo'.$cnt );
+      is ( $_->is_joinable, '', 'check is_joinable hobo'.$cnt );
    }
 
    $cnt = 0;
 
    for ( @list ) {
       ++$cnt; $ret{ $_->join } = 1;
-      is ( $_->error, undef, 'check error process'.$cnt );
+      is ( $_->error, undef, 'check error hobo'.$cnt );
    }
 
    is ( scalar keys %ret, 3, 'check unique tid value' );
 }
 
 {
-   my ( $cnt, @procs );
+   my ( $cnt, @procs ); local $_;
 
-   push @procs, MCE::Hobo->new( sub { sleep 5; $_[0] }, $_ ) for 1 .. 3;
+   for ( 1 .. 3 ) {
+      push @procs, MCE::Hobo->new( sub { sleep 0.3 for 1 .. 9; return 1 } );
+   }
 
    $procs[0]->exit();
    $procs[1]->exit();
@@ -59,18 +61,18 @@ BEGIN {
 
    for ( @procs ) {
       ++$cnt;
-      is ( $_->join, undef, 'check exit process'.$cnt );
+      is ( $_->join, undef, 'check exit hobo'.$cnt );
    }
 }
 
 {
    sub task {
       my ( $id ) = @_;
-      sleep $id * 0.333;
+      sleep $id * 0.45;
       return $id;
    }
 
-   my @result;
+   my @result; local $_;
 
    MCE::Hobo->create(\&task, $_) for ( reverse 1 .. 3 );
 
@@ -86,7 +88,7 @@ BEGIN {
 
    @result = ();
 
-   MCE::Hobo->create(\&task, $_) for ( reverse 1 .. 3 );
+   MCE::Hobo->create(\&task, $_) for ( 1 .. 3 );
 
    my @hobos = MCE::Hobo->waitall;
 
