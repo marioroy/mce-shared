@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.807';
+our $VERSION = '1.808';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -668,7 +668,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.807
+This document describes MCE::Hobo version 1.808
 
 =head1 SYNOPSIS
 

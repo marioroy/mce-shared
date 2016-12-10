@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.807';
+our $VERSION = '1.808';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -1552,7 +1552,7 @@ sub _auto {
 
    local $\ = undef if (defined $\);
 
-   if    ( @_ == 2 ) {
+   if ( @_ == 2 ) {
       $_dat_ex->();
       print {$_DAT_W_SOCK} 'M~OB0'.$LF . $_chn.$LF;
       print {$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . $_wa.$LF;
@@ -2283,7 +2283,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.807
+This document describes MCE::Shared::Server version 1.808
 
 =head1 DESCRIPTION
 
