@@ -181,7 +181,7 @@ The following demonstrates barrier synchronization.
 
    my $num_workers = 8;
    my $count = MCE::Shared->condvar(0);
-   my $state = MCE::Shared->scalar("ready");
+   my $state = MCE::Shared->scalar('ready');
 
    my $microsecs = ( lc $^O =~ /mswin|mingw|msys|cygwin/ ) ? 0 : 200;
 
@@ -191,36 +191,35 @@ The following demonstrates barrier synchronization.
    # synchronization is desired subsequently.
 
    sub barrier_sync {
-      usleep($microsecs) until $state->get eq "ready" or $state->get eq "up";
+      usleep($microsecs) while $state->get eq 'down';
 
       $count->lock;
-      $state->set("up"), $count->incr;
+      $state->set('up'), $count->incr;
 
       if ($count->get == $num_workers) {
-         $count->decr, $state->set("down");
+         $count->decr, $state->set('down');
          $count->broadcast;
       }
       else {
-         $count->wait while $state->get eq "up";
+         $count->wait while $state->get eq 'up';
          $count->lock;
-         $count->decr;
-         $state->set("ready") if $count->get == 0;
+         $state->set('ready') if $count->decr == 0;
          $count->unlock;
       }
    }
 
    # Time taken from a 2.6 GHz machine running Mac OS X.
    #
-   # threads::shared:   0.238s  threads
+   # threads::shared:   0.207s  threads
    #   forks::shared:  36.426s  child processes
-   #     MCE::Shared:   0.397s  child processes
+   #     MCE::Shared:   0.353s  child processes
    #        MCE Sync:   0.062s  child processes
 
    sub user_func {
       my $id = MCE->wid;
       for (1 .. 400) {
          MCE->print("$_: $id\n");
-         # MCE->sync();   # via MCE Core API
+       # MCE->sync();     # via MCE-Core API
          barrier_sync();  # via MCE::Shared::Condvar
       }
    }
