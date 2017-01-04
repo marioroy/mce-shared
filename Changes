@@ -1,6 +1,12 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.809 Wed Jan 04 15:00:00 EST 2017
+
+  * Having IO::FDPass is beneficial for Condvar(s), Handle(s), and Queue(s).
+    Therefore, add IO::FDPass to PREREQ_PM if we can and not already installed.
+    Run MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL to bypass the check.
+
 1.808 Fri Dec 09 23:30:00 EST 2016
 
   * Optimized the barrier synchronization example in MCE::Shared::Condvar.

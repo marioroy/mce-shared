@@ -7,6 +7,33 @@ use warnings;
 
 use ExtUtils::MakeMaker;
 
+# Having IO::FDPass is beneficial for Condvar(s), Handle(s), and Queue(s).
+# Therefore, add IO::FDPass to PREREQ_PM if we can and not already installed.
+# Run MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL to bypass the check.
+
+my %require_io_fdpass;
+
+if ( !$ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
+   my $add_io_fdpass;
+
+   # cygwin lacks file descriptor passing
+   $add_io_fdpass = 0 if $^O =~ /mingw|msys|cygwin/i;
+
+   # install IO::FDPass manually if desired
+   $add_io_fdpass = 0 if $^O =~ /aix|hp-?ux|irix|gnu/i;
+   $add_io_fdpass = 0 if $^O =~ /osf|solaris|sunos|svr5|sco/i;
+
+   # okay on BSD variants, Linux, and Microsoft Windows
+   $add_io_fdpass = 1 if $^O =~ /bsd|darwin|dragonfly|linux|mswin/i;
+
+   if ( $add_io_fdpass ) {
+      local $@; local $SIG{'__DIE__'};
+      eval 'use IO::FDPass; 1' or $require_io_fdpass{'IO::FDPass'} = '1.1';
+   }
+}
+
+# Make Makefile
+
 WriteMakefile(
    ABSTRACT => 'MCE extension for sharing data supporting threads and processes',
    AUTHOR   => 'Mario E. Roy <marioeroy AT gmail DOT com>',
@@ -27,7 +54,8 @@ WriteMakefile(
       'Socket'       => 0,
       'Storable'     => 2.04,
       'Symbol'       => 0,
-      'Time::HiRes'  => 0
+      'Time::HiRes'  => 0,
+      %require_io_fdpass
    },
 
    ((!eval { ExtUtils::MakeMaker->VERSION(6.25) } ) ?
