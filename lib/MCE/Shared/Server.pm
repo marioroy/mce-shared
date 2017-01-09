@@ -1249,7 +1249,7 @@ sub _loop {
             $_Q->{_asem} = 0;
          }
 
-         $_Q->{_nb_flag} = 1;
+         $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
 
          return;
       },

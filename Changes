@@ -1,7 +1,9 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.809 Wed Jan 04 15:00:00 EST 2017
+1.809 Mon Jan 09 03:00:00 EST 2017
+
+  * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has no data.
 
   * Having IO::FDPass is beneficial for Condvar(s), Handle(s), and Queue(s).
     Therefore, add IO::FDPass to PREREQ_PM if we can and not already installed.

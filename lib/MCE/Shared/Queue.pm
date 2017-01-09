@@ -253,7 +253,8 @@ sub dequeue_nb {
       return;
    }
    else {
-      $_Q->{_nb_flag} = 1;
+      $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
+
       return (defined $_cnt && $_cnt ne '1')
          ? $_Q->_dequeue($_cnt) : $_Q->_dequeue();
    }
