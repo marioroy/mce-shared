@@ -21,7 +21,7 @@ our $VERSION = '1.808';
 
 use Carp ();
 
-my ($_has_threads, $_freeze, $_thaw, $_is_MSWin32);
+my ($_has_threads, $_freeze, $_thaw);
 
 BEGIN {
    local $@; local $SIG{__DIE__};
@@ -34,7 +34,6 @@ BEGIN {
    }
 
    $_has_threads = $INC{'threads.pm'} ? 1 : 0;
-   $_is_MSWin32  = ( $^O eq 'MSWin32' && $_has_threads ) ? 1 : 0;
 
    if (!exists $INC{'PDL.pm'}) {
       eval 'use Sereal 3.008 qw( encode_sereal decode_sereal )';
@@ -89,9 +88,7 @@ sub CLONE {
 
 my ( $_LIST, $_STAT, $_DATA ) = ( {}, {}, {} );
 
-bless my $_SELF = {
-   MGR_ID => "$$.$_tid", WRK_ID => $_is_MSWin32 ? $_tid : $$
-}, __PACKAGE__;
+bless my $_SELF = { MGR_ID => "$$.$_tid", WRK_ID => $$ }, __PACKAGE__;
 
 ## 'new' and 'tid' are aliases for 'create' and 'pid' respectively.
 
@@ -163,9 +160,7 @@ sub create {
    my $seed = $_STAT->{$pkg}->get("$mgr_id:seed");
    my $id   = $_STAT->{$pkg}->incr("$mgr_id:id");
 
-   ( $_is_MSWin32 )
-      ? _dispatch_thread ( $self, $pkg, $seed, $id, $mgr_id, $func, @_ )
-      : _dispatch_child  ( $self, $pkg, $seed, $id, $mgr_id, $func, @_ );
+   _create( $self, $pkg, $seed, $id, $mgr_id, $func, @_ );
 }
 
 ###############################################################################
@@ -192,19 +187,14 @@ sub exit {
    my $mgr_id = $self->{MGR_ID};
    my $wrk_id = $self->{WRK_ID};
 
-   if ( $wrk_id == ( $_is_MSWin32 ? $_tid : $$ ) ) {
+   if ( $wrk_id == $$ ) {
       $_[0] ? die "Hobo exited ($_[0])\n" : die "Hobo exited (0)\n";
       goto &_exit; # not reached
    }
    elsif ( $mgr_id eq "$$.$_tid" ) {
       return $self if ( exists $self->{JOINED} );
       sleep 0.015 until $_STAT->{ caller() }->get($mgr_id)->exists($wrk_id);
-
-      if ( $_is_MSWin32 ) {
-         sleep(0.015), $self->{_thr}->kill('QUIT');
-      } else {
-         sleep(0.015), CORE::kill('QUIT', $wrk_id);
-      }
+      sleep(0.015), CORE::kill('QUIT', $wrk_id);
 
       $self;
    }
@@ -217,7 +207,7 @@ sub finish {
    _croak('Usage: MCE::Hobo->finish()') if ref($_[0]);
    my $pkg = ( defined $_[1] ) ? $_[1] : caller;
 
-   _notify() if ( !$_is_MSWin32 && exists $_SELF->{_pkg} );
+   _notify() if ( exists $_SELF->{_pkg} );
 
    if ( $pkg eq 'MCE' ) {
       for my $k ( keys %{ $_LIST } ) { MCE::Hobo->finish($k); }
@@ -235,9 +225,6 @@ sub finish {
             sleep 0.225;
             for my $hobo ( $_LIST->{$pkg}->vals ) {
                $count++ if $hobo->is_running;
-               if ( $_is_MSWin32 && $hobo->{_thr}->is_joinable ) {
-                  $hobo->{_thr}->join;
-               }
             }
          }
 
@@ -265,16 +252,12 @@ sub is_joinable {
    my $mgr_id = $self->{MGR_ID};
    my $wrk_id = $self->{WRK_ID};
 
-   if ( $wrk_id == ( $_is_MSWin32 ? $_tid : $$ ) ) {
+   if ( $wrk_id == $$ ) {
       '';
    }
    elsif ( $mgr_id eq "$$.$_tid" ) {
       return undef if ( exists $self->{JOINED} );
-      if ( $_is_MSWin32 ) {
-         ( $self->{_thr}->is_joinable ) ? 1 : '';
-      } else {
-         local ($!, $?); ( waitpid($wrk_id, _WNOHANG) == 0 ) ? '' : 1;
-      }
+      local ($!, $?); ( waitpid($wrk_id, _WNOHANG) == 0 ) ? '' : 1;
    }
    else {
       $_DATA->{ caller() }->get($mgr_id)->exists($wrk_id) ? 1 : '';
@@ -288,16 +271,12 @@ sub is_running {
    my $mgr_id = $self->{MGR_ID};
    my $wrk_id = $self->{WRK_ID};
 
-   if ( $wrk_id == ( $_is_MSWin32 ? $_tid : $$ ) ) {
+   if ( $wrk_id == $$ ) {
       1;
    }
    elsif ( $mgr_id eq "$$.$_tid" ) {
       return undef if ( exists $self->{JOINED} );
-      if ( $_is_MSWin32 ) {
-         ( $self->{_thr}->is_running ) ? 1 : '';
-      } else {
-         local ($!, $?); ( waitpid($wrk_id, _WNOHANG) == 0 ) ? 1 : '';
-      }
+      local ($!, $?); ( waitpid($wrk_id, _WNOHANG) == 0 ) ? 1 : '';
    }
    else {
       $_DATA->{ caller() }->get($mgr_id)->exists($wrk_id) ? '' : 1;
@@ -319,15 +298,11 @@ sub join {
    my $wrk_id = $self->{WRK_ID};
    my $pkg    = caller() eq 'MCE::Hobo' ? caller(1) : caller();
 
-   if ( $wrk_id == ( $_is_MSWin32 ? $_tid : $$ ) ) {
+   if ( $wrk_id == $$ ) {
       _croak('Cannot join self');
    }
    elsif ( $mgr_id eq "$$.$_tid" ) {
-      if ( $_is_MSWin32 ) {
-         $self->{_thr}->join;
-      } else {
-         local ($!, $?); waitpid($wrk_id, 0);
-      }
+      local ($!, $?); waitpid($wrk_id, 0);
       $_LIST->{$pkg}->del($wrk_id);
    }
    else {
@@ -353,25 +328,16 @@ sub kill {
    my $wrk_id = $self->{WRK_ID};
    my $pkg    = caller;
 
-   if ( $wrk_id == ( $_is_MSWin32 ? $_tid : $$ ) ) {
-      ( $_is_MSWin32 )
-         ? threads->self->kill($signal || 'INT')
-         : CORE::kill($signal || 'INT', $$);
+   if ( $wrk_id == $$ ) {
+      CORE::kill($signal || 'INT', $$);
    }
    elsif ( $mgr_id eq "$$.$_tid" ) {
       return $self if ( exists $self->{JOINED} );
       sleep 0.015 until $_STAT->{$pkg}->get($mgr_id)->exists($wrk_id);
-
-      if ( $_is_MSWin32 ) {
-         sleep(0.015), $self->{_thr}->kill($signal || 'INT');
-      } else {
-         sleep(0.015), CORE::kill($signal || 'INT', $wrk_id);
-      }
+      sleep(0.015), CORE::kill($signal || 'INT', $wrk_id);
    }
    else {
-      ( $_is_MSWin32 )
-         ? $self->{_thr}->kill($signal || 'INT')
-         : CORE::kill($signal || 'INT', $wrk_id);
+      CORE::kill($signal || 'INT', $wrk_id);
    }
 
    $self;
@@ -390,14 +356,8 @@ sub list_joinable {
 
    return () unless ( exists $_LIST->{$pkg} );
 
-   if ( $_is_MSWin32 ) {
-      map { ( $_->{_thr}->is_joinable ) ? $_ : () }
-            $_LIST->{$pkg}->vals;
-   }
-   else {
-      map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? () : $_ }
-            $_LIST->{$pkg}->vals;
-   }
+   map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? () : $_ }
+         $_LIST->{$pkg}->vals;
 }
 
 sub list_running {
@@ -406,14 +366,8 @@ sub list_running {
 
    return () unless ( exists $_LIST->{$pkg} );
 
-   if ( $_is_MSWin32 ) {
-      map { ( $_->{_thr}->is_running ) ? $_ : () }
-            $_LIST->{$pkg}->vals;
-   }
-   else {
-      map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? $_ : () }
-            $_LIST->{$pkg}->vals;
-   }
+   map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? $_ : () }
+         $_LIST->{$pkg}->vals;
 }
 
 sub pending {
@@ -424,8 +378,7 @@ sub pending {
 }
 
 sub pid {
-   my $wrk_id = ref($_[0]) ? $_[0]->{WRK_ID} : $_SELF->{WRK_ID};
-   $_is_MSWin32 ? "$$.$wrk_id" : $wrk_id;
+   ref($_[0]) ? $_[0]->{WRK_ID} : $_SELF->{WRK_ID};
 }
 
 sub result {
@@ -458,24 +411,11 @@ sub waitone {
    return undef if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len );
    return undef if ( !$_DATA->{$pkg}->exists($mgr_id) );
 
-   my ( $self, $wrk_id );
+   my ( $self, $wrk_id ); local ( $!, $? );
 
-   if ( $_is_MSWin32 ) {
-      my @joinable;
-      while ( 1 ) {
-         sleep 0.3 until ( @joinable = threads->list(threads::joinable()) );
-         for my $thr ( @joinable ) {
-            last if ( $self = $_LIST->{$pkg}->del( $wrk_id = $thr->tid ) );
-         }
-         $self->{_thr}->join(), last if ( defined $self );
-      }
-   }
-   else {
-      local ( $!, $? );
-      while ( 1 ) {
-         $wrk_id = CORE::wait();
-         last if ( $self = $_LIST->{$pkg}->del($wrk_id) );
-      }
+   while ( 1 ) {
+      $wrk_id = CORE::wait();
+      last if ( $self = $_LIST->{$pkg}->del($wrk_id) );
    }
 
    my $result = $_DATA->{$pkg}->get($mgr_id)->del($wrk_id);
@@ -512,13 +452,21 @@ sub _croak {
    }
 }
 
-sub _dispatch {
+sub _create {
    my ( $self, $pkg, $seed, $id, $mgr_id, $func, @args ) = @_;
 
-   ## To avoid (Scalars leaked: N) messages; fixed in Perl 5.12.x
-   @_ = ();
+   @_ = (); local $_ = $_;
+   my $pid = fork();
 
-   my $wrk_id = $_is_MSWin32 ? $_tid : $$;
+   if ( !defined $pid ) {                              # error
+      return $self->_error("fork error: $!\n");
+   }
+   elsif ( $pid ) {                                    # parent
+      $self->{WRK_ID} = $pid, $_LIST->{$pkg}->set($pid, $self);
+      return $self;
+   }
+
+   my $wrk_id = $$;                                    # child
 
    $ENV{PERL_MCE_IPC} = 'win32' if ($^O eq 'MSWin32');
    $SIG{TERM} = $SIG{INT} = $SIG{HUP} = \&_trap;
@@ -541,68 +489,39 @@ sub _dispatch {
    ## One may set the seed at the application level for predictable
    ## results. Ditto for Math::Random.
 
-   if ( !$_is_MSWin32 ) {
-      srand(abs($seed - ($id * 100000)) % 2147483560);
+   srand(abs($seed - ($id * 100000)) % 2147483560);
 
-      if ( $INC{'Math/Random.pm'} ) {
-         my $cur_seed = Math::Random::random_get_seed();
+   if ( $INC{'Math/Random.pm'} ) {
+      my $cur_seed = Math::Random::random_get_seed();
 
-         my $new_seed = ($cur_seed < 1073741781)
-            ? $cur_seed + ((abs($id) * 10000) % 1073741780)
-            : $cur_seed - ((abs($id) * 10000) % 1073741780);
+      my $new_seed = ($cur_seed < 1073741781)
+         ? $cur_seed + ((abs($id) * 10000) % 1073741780)
+         : $cur_seed - ((abs($id) * 10000) % 1073741780);
 
-         Math::Random::random_set_seed($new_seed, $new_seed);
-      }
+      Math::Random::random_set_seed($new_seed, $new_seed);
    }
 
    ## Run.
 
+   local $SIG{'ALRM'} = sub { alarm 0; die "Hobo timed out\n" };
    $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, '');
-   my @res = eval { no strict 'refs'; $func->(@args) };
 
-   delete $_SELF->{_pkg};
+   my @res = eval {
+      alarm( $self->{hobo_timeout} || 0 );
+      no strict 'refs'; $func->(@args);
+   };
+
+   alarm 0; delete $_SELF->{_pkg};
 
    if ( $@ && $@ ne "Hobo exited (0)\n" ) {
       $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, $@);
-      warn "Hobo $wrk_id terminated abnormally: $@\n";
+      warn "Hobo $wrk_id terminated abnormally: reason $@\n"
+         if ( $@ ne "Hobo timed out\n" );
    }
 
    $_DATA->{$pkg}->get($mgr_id)->set($wrk_id, $_freeze->(\@res));
 
    goto &_exit;
-}
-
-sub _dispatch_child {
-   my ( $self, $pkg, $seed, $id, $mgr_id, $func, @args ) = @_;
-
-   @_ = (); local $_ = $_;
-   my $pid = fork();
-
-   return $self->_error("fork error: $!\n") if (!defined $pid);
-
-   _dispatch($self, $pkg, $seed, $id, $mgr_id, $func, @args)
-      if ($pid == 0);
-
-   $self->{WRK_ID} = $pid, $_LIST->{$pkg}->set($pid, $self);
-
-   return $self;
-}
-
-sub _dispatch_thread {
-   my ( $self, $pkg, $seed, $id, $mgr_id, $func, @args ) = @_;
-
-   @_ = (); local $_ = $_;
-
-   my $thr = threads->create( \&_dispatch,
-      $self, $pkg, $seed, $id, $mgr_id, $func, @args
-   );
-
-   return $self->_error("thread error: $!\n") if (!defined $thr);
-
-   $self->{WRK_ID} = $thr->tid, $_LIST->{$pkg}->set($thr->tid, $self);
-   $self->{_thr} = $thr;
-
-   return $self;
 }
 
 sub _error {
@@ -622,13 +541,7 @@ sub _exit {
    $SIG{__DIE__}  = sub { } unless $_tid;
    $SIG{__WARN__} = sub { };
 
-   if ( $_is_MSWin32 ) {
-      threads->exit(0);
-   }
-   elsif ( $_SELF->{posix_exit} ) {
-      CORE::kill('KILL', $$);
-   }
-
+   CORE::kill('KILL', $$) if ( $_SELF->{posix_exit} && $^O ne 'MSWin32' );
    CORE::exit(0);
 }
 
@@ -639,7 +552,7 @@ sub _notify {
 
    if ( $? ) {
       $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, "Hobo exited ($?)\n");
-      warn "Hobo $wrk_id terminated abnormally: Hobo exited ($?)\n\n";
+      warn "Hobo $wrk_id terminated abnormally: reason Hobo exited ($?)\n\n";
    }
 
    $_DATA->{$pkg}->get($mgr_id)->set($wrk_id, $_freeze->([]));
@@ -700,7 +613,7 @@ This document describes MCE::Hobo version 1.808
    $hobo->join();
 
    if ( my $err = $hobo->error() ) {
-      warn("Hobo error: $err\n");
+      warn "Hobo error: $err\n";
    }
 
    # Get a hobo's object
@@ -750,9 +663,6 @@ which runs on all the major platforms including Cygwin.
 C<MCE::Hobo> may be used as a standalone or together with C<MCE>
 including running alongside C<threads>.
 
-Beginning with C<MCE::Shared> 1.807, an exception is made on the Windows
-platform to use threads instead of fork for better reliability.
-
 The following is a parallel demonstration.
 
    use strict;
@@ -794,8 +704,6 @@ The following is a parallel demonstration.
 
 =over 3
 
-=item $hobo = MCE::Hobo->create( { posix_exit => 1 }, FUNCTION, ARGS )
-
 =item $hobo = MCE::Hobo->create( FUNCTION, ARGS )
 
 =item $hobo = MCE::Hobo->new( FUNCTION, ARGS )
@@ -803,10 +711,6 @@ The following is a parallel demonstration.
 This will create a new hobo that will begin execution with function as the
 entry point, and optionally ARGS for list of parameters. It will return the
 corresponding MCE::Hobo object, or undef if hobo creation failed.
-
-Options may be specified via a hash structure. At this time, C<posix_exit> is
-the only option supported. Set C<posix_exit> to avoid all END and destructor
-processing. Constructing a Hobo inside a thread implies C<posix_exit>.
 
 I<FUNCTION> may either be the name of a function, an anonymous subroutine, or
 a code ref.
@@ -816,6 +720,32 @@ a code ref.
    my $hobo = MCE::Hobo->create( sub { ... }, ... );
        # or
    my $hobo = MCE::Hobo->create( \&func, ... );
+
+=item $hobo = MCE::Hobo->create( { options }, FUNCTION, ARGS )
+
+Options may be specified via a hash structure. At this time, C<posix_exit> and
+C<hobo_timeout> are the only options supported. Set C<posix_exit> to avoid all
+END and destructor processing. Set C<hobo_timeout>, in number of seconds, if
+you want the hobo process to terminate after some time. The default is C<0>
+for no timeout.
+
+Constructing a Hobo inside a thread implies C<posix_exit => 1>.
+
+   my $hobo1 = MCE::Hobo->create( { posix_exit => 1 }, sub {
+      ...
+   } );
+
+   $hobo1->join;
+
+   my $hobo2 = MCE::Hobo->create( { hobo_timeout => 3 }, sub {
+      sleep 1 for ( 1 .. 9 );
+   } );
+
+   $hobo2->join;
+
+   if ( $hobo2->error() eq "Hobo timed out\n" ) {
+      ...
+   }
 
 The C<new()> method is an alias for C<create()>.
 
@@ -1077,13 +1007,10 @@ Class method that allows a hobo to obtain it's own I<MCE::Hobo> object.
 
 =item $hobo->tid()
 
-Returns the ID of the hobo.
+Returns the process ID of the hobo.
 
-   PID: $$.$tid  # Windows (only), includes thread id
-   TID: $$.$tid  # same thing
-
-   PID: $$       # Cygwin and UNIX platforms
-   TID: $$       # same thing
+   PID: $$
+   TID: $$  # same thing
 
 =item MCE::Hobo->pid()
 

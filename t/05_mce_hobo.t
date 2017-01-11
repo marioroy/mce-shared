@@ -50,7 +50,7 @@ BEGIN {
    my ( $cnt, @procs ); local $_;
 
    for ( 1 .. 3 ) {
-      push @procs, MCE::Hobo->new( sub { sleep 0.3 for 1 .. 9; return 1 } );
+      push @procs, MCE::Hobo->new( sub { sleep 1 for 1 .. 9; return 1 } );
    }
 
    $procs[0]->exit();
