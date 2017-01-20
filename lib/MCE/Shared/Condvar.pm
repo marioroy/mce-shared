@@ -387,17 +387,18 @@ The conditional locking aspect is inspired by L<threads::shared>.
 
 =head1 LIMITATION
 
-Perl must have the L<IO::FDPass> module installed for constructing a shared
-C<queue> or C<condvar> while the shared-manager process is running.
-
-For platforms where C<IO::FDPass> is not feasible, construct C<queues> or
-C<condvars> first before other classes. The shared-manager process is delayed
-until sharing other classes or explicitly starting the process.
+Perl must have L<IO::FDPass> for constructing a shared C<condvar>, C<handle>,
+or C<queue> while the shared-manager process is running. For platforms where
+C<IO::FDPass> is not feasible, construct any C<condvar>, C<handle>, and
+C<queue> first before other classes. The shared-manager process is delayed
+until sharing other classes or starting the manager explicitly.
 
    use MCE::Shared;
 
-   my $q1 = MCE::Shared->queue();
-   my $cv = MCE::Shared->condvar();
+   my $cv  = MCE::Shared->condvar();
+   my $que = MCE::Shared->queue();
+
+   mce_open my $fh, ">>", "/path/to/file.log";
 
    MCE::Shared->start();
 

@@ -427,45 +427,41 @@ This module provides data sharing capabilities for L<MCE> supporting threads
 and processes. L<MCE::Hobo> provides threads-like parallelization for running
 code asynchronously.
 
-C<MCE::Shared> enables extra functionality on systems with C<IO::FDPass>
+C<MCE::Shared> enables extra functionality on systems with L<IO::FDPass>
 installed. Without it, MCE::Shared is unable to send file descriptors to the
-shared-manager process for C<queue>, C<condvar>, and possibly C<handle>.
-
-As of this writing, the L<IO::FDPass> module is not a requirement for running
-C<MCE::Shared> nor is the check made during installation. The reason is that
-C<IO::FDPass> is not possible on Cygwin and not sure about AIX.
-
-The following is a suggestion for systems without C<IO::FDPass>.
-This restriction applies to C<queue>, C<condvar>, and C<handle> only.
+shared-manager process. The following is a suggestion for systems without
+C<IO::FDPass>. This restriction applies to sharing L<MCE::Shared::Condvar>,
+L<MCE::Shared::Handle>, and L<MCE::Shared::Queue> only.
 
    use MCE::Shared;
 
-   # Construct any shared queue(s) and condvar(s) first.
+   # Construct any shared Condvar(s), Handle(s), and Queue(s) first.
    # These contain GLOB handles where freezing is not allowed.
-
-   my $q1  = MCE::Shared->queue();
-   my $q2  = MCE::Shared->queue();
 
    my $cv1 = MCE::Shared->condvar();
    my $cv2 = MCE::Shared->condvar();
 
-   # Afterwards, start the shared-manager manually.
+   my $q1  = MCE::Shared->queue();
+   my $q2  = MCE::Shared->queue();
 
-   MCE::Shared->start();
-
-   # The shared-manager process knows of \*STDOUT, \*STDERR, \*STDIN
+   # The shared-manager process knows of ( \*STDOUT, \*STDERR, \*STDIN ).
+   # Therefore okay to construct these after the manager is running.
 
    mce_open my $fh1, ">>", \*STDOUT;                  # ok
    mce_open my $fh2, "<", "/path/to/sequence.fasta";  # ok
-   my $h1 = MCE::Shared->hash();                      # ok
 
-Otherwise, sharing is immediate and not delayed with C<IO::FDPass>. It is not
-necessary to share C<queue> and C<condvar> first or worry about starting the
-shared-manager process.
+   # Afterwards, start the shared-manager manually.
+   # Not necessary if IO::FDPass is available.
+
+   MCE::Shared->start();
+
+The shared-manager starts automatically for other classes shipped with
+C<MCE::Shared>. Therefore, the following will fail if Perl lacks the
+C<IO::FDPass> module.
 
    use MCE::Shared;
 
-   my $h1 = MCE::Shared->hash();    # shares immediately
+   my $h1 = MCE::Shared->hash();    # shared-manager starts immediately
    my $q1 = MCE::Shared->queue();   # IO::FDPass sends file descriptors
    my $cv = MCE::Shared->condvar(); # IO::FDPass sends file descriptors
    my $h2 = MCE::Shared->ordhash();

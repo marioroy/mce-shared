@@ -332,11 +332,9 @@ and for writing:
 
 Starting with C<MCE::Shared> v1.007, chunk IO is possible for both non-shared
 and shared handles. Chunk IO is enabled by the trailing 'k' or 'm' for read
-size.
-
-Also, chunk IO supports the special "\n>"-like record separator. That anchors
-">" at the start of the line. Workers receive record(s) beginning with ">" and
-ending with "\n".
+size. Also, chunk IO supports the special "\n>"-like record separator.
+That anchors ">" at the start of the line. Workers receive record(s) beginning
+with ">" and ending with "\n".
 
    # non-shared handle ---------------------------------------------
 
@@ -443,13 +441,25 @@ The benefit of chunk IO is from lesser IPC for the shared-manager process
 
 =head1 LIMITATION
 
-When passing a C<reference>, be sure to construct its C<file handle> associated
-with C<reference> prior to starting the shared-manager process. Constructing a
-shared object C<{ Array, Handle, Hash, Minidb, Ordhash, Scalar, Sequence }>
-starts the manager process automatically.
+Perl must have L<IO::FDPass> for constructing a shared C<condvar>, C<handle>,
+or C<queue> while the shared-manager process is running. For platforms where
+C<IO::FDPass> is not feasible, construct any C<condvar>, C<handle>, and
+C<queue> first before other classes. The shared-manager process is delayed
+until sharing other classes or starting the manager explicitly.
 
-Perl must have the L<IO::FDPass> module installed for C<MCE::Shared> to pass a
-C<file_descriptor> higher than 2 to the shared-manager process.
+   use MCE::Shared;
+
+   my $cv  = MCE::Shared->condvar();
+   my $que = MCE::Shared->queue();
+
+   mce_open my $fh, ">>", "/path/to/file.log";
+
+   MCE::Shared->start();
+
+When passing a C<reference>, be sure to construct its C<file handle> associated
+with C<reference> prior to the shared-manager process being spawned.
+
+   mce_open my $fh, ">>", \*non_shared_fh;
 
 =head1 CREDITS
 

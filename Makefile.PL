@@ -14,21 +14,27 @@ use ExtUtils::MakeMaker;
 my %require_io_fdpass;
 
 if ( !$ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
-   my $add_io_fdpass;
+   local $@; local $SIG{'__DIE__'};
+   if ( $^O =~ /mingw|msys|cygwin/i ) {
+      # cygwin and friends lack file descriptor passing
+   }
+   elsif ( $^O =~ /bsd|darwin|dragonfly|linux|mswin/i ) {
+      eval 'use IO::FDPass; 1' or do {
+         print "\n",
+            "The IO::FDPass module is known to work on this platform.\n",
+            "Thus, adding requirement to PREREQ for a better experience\n",
+            "sharing MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
 
-   # cygwin lacks file descriptor passing
-   $add_io_fdpass = 0 if $^O =~ /mingw|msys|cygwin/i;
-
-   # install IO::FDPass manually if desired
-   $add_io_fdpass = 0 if $^O =~ /aix|hp-?ux|irix|gnu/i;
-   $add_io_fdpass = 0 if $^O =~ /osf|solaris|sunos|svr5|sco/i;
-
-   # okay on BSD variants, Linux, and Microsoft Windows
-   $add_io_fdpass = 1 if $^O =~ /bsd|darwin|dragonfly|linux|mswin/i;
-
-   if ( $add_io_fdpass ) {
-      local $@; local $SIG{'__DIE__'};
-      eval 'use IO::FDPass; 1' or $require_io_fdpass{'IO::FDPass'} = '1.1';
+         $require_io_fdpass{'IO::FDPass'} = '1.1';
+      };
+   }
+   elsif ( $^O =~ /aix|hp-?ux|irix|gnu|osf|solaris|sunos|svr5|sco/i ) {
+      eval 'use IO::FDPass; 1' or do {
+         print "\n",
+            "The IO::FDPass requirement is optional on this platform.\n",
+            "Try installing the module manually for a better experience\n",
+            "sharing MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
+      };
    }
 }
 

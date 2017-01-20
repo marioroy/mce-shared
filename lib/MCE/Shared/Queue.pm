@@ -672,10 +672,8 @@ Helper class for L<MCE::Shared>.
 
 This module is mostly compatible with L<MCE::Queue> except for the C<gather>
 option which is not supported in this context. It provides a queue interface
-supporting normal and priority queues.
-
-Data from shared queues reside under the shared-manager process, otherwise
-locally.
+supporting normal and priority queues. Data from shared queues reside under
+the shared-manager process, otherwise locally.
 
 =head1 API DOCUMENTATION
 
@@ -927,7 +925,6 @@ MCE::Shared::Queue supports both normal and priority queues.
 =item L<Thread::Queue>
 
 Thread::Queue is used as a template for identifying and documenting the methods.
-
 MCE::Shared::Queue is not fully compatible due to supporting normal and priority
 queues simultaneously; e.g.
 
@@ -943,17 +940,18 @@ queues simultaneously; e.g.
 
 =head1 LIMITATION
 
-Perl must have the L<IO::FDPass> module installed for constructing
-a shared C<queue> or C<condvar> while the shared-manager process is running.
-
-For platforms where C<IO::FDPass> is not feasible, construct C<queues> or
-C<condvars> first before other classes. The shared-manager process is delayed
-until sharing other classes or explicitly starting the process.
+Perl must have L<IO::FDPass> for constructing a shared C<condvar>, C<handle>,
+or C<queue> while the shared-manager process is running. For platforms where
+C<IO::FDPass> is not feasible, construct any C<condvar>, C<handle>, and
+C<queue> first before other classes. The shared-manager process is delayed
+until sharing other classes or starting the manager explicitly.
 
    use MCE::Shared;
 
-   my $q1 = MCE::Shared->queue();
-   my $cv = MCE::Shared->condvar();
+   my $cv  = MCE::Shared->condvar();
+   my $que = MCE::Shared->queue();
+
+   mce_open my $fh, ">>", "/path/to/file.log";
 
    MCE::Shared->start();
 
