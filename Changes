@@ -1,7 +1,7 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.809 Wed Jan 11 18:00:00 EST 2017
+1.809 Fri Jan 20 19:30:00 EST 2017
 
   * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has no data.
 
@@ -10,7 +10,8 @@ Revision history for Perl module MCE::Shared.
     Run MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL to bypass the check.
 
   * Reverted MCE::Hobo back to spawning children on the Windows platform.
-    Added hobo_timeout option to MCE::Hobo.
+    Imply posix_exit => 1 if Gearman::XS is present.
+    Added hobo_timeout option.
 
 1.808 Fri Dec 09 23:30:00 EST 2016
 
