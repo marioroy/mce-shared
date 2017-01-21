@@ -134,6 +134,7 @@ sub create {
       $self->{posix_exit} = 1 if ( $_has_threads && $_tid );
       $self->{posix_exit} = 1 if ( $INC{'CGI.pm'} || $INC{'FCGI.pm'} );
       $self->{posix_exit} = 1 if ( $INC{'Mojo/IOLoop.pm'} || $INC{'Tk.pm'} );
+      $self->{posix_exit} = 1 if ( $INC{'Gearman/XS.pm'} );
    }
 
    if ( !exists $_LIST->{$pkg} ) {
@@ -730,6 +731,7 @@ you want the hobo process to terminate after some time. The default is C<0>
 for no timeout.
 
 Constructing a Hobo inside a thread implies C<posix_exit => 1>.
+Ditto if (F)CGI.pm, Gearman::XS, Mojo::IOLoop, or Tk is present.
 
    my $hobo1 = MCE::Hobo->create( { posix_exit => 1 }, sub {
       ...
