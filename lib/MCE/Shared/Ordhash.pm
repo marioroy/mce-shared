@@ -826,17 +826,18 @@ This document describes MCE::Shared::Ordhash version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
-   use MCE::Shared::Ordhash;
+   # non-shared construction for use by one process
 
+   use MCE::Shared::Ordhash;
    my $oh = MCE::Shared::Ordhash->new( @pairs );
 
-   # shared
-   use MCE::Shared;
+   # shared object for sharing with other processes
 
+   use MCE::Shared;
    my $oh = MCE::Shared->ordhash( @pairs );
 
    # oo interface
+
    $val   = $oh->set( $key, $val );
    $val   = $oh->get( $key );
    $val   = $oh->delete( $key );              # del is an alias for delete

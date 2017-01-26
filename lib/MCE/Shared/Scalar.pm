@@ -104,22 +104,24 @@ This document describes MCE::Shared::Scalar version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
-   use MCE::Shared::Scalar;
+   # non-shared construction for use by one process
 
+   use MCE::Shared::Scalar;
    my $var = MCE::Shared::Scalar->new( $val );
 
-   # shared
-   use MCE::Shared;
+   # shared object for sharing with other processes
 
+   use MCE::Shared;
    my $var = MCE::Shared->scalar( $val );
 
    # oo interface
+
    $val = $var->set( $val );
    $val = $var->get();
    $len = $var->len();
 
    # sugar methods without having to call set/get explicitly
+
    $val = $var->append( $string );     #   $val .= $string
    $val = $var->decr();                # --$val
    $val = $var->decrby( $number );     #   $val -= $number

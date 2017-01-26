@@ -141,24 +141,24 @@ This document describes MCE::Shared::Condvar version 1.808
    my $cv = MCE::Shared->condvar( 0 );
 
    # oo interface
+
    $val = $cv->set( $val );
    $val = $cv->get();
    $len = $cv->len();
 
    # conditional locking primitives
+
    $cv->lock();
    $cv->unlock();
-
-   $cv->broadcast();
    $cv->broadcast(0.05);     # delay before broadcasting
-
-   $cv->signal();
+   $cv->broadcast();
    $cv->signal(0.05);        # delay before signaling
-
+   $cv->signal();
    $cv->timedwait(2.5);
    $cv->wait();
 
    # sugar methods without having to call set/get explicitly
+
    $val = $cv->append( $string );     #   $val .= $string
    $val = $cv->decr();                # --$val
    $val = $cv->decrby( $number );     #   $val -= $number

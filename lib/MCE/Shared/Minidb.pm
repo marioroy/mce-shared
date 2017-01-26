@@ -1112,23 +1112,25 @@ This document describes MCE::Shared::Minidb version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
-   use MCE::Shared::Minidb;
+   # non-shared construction for use by one process
 
+   use MCE::Shared::Minidb;
    my $db = MCE::Shared::Minidb->new();
 
-   # shared
-   use MCE::Shared;
+   # shared object for sharing with other processes
 
+   use MCE::Shared;
    my $db = MCE::Shared->minidb();
 
-   # HoH
+   # HoH - Hash of Hash
+
    $db->hset( "key1", "f1", "foo" );
    $db->hset( "key2", "f1", "bar", "f2", "baz" );
 
    $val = $db->hget( "key2", "f2" );  # "baz"
 
-   # HoA
+   # HoA - Hash of Array
+
    $db->lset( "key1", 0, "foo" );
    $db->lset( "key2", 0, "bar", 1, "baz" );
 

@@ -314,17 +314,18 @@ This document describes MCE::Shared::Hash version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
-   use MCE::Shared::Hash;
+   # non-shared construction for use by one process
 
+   use MCE::Shared::Hash;
    my $ha = MCE::Shared::Hash->new( @pairs );
 
-   # shared
-   use MCE::Shared;
+   # shared object for sharing with other processes
 
+   use MCE::Shared;
    my $ha = MCE::Shared->hash( @pairs );
 
    # oo interface
+
    $val   = $ha->set( $key, $val );
    $val   = $ha->get( $key );
    $val   = $ha->delete( $key );              # del is an alias for delete

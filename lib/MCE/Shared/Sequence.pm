@@ -212,7 +212,8 @@ This document describes MCE::Shared::Sequence version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
+   # non-shared construction for use by one process
+
    use MCE::Shared::Sequence;
 
    my $seq_a = MCE::Shared::Sequence->new( $begin, $end, $step, $fmt );
@@ -222,8 +223,8 @@ This document describes MCE::Shared::Sequence version 1.808
       $begin, $end, $step, $fmt
    );
 
-   # shared
-   use MCE::Hobo;
+   # shared object for sharing with other processes
+
    use MCE::Shared;
 
    my $seq_a = MCE::Shared->sequence( 1, 100 );
@@ -232,6 +233,10 @@ This document describes MCE::Shared::Sequence version 1.808
       { chunk_size => 10, bounds_only => 1 },
       1, 100
    );
+
+   # demonstration
+
+   use MCE::Hobo;
 
    sub parallel_a {
       my ( $id ) = @_;

@@ -398,17 +398,18 @@ This document describes MCE::Shared::Array version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
-   use MCE::Shared::Array;
+   # non-shared construction for use by one process
 
+   use MCE::Shared::Array;
    my $ar = MCE::Shared::Array->new( @list );
 
-   # shared
-   use MCE::Shared;
+   # shared object for sharing with other processes
 
+   use MCE::Shared;
    my $ar = MCE::Shared->array( @list );
 
    # oo interface
+
    $val   = $ar->set( $index, $val );
    $val   = $ar->get( $index);
    $val   = $ar->delete( $index );            # del is an alias for delete

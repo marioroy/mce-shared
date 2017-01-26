@@ -223,7 +223,8 @@ This document describes MCE::Shared::Handle version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
+   # non-shared construction for use by one process
+
    use MCE::Shared::Handle;
 
    MCE::Shared::Handle->open( my $fh, "<", "bio.fasta" );
@@ -231,7 +232,8 @@ This document describes MCE::Shared::Handle version 1.808
 
    mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
-   # shared
+   # shared object for sharing with other processes
+
    use MCE::Shared;
 
    MCE::Shared->open( my $fh, "<", "bio.fasta" );
@@ -239,14 +241,15 @@ This document describes MCE::Shared::Handle version 1.808
 
    mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
-   # demo
+   # demonstration
+   # output is serialized (not garbled), order is not guaranteed
+
    use MCE::Hobo;
    use MCE::Shared;
 
    mce_open my $ofh, ">>", \*STDOUT  or die "open error: $!";
    mce_open my $ifh, "<", "file.log" or die "open error: $!";
 
-   # output is serialized (not garbled), but not ordered
    sub parallel {
       $/ = "\n"; # can set the input record separator
       while (my $line = <$ifh>) {
@@ -259,6 +262,7 @@ This document describes MCE::Shared::Handle version 1.808
    $_->join() for MCE::Hobo->list();
 
    # handle functions
+
    my $bool = eof($ifh);
    my $off  = tell($ifh);
    my $fd   = fileno($ifh);
@@ -266,7 +270,6 @@ This document describes MCE::Shared::Handle version 1.808
    my $line = readline($ifh);
 
    binmode $ifh;
-
    seek $ifh, 10, 0;
    read $ifh, my($buf), 80;
 

@@ -616,14 +616,16 @@ This document describes MCE::Shared::Queue version 1.808
 
 =head1 SYNOPSIS
 
-   # non-shared
+   # non-shared construction for use by one process
+
    use MCE::Shared::Queue;
 
    my $qu = MCE::Shared::Queue->new(
       await => 1, fast => 0, queue => [ "." ]
    );
 
-   # shared
+   # shared object for sharing with other processes
+
    use MCE::Shared;
    use MCE::Shared::Queue;
 
@@ -633,7 +635,7 @@ This document describes MCE::Shared::Queue version 1.808
       fast   => 0
    );
 
-   # Possible values for "porder" and "type".
+   # possible values for "porder" and "type"
 
    porder =>
       $MCE::Shared::Queue::HIGHEST # Highest priority items dequeue first
@@ -645,7 +647,7 @@ This document describes MCE::Shared::Queue version 1.808
       $MCE::Shared::Queue::LILO    # Synonym for FIFO
       $MCE::Shared::Queue::FILO    # Synonym for LIFO
 
-   # Below, [ ... ] denotes optional parameters.
+   # below, [ ... ] denotes optional parameters
 
    $qu->await( [ $pending_threshold ] );
    $qu->clear();
