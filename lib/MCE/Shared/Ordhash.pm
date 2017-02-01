@@ -824,19 +824,48 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 This document describes MCE::Shared::Ordhash version 1.808
 
+=head1 DESCRIPTION
+
+An ordered-hash helper class for use as a standalone or managed by
+L<MCE::Shared>.
+
+This module implements an ordered hash featuring tombstone deletion,
+inspired by L<Hash::Ordered>. An ordered hash is very much like a normal
+hash but with key insertion order preserved.
+
+It provides C<splice>, sorting, plus extra capabilities for use with
+L<MCE::Shared::Minidb>. Tombstone deletion is further optimized to not
+impact C<store>, C<push>, C<unshift>, and C<merge>. Tombstones are
+purged in-place for lesser memory consumption. In addition, C<pop> and
+C<shift> run optimally when an index is present. The optimization also
+applies to forward and reverse deletes. The end result is achieving a
+new level of performance, for a pure-Perl ordered hash implementation.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Ordhash;
+
    my $oh = MCE::Shared::Ordhash->new( @pairs );
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
+
    my $oh = MCE::Shared->ordhash( @pairs );
 
-   # oo interface
+   # hash-like dereferencing
+
+   my $val = $oh->{$key};
+   $oh->{$key} = $val;
+   %{$oh} = ();
+
+   # OO interface
+
+   if ( !defined ( $val = $oh->get("some_key") ) ) {
+      $val = $oh->set( some_key => "some_value" );
+   }
 
    $val   = $oh->set( $key, $val );
    $val   = $oh->get( $key );
@@ -874,7 +903,78 @@ This document describes MCE::Shared::Ordhash version 1.808
    @vals  = $oh->sort( "key alpha" );         # by key $a cmp $b
    @vals  = $oh->sort( "key alpha desc" );    # by key $b cmp $a
 
-   # search capability key/val { =~ !~ eq ne lt le gt ge == != < <= > >= }
+   # included, sugar methods without having to call set/get explicitly
+
+   $len   = $oh->append( $key, $string );     #   $val .= $string
+   $val   = $oh->decr( $key );                # --$val
+   $val   = $oh->decrby( $key, $number );     #   $val -= $number
+   $val   = $oh->getdecr( $key );             #   $val--
+   $val   = $oh->getincr( $key );             #   $val++
+   $val   = $oh->incr( $key );                # ++$val
+   $val   = $oh->incrby( $key, $number );     #   $val += $number
+   $old   = $oh->getset( $key, $new );        #   $o = $v, $v = $n, $o
+
+For normal hash behavior, construction via the TIE mechanism is supported.
+
+   # non-shared/local construction for use by a single process
+
+   use MCE::Shared::Ordhash;
+
+   tie my %oh, "MCE::Shared::Ordhash", @pairs;
+   tie my %oh, "MCE::Shared::Ordhash";
+
+   # construction when sharing with other threads and processes
+
+   use MCE::Shared;
+
+   tie my %oh, "MCE::Shared", { ordered => 1 }, @pairs;
+   tie my %oh, "MCE::Shared", ordered => 1;
+
+   # usage
+
+   my $val;
+
+   if ( !defined ( $val = $oh{some_key} ) ) {
+      $val = $oh{some_key} = "some_value";
+   }
+
+   $oh{some_key} = 0;
+
+   tied(%oh)->incrby("some_key", 20);
+   tied(%oh)->incrby(some_key => 20);
+
+=head1 SYNTAX for QUERY STRING
+
+Several methods take a query string for an argument. The format of the string
+is described below. In the context of sharing, the query mechanism is beneficial
+for the shared-manager process. The shared-manager performs the query where
+the data resides versus sending data in whole to the client process for
+traversing. Only the data found is sent.
+
+   o Basic demonstration
+
+     @keys = $oh->keys( "query string given here" );
+     @keys = $oh->keys( "val =~ /pattern/" );
+
+   o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
+   o Multiple expressions delimited by :AND or :OR, mixed case allowed
+
+     "key eq 'some key' :or (val > 5 :and val < 9)"
+     "key eq some key :or (val > 5 :and val < 9)"
+     "key =~ /pattern/i :And val =~ /pattern/i"
+     "val eq foo baz :OR key !~ /pattern/i"
+
+     * key matches on keys in the hash
+     * likewise, val matches on values
+
+   o Quoting is optional inside the string
+
+     "key =~ /pattern/i :AND val eq 'foo bar'"   # val eq "foo bar"
+     "key =~ /pattern/i :AND val eq foo bar"     # val eq "foo bar"
+
+Examples.
+
+   # search capability key/val: =~ !~ eq ne lt le gt ge == != < <= > >=
    # key/val means to match against actual key/val respectively
 
    @keys  = $oh->keys( "key eq 'some key' :or (val > 5 :and val < 9)" );
@@ -892,72 +992,20 @@ This document describes MCE::Shared::Ordhash version 1.808
    %pairs = $oh->pairs( "val >  $number" );
    %pairs = $oh->pairs( "val >= $number" );
 
-   @vals  = $oh->values( "key eq $string" );
-   @vals  = $oh->values( "key ne $string with space" );
-   @vals  = $oh->values( "key lt $string :or val =~ /$pat1|$pat2/" );
-   @vals  = $oh->values( "val le $string :and val eq 'foo bar'" );
-   @vals  = $oh->values( "val le $string :and val eq foo bar" );
-   @vals  = $oh->values( "val gt $string" );
-   @vals  = $oh->values( "val ge $string" );
-
-   # sugar methods without having to call set/get explicitly
-
-   $len   = $oh->append( $key, $string );     #   $val .= $string
-   $val   = $oh->decr( $key );                # --$val
-   $val   = $oh->decrby( $key, $number );     #   $val -= $number
-   $val   = $oh->getdecr( $key );             #   $val--
-   $val   = $oh->getincr( $key );             #   $val++
-   $val   = $oh->incr( $key );                # ++$val
-   $val   = $oh->incrby( $key, $number );     #   $val += $number
-   $old   = $oh->getset( $key, $new );        #   $o = $v, $v = $n, $o
-
-=head1 DESCRIPTION
-
-This module implements an ordered hash featuring tombstone deletion,
-inspired by the L<Hash::Ordered> module. An ordered hash means the key
-insertion order is preserved.
-
-It provides C<splice>, sorting, plus extra capabilities for use with
-L<MCE::Shared::Minidb>. Tombstone deletion is further optimized to not
-impact C<store>, C<push>, C<unshift>, and C<merge>. Tombstones are
-purged in-place for lesser memory consumption. In addition, C<pop> and
-C<shift> run optimally when an index is present. The optimization also
-applies to forward and reverse deletes.
-
-The end result is achieving a new level of performance, for a pure-Perl
-ordered hash implementation.
-
-=head1 SYNTAX for QUERY STRING
-
-Several methods in C<MCE::Shared::Ordhash> take a query string for an argument.
-
-   o Basic demonstration: @keys = $oh->keys( "val =~ /pattern/" );
-   o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   o Multiple expressions delimited by :AND or :OR
-   o Quoting optional inside the string
-
-     "key eq 'some key' :or (val > 5 :and val < 9)"
-     "key eq some key :or (val > 5 :and val < 9)"
-     "key =~ /pattern/i :and val =~ /pattern/i"
-     "key =~ /pattern/i :and val eq 'foo bar'"   # val eq "foo bar"
-     "key =~ /pattern/i :and val eq foo bar"     # val eq "foo bar"
-     "val eq foo baz :or key !~ /pattern/i"
-
-     * key matches on keys in the hash
-     * val matches on values
-
-=over 3
-
-=item * The modifiers C<:AND> and C<:OR> may be mixed case. e.g. C<:And>
-
-=back
+   @vals  = $oh->vals( "key eq $string" );
+   @vals  = $oh->vals( "key ne $string with space" );
+   @vals  = $oh->vals( "key lt $string :or val =~ /$pat1|$pat2/" );
+   @vals  = $oh->vals( "val le $string :and val eq 'foo bar'" );
+   @vals  = $oh->vals( "val le $string :and val eq foo bar" );
+   @vals  = $oh->vals( "val gt $string" );
+   @vals  = $oh->vals( "val ge $string" );
 
 =head1 API DOCUMENTATION
 
 This module involves TIE when accessing the object via hash-like behavior.
 Both non-shared and shared instances are impacted if doing so. Although likely
-fast enough for many use cases, use the OO interface if better performance is
-desired.
+fast enough for many use cases, the OO interface is recommended for better
+performance.
 
 =over 3
 

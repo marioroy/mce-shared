@@ -102,25 +102,31 @@ MCE::Shared::Scalar - Scalar helper class
 
 This document describes MCE::Shared::Scalar version 1.808
 
+=head1 DESCRIPTION
+
+A scalar helper class for use as a standalone or managed by L<MCE::Shared>.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Scalar;
+
    my $var = MCE::Shared::Scalar->new( $val );
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
+
    my $var = MCE::Shared->scalar( $val );
 
-   # oo interface
+   # OO interface
 
    $val = $var->set( $val );
    $val = $var->get();
    $len = $var->len();
 
-   # sugar methods without having to call set/get explicitly
+   # included, sugar methods without having to call set/get explicitly
 
    $val = $var->append( $string );     #   $val .= $string
    $val = $var->decr();                # --$val
@@ -131,15 +137,31 @@ This document describes MCE::Shared::Scalar version 1.808
    $val = $var->incrby( $number );     #   $val += $number
    $old = $var->getset( $new );        #   $o = $v, $v = $n, $o
 
-=head1 DESCRIPTION
+For normal scalar behavior, construction via the TIE mechanism is supported.
 
-Helper class for L<MCE::Shared>.
+   # non-shared/local construction for use by a single process
+
+   use MCE::Shared::Scalar;
+
+   tie my $var, "MCE::Shared::Scalar";
+
+   # construction when sharing with other threads and processes
+
+   use MCE::Shared;
+
+   tie my $var, "MCE::Shared";
+
+   # usage
+
+   $var = 0;
+
+   tied($var)->incrby(20);
 
 =head1 API DOCUMENTATION
 
 This module may involve TIE when accessing the object via scalar dereferencing.
 Only shared instances are impacted if doing so. Although likely fast enough for
-many use cases, use the OO interface if better performance is desired.
+many use cases, the OO interface is recommended for better performance.
 
 =over 3
 

@@ -134,13 +134,18 @@ MCE::Shared::Condvar - Condvar helper class
 
 This document describes MCE::Shared::Condvar version 1.808
 
+=head1 DESCRIPTION
+
+This helper class made for L<MCE::Shared> provides a C<Scalar>, C<Mutex>,
+and primitives for conditional locking.
+
 =head1 SYNOPSIS
 
    use MCE::Shared;
 
    my $cv = MCE::Shared->condvar( 0 );
 
-   # oo interface
+   # OO interface
 
    $val = $cv->set( $val );
    $val = $cv->get();
@@ -157,7 +162,7 @@ This document describes MCE::Shared::Condvar version 1.808
    $cv->timedwait(2.5);
    $cv->wait();
 
-   # sugar methods without having to call set/get explicitly
+   # included, sugar methods without having to call set/get explicitly
 
    $val = $cv->append( $string );     #   $val .= $string
    $val = $cv->decr();                # --$val
@@ -168,12 +173,9 @@ This document describes MCE::Shared::Condvar version 1.808
    $val = $cv->incrby( $number );     #   $val += $number
    $old = $cv->getset( $new );        #   $o = $v, $v = $n, $o
 
-=head1 DESCRIPTION
+=head1 EXAMPLE
 
-This helper class for L<MCE::Shared> provides a C<Scalar>, C<Mutex>, and
-primitives for conditional locking.
-
-The following demonstrates barrier synchronization.
+The following example demonstrates barrier synchronization.
 
    use MCE;
    use MCE::Shared;
@@ -208,19 +210,12 @@ The following demonstrates barrier synchronization.
       }
    }
 
-   # Time taken from a 2.6 GHz machine running Mac OS X.
-   #
-   # threads::shared:   0.207s  threads
-   #   forks::shared:  36.426s  child processes
-   #     MCE::Shared:   0.353s  child processes
-   #        MCE Sync:   0.062s  child processes
-
    sub user_func {
       my $id = MCE->wid;
       for (1 .. 400) {
          MCE->print("$_: $id\n");
-       # MCE->sync();     # via MCE-Core API
-         barrier_sync();  # via MCE::Shared::Condvar
+         barrier_sync();  # made possible by MCE::Shared::Condvar
+       # MCE->sync();     # same thing via the MCE-Core API
       }
    }
 
@@ -228,6 +223,12 @@ The following demonstrates barrier synchronization.
       max_workers => $num_workers,
       user_func   => \&user_func
    )->run;
+
+   # Time taken from a 2.6 GHz machine running Mac OS X.
+   # threads::shared:   0.207s  Perl threads
+   #   forks::shared:  36.426s  child processes
+   #     MCE::Shared:   0.353s  child processes
+   #        MCE Sync:   0.062s  child processes
 
 =head1 API DOCUMENTATION
 

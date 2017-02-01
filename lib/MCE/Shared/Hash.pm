@@ -312,19 +312,35 @@ MCE::Shared::Hash - Hash helper class
 
 This document describes MCE::Shared::Hash version 1.808
 
+=head1 DESCRIPTION
+
+A hash helper class for use as a standalone or managed by L<MCE::Shared>.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Hash;
+
    my $ha = MCE::Shared::Hash->new( @pairs );
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
+
    my $ha = MCE::Shared->hash( @pairs );
 
-   # oo interface
+   # hash-like dereferencing
+
+   my $val = $ha->{$key};
+   $ha->{$key} = $val;
+   %{$ha} = ();
+
+   # OO interface
+
+   if ( !defined ( $val = $ha->get("some_key") ) ) {
+      $val = $ha->set( some_key => "some_value" );
+   }
 
    $val   = $ha->set( $key, $val );
    $val   = $ha->get( $key );
@@ -347,7 +363,76 @@ This document describes MCE::Shared::Hash version 1.808
    $bool  = $ha->mexists( @keys );            # true if all keys exists
    $len   = $ha->mset( $key/$val pairs );     # merge is an alias for mset
 
-   # search capability key/val { =~ !~ eq ne lt le gt ge == != < <= > >= }
+   # included, sugar methods without having to call set/get explicitly
+
+   $len   = $ha->append( $key, $string );     #   $val .= $string
+   $val   = $ha->decr( $key );                # --$val
+   $val   = $ha->decrby( $key, $number );     #   $val -= $number
+   $val   = $ha->getdecr( $key );             #   $val--
+   $val   = $ha->getincr( $key );             #   $val++
+   $val   = $ha->incr( $key );                # ++$val
+   $val   = $ha->incrby( $key, $number );     #   $val += $number
+   $old   = $ha->getset( $key, $new );        #   $o = $v, $v = $n, $o
+
+For normal hash behavior, construction via the TIE mechanism is supported.
+
+   # non-shared/local construction for use by a single process
+
+   use MCE::Shared::Hash;
+
+   tie my %ha, "MCE::Shared::Hash";
+
+   # construction when sharing with other threads and processes
+
+   use MCE::Shared;
+
+   tie my %ha, "MCE::Shared";
+
+   # usage
+
+   my $val;
+
+   if ( !defined ( $val = $ha{some_key} ) ) {
+      $val = $ha{some_key} = "some_value";
+   }
+
+   $ha{some_key} = 0;
+
+   tied(%ha)->incrby("some_key", 20);
+   tied(%ha)->incrby(some_key => 20);
+
+=head1 SYNTAX for QUERY STRING
+
+Several methods take a query string for an argument. The format of the string
+is described below. In the context of sharing, the query mechanism is beneficial
+for the shared-manager process. The shared-manager performs the query where
+the data resides versus sending data in whole to the client process for
+traversing. Only the data found is sent.
+
+   o Basic demonstration
+
+     @keys = $ha->keys( "query string given here" );
+     @keys = $ha->keys( "val =~ /pattern/" );
+
+   o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
+   o Multiple expressions delimited by :AND or :OR, mixed case allowed
+
+     "key eq 'some key' :or (val > 5 :and val < 9)"
+     "key eq some key :or (val > 5 :and val < 9)"
+     "key =~ /pattern/i :And val =~ /pattern/i"
+     "val eq foo baz :OR key !~ /pattern/i"
+
+     * key matches on keys in the hash
+     * likewise, val matches on values
+
+   o Quoting is optional inside the string
+
+     "key =~ /pattern/i :AND val eq 'foo bar'"   # val eq "foo bar"
+     "key =~ /pattern/i :AND val eq foo bar"     # val eq "foo bar"
+
+Examples.
+
+   # search capability key/val: =~ !~ eq ne lt le gt ge == != < <= > >=
    # key/val means to match against actual key/val respectively
 
    @keys  = $ha->keys( "key eq 'some key' :or (val > 5 :and val < 9)" );
@@ -365,59 +450,19 @@ This document describes MCE::Shared::Hash version 1.808
    %pairs = $ha->pairs( "val >  $number" );
    %pairs = $ha->pairs( "val >= $number" );
 
-   @vals  = $ha->values( "key eq $string" );
-   @vals  = $ha->values( "key ne $string with space" );
-   @vals  = $ha->values( "key lt $string :or val =~ /$pat1|$pat2/" );
-   @vals  = $ha->values( "val le $string :and val eq 'foo bar'" );
-   @vals  = $ha->values( "val le $string :and val eq foo bar" );
-   @vals  = $ha->values( "val gt $string" );
-   @vals  = $ha->values( "val ge $string" );
-
-   # sugar methods without having to call set/get explicitly
-
-   $len   = $ha->append( $key, $string );     #   $val .= $string
-   $val   = $ha->decr( $key );                # --$val
-   $val   = $ha->decrby( $key, $number );     #   $val -= $number
-   $val   = $ha->getdecr( $key );             #   $val--
-   $val   = $ha->getincr( $key );             #   $val++
-   $val   = $ha->incr( $key );                # ++$val
-   $val   = $ha->incrby( $key, $number );     #   $val += $number
-   $old   = $ha->getset( $key, $new );        #   $o = $v, $v = $n, $o
-
-=head1 DESCRIPTION
-
-A hash helper class for use with L<MCE::Shared>.
-
-=head1 SYNTAX for QUERY STRING
-
-Several methods in C<MCE::Shared::Hash> take a query string for an argument.
-
-   o Basic demonstration: @keys = $ha->keys( "val =~ /pattern/" );
-   o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   o Multiple expressions delimited by :AND or :OR
-   o Quoting optional inside the string
-
-     "key eq 'some key' :or (val > 5 :and val < 9)"
-     "key eq some key :or (val > 5 :and val < 9)"
-     "key =~ /pattern/i :and val =~ /pattern/i"
-     "key =~ /pattern/i :and val eq 'foo bar'"   # val eq "foo bar"
-     "key =~ /pattern/i :and val eq foo bar"     # val eq "foo bar"
-     "val eq foo baz :or key !~ /pattern/i"
-
-     * key matches on keys in the hash
-     * val matches on values
-
-=over 3
-
-=item * The modifiers C<:AND> and C<:OR> may be mixed case. e.g. C<:And>
-
-=back
+   @vals  = $ha->vals( "key eq $string" );
+   @vals  = $ha->vals( "key ne $string with space" );
+   @vals  = $ha->vals( "key lt $string :or val =~ /$pat1|$pat2/" );
+   @vals  = $ha->vals( "val le $string :and val eq 'foo bar'" );
+   @vals  = $ha->vals( "val le $string :and val eq foo bar" );
+   @vals  = $ha->vals( "val gt $string" );
+   @vals  = $ha->vals( "val ge $string" );
 
 =head1 API DOCUMENTATION
 
 This module may involve TIE when accessing the object via hash-like behavior.
 Only shared instances are impacted if doing so. Although likely fast enough for
-many use cases, use the OO interface if better performance is desired.
+many use cases, the OO interface is recommended for better performance.
 
 =over 3
 

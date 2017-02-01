@@ -210,9 +210,13 @@ MCE::Shared::Sequence - Sequence helper class
 
 This document describes MCE::Shared::Sequence version 1.808
 
+=head1 DESCRIPTION
+
+A number sequence class for use as a standalone or managed by L<MCE::Shared>.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Sequence;
 
@@ -223,7 +227,7 @@ This document describes MCE::Shared::Sequence version 1.808
       $begin, $end, $step, $fmt
    );
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -234,7 +238,7 @@ This document describes MCE::Shared::Sequence version 1.808
       1, 100
    );
 
-   # demonstration
+   # example
 
    use MCE::Hobo;
 
@@ -258,10 +262,6 @@ This document describes MCE::Shared::Sequence version 1.808
    MCE::Hobo->new( \&parallel_b, $_ ) for 3 .. 4;
 
    $_->join for MCE::Hobo->list();
-
-=head1 DESCRIPTION
-
-A number sequence class for L<MCE::Shared>.
 
 =head1 API DOCUMENTATION
 

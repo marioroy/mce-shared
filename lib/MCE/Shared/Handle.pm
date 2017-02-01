@@ -221,9 +221,13 @@ MCE::Shared::Handle - Handle helper class
 
 This document describes MCE::Shared::Handle version 1.808
 
+=head1 DESCRIPTION
+
+A handle helper class for use as a standalone or managed by L<MCE::Shared>.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Handle;
 
@@ -232,7 +236,7 @@ This document describes MCE::Shared::Handle version 1.808
 
    mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -241,8 +245,7 @@ This document describes MCE::Shared::Handle version 1.808
 
    mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
-   # demonstration
-   # output is serialized (not garbled), order is not guaranteed
+   # example, output is serialized, not garbled
 
    use MCE::Hobo;
    use MCE::Shared;
@@ -281,10 +284,6 @@ This document describes MCE::Shared::Handle version 1.808
 
    close $ifh;
    close $ofh;
-
-=head1 DESCRIPTION
-
-Helper class for L<MCE::Shared>.
 
 =head1 API DOCUMENTATION
 
@@ -351,7 +350,7 @@ with ">" and ending with "\n".
 
    mce_open my $fh, '<', 'bio.fasta' or die "open error: $!";
 
-   # 'k' or 'm' indicates kilobytes or megabytes respectively.
+   # 'k' or 'm' indicates kibiBytes (KiB) or mebiBytes (MiB) respectively.
    # Read continues reading until reaching the record separator or EOF.
    # Optionally, one may specify the record separator.
 

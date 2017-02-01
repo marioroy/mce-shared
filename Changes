@@ -1,16 +1,21 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.809 Thu Jan 26 14:00:00 EST 2017
+1.809 Tue Jan 31 23:30:00 EST 2017
 
-  * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has no data.
+  * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has zero items.
+  * Improved documentation for QUERY STRING in various helper classes.
+  * Updated SYNOPSIS in various helper classes.
+
+  * Added hobo_timeout option to MCE::Hobo for timeout capability.
+    Also, imply posix_exit => 1 when Gearman::XS is present.
+
+  * Changed kilobytes and megabytes to kibiBytes (KiB) and mebiBytes (MiB)
+    respectively inside the documentation.
 
   * Having IO::FDPass is beneficial for Condvar(s), Handle(s), and Queue(s).
     Thus, adding IO::FDPass to PREREQ_PM if we can and not already installed.
     Run MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL to bypass the check.
-
-  * Added hobo_timeout option to MCE::Hobo for timeout capability.
-    Auto-imply posix_exit => 1 if Gearman::XS is present.
 
 1.808 Fri Dec 09 23:30:00 EST 2016
 

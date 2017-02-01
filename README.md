@@ -104,8 +104,8 @@ MCE::Shared utilizes the following modules:
     overload
     Carp
     IO::FDPass (optional, highly recommended on UNIX and Windows)
-    MCE::Mutex 1.805+
-    MCE::Util 1.805+
+    MCE::Mutex 1.809+
+    MCE::Util 1.809+
     Scalar::Util
     Socket
     Storable 2.04+
@@ -114,7 +114,7 @@ MCE::Shared utilizes the following modules:
     Time::HiRes
 
 The IO::FDPass module is used by MCE::Shared::Server if available and applies
-to MCE::Shared::{ Condvar, Handle, and Queue }.
+to MCE::Shared::{ Condvar, Handle, and Queue } only.
 
 ### Further Reading
 

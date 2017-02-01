@@ -20,35 +20,49 @@ our $VERSION = '1.808';
 use Scalar::Util qw( looks_like_number );
 use bytes;
 
-##  o Find feature
 ##
-##  o Used by MCE::Shared::{ Array, Hash, Minidb, and Ordhash }
-##    methods which take a query string for an argument.
+#  Several methods in MCE::Shared::{ Array, Hash, Minidb, Ordhash } take
+#  a query string for an argument. The format of the string is described below.
+#  The _compile function is where the query string is evaluated and expanded
+#  into Perl code.
+# 
+#  In the context of sharing, the query mechanism is beneficial for the shared-
+#  manager process. The shared-manager performs the query where the data resides
+#  versus sending data in whole to the client process for traversing. Only the
+#  data found is sent.
+# 
+#  o Basic demonstration
+# 
+#    @keys = $oh->keys( "query string given here" );
+#    @keys = $oh->keys( "val =~ /pattern/" );
+# 
+#  o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
+#  o Multiple expressions delimited by :AND or :OR, mixed case allowed
+# 
+#    "key eq 'some key' :or (val > 5 :and val < 9)"
+#    "key eq some key :or (val > 5 :and val < 9)"
+#    "key =~ /pattern/i :And field =~ /pattern/i"
+#    "key =~ /pattern/i :And index =~ /pattern/i"
+#    "index eq 'foo baz' :OR key !~ /pattern/i"    # 9 eq 'foo baz'
+#    "index eq foo baz :OR key !~ /pattern/i"      # 9 eq foo baz
+# 
+#    MCE::Shared::{ Array, Hash, Ordhash }
+#    * key matches on keys in the hash or index in the array
+#    * likewise, val matches on values
+# 
+#    MCE::Shared::{ Minidb }
+#    * key   matches on primary keys in the hash (H)oH or (H)oA
+#    * field matches on HoH->{key}{field} e.g. address
+#    * index matches on HoA->{key}[index] e.g. 9
+# 
+#  o Quoting is optional inside the string
+#
+#    "key =~ /pattern/i :AND field eq 'foo bar'"   # address eq 'foo bar'
+#    "key =~ /pattern/i :AND field eq foo bar"     # address eq foo bar
+#
+#  o See respective module in section labeled SYNTAX for QUERY STRING
+#    for demonstrations
 ##
-##  o Basic demonstration: @keys = $oh->keys( "val =~ /pattern/" );
-##  o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-##  o Multiple expressions delimited by :AND or :OR
-##  o Quoting optional inside the string
-##
-##    "key eq 'some key' :or (val > 5 :and val < 9)"
-##    "key eq some key :or (val > 5 :and val < 9)"
-##    "key =~ /pattern/i :and field =~ /pattern/i"
-##    "key =~ /pattern/i :and index =~ /pattern/i"
-##    "key =~ /pattern/i :and field eq 'foo bar'"   # address eq 'foo bar'
-##    "key =~ /pattern/i :and field eq foo bar"     # address eq foo bar
-##    "index eq 'foo baz' :or key !~ /pattern/i"    # 9 eq 'foo baz'
-##    "index eq foo baz :or key !~ /pattern/i"      # 9 eq foo baz
-##
-##    MCE::Shared::{ Array, Hash, Ordhash }
-##    * key matches on keys in the hash or index in the array
-##    * val matches on values
-##
-##    MCE::Shared::Minidb
-##    * key   matches on primary keys in the hash (H)oH or (H)oA
-##    * field matches on HoH->{key}{field} e.g. address
-##    * index matches on HoA->{key}[index] e.g. 9
-##
-##  o The modifiers :AND and :OR may be mixed case. e.g. :And
 
 sub _compile {
    my ( $query ) = @_;

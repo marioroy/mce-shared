@@ -614,9 +614,18 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 This document describes MCE::Shared::Queue version 1.808
 
+=head1 DESCRIPTION
+
+A queue helper class for use as a standalone or managed by L<MCE::Shared>.
+
+This module is mostly compatible with L<MCE::Queue> except for the C<gather>
+option which is not supported in this context. It provides a queue interface
+supporting normal and priority queues. Data from shared queues reside under
+the shared-manager process, otherwise locally.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Queue;
 
@@ -624,7 +633,7 @@ This document describes MCE::Shared::Queue version 1.808
       await => 1, fast => 0, queue => [ "." ]
    );
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
    use MCE::Shared::Queue;
@@ -667,15 +676,6 @@ This document describes MCE::Shared::Queue version 1.808
    $item  = $qu->peek( [ $index ] );
    $item  = $qu->peekp( $priority [, $index ] );
    @array = $qu->heap();
-
-=head1 DESCRIPTION
-
-Helper class for L<MCE::Shared>.
-
-This module is mostly compatible with L<MCE::Queue> except for the C<gather>
-option which is not supported in this context. It provides a queue interface
-supporting normal and priority queues. Data from shared queues reside under
-the shared-manager process, otherwise locally.
 
 =head1 API DOCUMENTATION
 

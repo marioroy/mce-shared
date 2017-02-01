@@ -30,7 +30,7 @@ sub new {
    # Parallel Hashes: [ HoH, HoA ]
    bless [
       MCE::Shared::Ordhash->new(),  # Hash of Hashes (HoH)
-      MCE::Shared::Ordhash->new(),  # Hash of Arrays (HoA)
+      MCE::Shared::Ordhash->new(),  # Hash of Lists (HoA)
    ], shift;
 }
 
@@ -101,7 +101,7 @@ sub _new_list {
 # o The select_aref and select_href methods take a select string supporting
 #   field names or list indices and optionally sort modifiers. The syntax for
 #   the query string, between :WHERE and :ORDER BY, is the same as described
-#   in the documentation under the section SYNTAX for QUERY STRING.
+#   in the documentation in section labeled SYNTAX for QUERY STRING.
 #
 # o HoH
 #    "f1 f2 f3 :WHERE f4 > 20 :AND key =~ /foo/ :ORDER BY f5 DESC ALPHA"
@@ -152,7 +152,7 @@ sub _qparse {
 }
 
 # _hselect_aref ( "select string" ) see _qparse
-# this returns array containing [ key, aref ] pairs
+# this returns an array containing [ key, aref ] pairs
 
 sub _hselect_aref {
    my ( $self, $query ) = @_;
@@ -184,7 +184,7 @@ sub _hselect_aref {
 }
 
 # _hselect_href ( "select string" ) see _qparse
-# this returns array containing [ key, href ] pairs
+# this returns an array containing [ key, href ] pairs
 
 sub _hselect_href {
    my ( $self, $query ) = @_;
@@ -223,7 +223,7 @@ sub _hselect_href {
 }
 
 # _lselect_aref ( "select string" ) see _qparse
-# this returns array containing [ key, aref ] pairs
+# this returns an array containing [ key, aref ] pairs
 
 sub _lselect_aref {
    my ( $self, $query ) = @_;
@@ -262,7 +262,7 @@ sub _lselect_aref {
 }
 
 # _lselect_href ( "select string" ) see _qparse
-# this returns array containing [ key, href ] pairs
+# this returns an array containing [ key, href ] pairs
 
 sub _lselect_href {
    my ( $self, $query ) = @_;
@@ -765,7 +765,7 @@ sub hlen {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Hash of Arrays (HoA).
+## Hash of Lists (HoA).
 ##
 ###############################################################################
 
@@ -1110,82 +1110,144 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 This document describes MCE::Shared::Minidb version 1.808
 
+=head1 DESCRIPTION
+
+A tiny in-memory NoSQL-like database for use as a standalone or managed by
+L<MCE::Shared>.
+
+This module was created mainly for having an efficient manner in which to
+manipulate hashes-of-hashes (HoH) and hashes-of-lists (HoA) structures with
+MCE::Shared. An application may choose to use both structures or one or the
+other. Both structures reside in memory simultaneously.
+
+   sub new {
+      # Dual top-level hashes: [ HoH, HoA ]
+      bless [
+         MCE::Shared::Ordhash->new(),  # Stores Hash-of-Hashes (HoH)
+         MCE::Shared::Ordhash->new(),  # Stores Hash-of-Lists  (HoA)
+      ], shift;
+   }
+
+   # each Ho(H) key => MCE::Shared::Hash->new()
+   # each Ho(A) key => MCE::Shared::Array->new()
+
+Although several methods resemble the C<Redis> API, it is not the intent for
+this module to become 100% compatible.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Minidb;
+
    my $db = MCE::Shared::Minidb->new();
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
+
    my $db = MCE::Shared->minidb();
 
-   # HoH - Hash of Hash
+   # Hash of Hashes (HoH)
 
    $db->hset( "key1", "f1", "foo" );
    $db->hset( "key2", "f1", "bar", "f2", "baz" );
 
    $val = $db->hget( "key2", "f2" );  # "baz"
 
-   # HoA - Hash of Array
+   # Hash of Lists (HoA)
 
    $db->lset( "key1", 0, "foo" );
    $db->lset( "key2", 0, "bar", 1, "baz" );
 
    $val = $db->lget( "key2", 1 );     # "baz"
 
-=head1 DESCRIPTION
-
-A tiny in-memory NoSQL-like database for use with L<MCE::Shared>. Although
-several methods resemble the C<Redis> API, it is not the intent for this
-module to become 100% compatible with it.
-
-This module was created mainly for having an efficient manner in which to
-manipulate hashes-of-hashes (HoH) and hashes-of-arrays (HoA) structures with
-MCE::Shared. Both are supported simultaneously due to being unique objects
-inside the C<$db> object.
-
-   sub new {
-      # Parallel Hashes: [ HoH, HoA ]
-      bless [
-         MCE::Shared::Ordhash->new(),  # Hash of Hashes (HoH)
-         MCE::Shared::Ordhash->new(),  # Hash of Arrays (HoA)
-      ], shift;
-   }
-
-   # Ho(H) key => MCE::Shared::Hash->new();
-   # Ho(A) key => MCE::Shared::Array->new()
-
 =head1 SYNTAX for QUERY STRING
 
-Several methods in C<MCE::Shared::Minidb> take a query string.
+Several methods take a query string for an argument. The format of the string
+is described below. In the context of sharing, the query mechanism is beneficial
+for the shared-manager process. The shared-manager performs the query where
+the data resides versus sending data in whole to the client process for
+traversing. Only the data found is sent.
 
-   o Basic demonstration: @keys = $db->hkeys( "key", "val =~ /pattern/" );
+   o Basic demonstration
+
+     # query the hash stored at "some key"
+     @keys = $db->hkeys( "some key", "query string given here" );
+     @keys = $db->hkeys( "some key", "val =~ /pattern/" );
+
+     # query the top-level hash (H)oH
+     @keys = $db->hkeys( "query string given here" );
+     @keys = $db->hkeys( "key =~ /pattern/" );
+
    o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   o Multiple expressions delimited by :AND or :OR
-   o Quoting optional inside the string
+   o Multiple expressions delimited by :AND or :OR, mixed case allowed
   
      "key eq 'some key' :or (field > 5 :and field < 9)"
      "key eq some key :or (field > 5 :and field < 9)"
-     "key =~ /pattern/i :and field =~ /pattern/i"
-     "key =~ /pattern/i :and index =~ /pattern/i"
-     "key =~ /pattern/i :and field eq 'foo bar'"   # address eq "foo bar"
-     "key =~ /pattern/i :and field eq foo bar"     # address eq "foo bar"
-     "index eq foo baz :or key !~ /pattern/i"      # 9 eq "foo baz"
+     "key =~ /pattern/i :And field =~ /pattern/i"   # HoH
+     "key =~ /pattern/i :And index =~ /pattern/i"   # HoA
+     "index eq foo baz :OR key !~ /pattern/i"       # e.g. 9 eq "foo baz"
 
      * key   matches on primary keys in the hash (H)oH or (H)oA
      * field matches on HoH->{key}{field} e.g. address
      * index matches on HoA->{key}[index] e.g. 9
 
-=over 3
+   o Quoting is optional inside the string
+   o Primary keys (H)oH may have spaces, but not so for field names
 
-=item * Primary keys (H)oH may have spaces, but not secondary field names.
+     "key =~ /pattern/i :AND field eq 'foo bar'"    # address eq "foo bar"
+     "key =~ /pattern/i :AND field eq foo bar"      # address eq "foo bar"
 
-=item * The modifiers C<:AND> and C<:OR> may be mixed case. e.g. C<:And>
+     "key =~ 'some key' :AND 'some_field' eq 'foo bar'"  # ok: some_field
+     "key =~ some key :AND some_field eq foo bar"
 
-=back
+     "key =~ 'some key' :AND 'some field' eq 'foo bar'"  # fail: some field
+     "key =~ some key :AND some field eq foo bar"
+
+Examples.
+
+   # search capability key/val: =~ !~ eq ne lt le gt ge == != < <= > >=
+   # key/val means to match against actual key/val respectively
+
+   # a query made to a hash stored at "some key"
+   # note that "fieldNames" must not have spaces
+
+     @keys  = $db->hkeys(
+        "some key", "key eq some_field :or (val > 5 :and val < 9)"
+     );
+
+   # queries made to a list stored at "some key"
+
+     @pairs = $db->lpairs( "some key", "key >= 50 :AND val =~ /sun|moon/" );
+     @pairs = $db->lpairs( "some key", "val eq sun :OR val eq moon" );
+
+   # the key modifier is the only thing possible for top-level queries
+   # reason: value equals a hash or list reference containing 2nd-level data
+
+     @keys  = $db->hkeys( "key eq 'some key'" );
+     @keys  = $db->hkeys( "key eq some key" );
+
+     @keys  = $db->hkeys( "key =~ /$pattern/i" );
+     @keys  = $db->hkeys( "key !~ /$pattern/i" );
+
+     %pairs = $db->hpairs( "key == $number" );
+     %pairs = $db->hpairs( "key != $number" );
+     %pairs = $db->hpairs( "key <  $number :or key > $number" );
+     %pairs = $db->hpairs( "key <= $number" );
+     %pairs = $db->hpairs( "key >  $number" );
+     %pairs = $db->hpairs( "key >= $number" );
+
+     @vals  = $db->hvals( "key eq $string" );
+     @vals  = $db->hvals( "key ne $string with space" );
+     @vals  = $db->hvals( "key lt $string :or key =~ /$pat1|$pat2/" );
+     @vals  = $db->hvals( "key le $string :or key eq 'foo bar'" );
+     @vals  = $db->hvals( "key le $string :or key eq foo bar" );
+     @vals  = $db->hvals( "key gt $string" );
+     @vals  = $db->hvals( "key ge $string" );
+
+   # see select_aref and select_href below for db-like queries against
+   # the underlying Ho(A) and Ho(H) structures respectively
 
 =head1 API DOCUMENTATION - DB
 

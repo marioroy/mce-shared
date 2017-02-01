@@ -396,19 +396,31 @@ MCE::Shared::Array - Array helper class
 
 This document describes MCE::Shared::Array version 1.808
 
+=head1 DESCRIPTION
+
+An array helper class for use as a standalone or managed by L<MCE::Shared>.
+
 =head1 SYNOPSIS
 
-   # non-shared construction for use by one process
+   # non-shared/local construction for use by a single process
 
    use MCE::Shared::Array;
+
    my $ar = MCE::Shared::Array->new( @list );
 
-   # shared object for sharing with other processes
+   # construction when sharing with other threads and processes
 
    use MCE::Shared;
+
    my $ar = MCE::Shared->array( @list );
 
-   # oo interface
+   # array-like dereferencing
+
+   my $val = $ar->[$index];
+   $ar->[$index] = $val;
+   @{$ar} = ();
+
+   # OO interface
 
    $val   = $ar->set( $index, $val );
    $val   = $ar->get( $index);
@@ -443,7 +455,75 @@ This document describes MCE::Shared::Array version 1.808
    @vals  = $ar->sort( "alpha" );             # $a cmp $b
    @vals  = $ar->sort( "alpha desc" );        # $b cmp $a
 
-   # search capability key/val { =~ !~ eq ne lt le gt ge == != < <= > >= }
+   # included, sugar methods without having to call set/get explicitly
+
+   $len   = $ar->append( $index, $string );   #   $val .= $string
+   $val   = $ar->decr( $index );              # --$val
+   $val   = $ar->decrby( $index, $number );   #   $val -= $number
+   $val   = $ar->getdecr( $index );           #   $val--
+   $val   = $ar->getincr( $index );           #   $val++
+   $val   = $ar->incr( $index );              # ++$val
+   $val   = $ar->incrby( $index, $number );   #   $val += $number
+   $old   = $ar->getset( $index, $new );      #   $o = $v, $v = $n, $o
+
+For normal array behavior, construction via the TIE mechanism is supported.
+
+   # non-shared/local construction for use by a single process
+
+   use MCE::Shared::Array;
+
+   tie my @ar, "MCE::Shared::Array";
+
+   # construction when sharing with other threads and processes
+
+   use MCE::Shared;
+
+   tie my @ar, "MCE::Shared";
+
+   # usage
+
+   my $val;
+
+   if ( !defined ( $val = $ar[some_index] ) ) {
+      $val = $ar[some_index] = "some_value";
+   }
+
+   $ar[some_index] = 0;
+
+   tied(@ar)->incrby("some_index", 20);
+   tied(@ar)->incrby(some_index => 20);
+
+=head1 SYNTAX for QUERY STRING
+
+Several methods take a query string for an argument. The format of the string
+is described below. In the context of sharing, the query mechanism is beneficial
+for the shared-manager process. The shared-manager performs the query where
+the data resides versus sending data in whole to the client process for
+traversing. Only the data found is sent.
+
+   o Basic demonstration
+
+     @keys = $ar->keys( "query string given here" );
+     @keys = $ar->keys( "val =~ /pattern/" );
+
+   o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
+   o Multiple expressions delimited by :AND or :OR, mixed case allowed
+
+     "key == 3 :or (val > 5 :and val < 9)"
+     "key =~ /pattern/i :And val =~ /pattern/i"
+     "val eq foo baz :OR key !~ /pattern/i"
+
+     * key matches on indices in the array
+     * likewise, val matches on values
+
+   o Quoting is optional inside the string
+
+     "key =~ /pattern/i :AND val eq 'foo bar'"   # val eq "foo bar"
+     "key =~ /pattern/i :AND val eq foo bar"     # val eq "foo bar"
+
+Examples.
+
+   # search capability key/val: =~ !~ eq ne lt le gt ge == != < <= > >=
    # key/val means to match against actual key/val respectively
 
    @keys  = $ar->keys( "key == 3 :or (val > 5 :and val < 9)" );
@@ -460,58 +540,19 @@ This document describes MCE::Shared::Array version 1.808
    %pairs = $ar->pairs( "val >  $number" );
    %pairs = $ar->pairs( "val >= $number" );
 
-   @vals  = $ar->values( "key eq $string" );
-   @vals  = $ar->values( "key ne $string with space" );
-   @vals  = $ar->values( "key lt $string :or val =~ /$pat1|$pat2/" );
-   @vals  = $ar->values( "val le $string :and val eq 'foo bar'" );
-   @vals  = $ar->values( "val le $string :and val eq foo bar" );
-   @vals  = $ar->values( "val gt $string" );
-   @vals  = $ar->values( "val ge $string" );
-
-   # sugar methods without having to call set/get explicitly
-
-   $len   = $ar->append( $index, $string );   #   $val .= $string
-   $val   = $ar->decr( $index );              # --$val
-   $val   = $ar->decrby( $index, $number );   #   $val -= $number
-   $val   = $ar->getdecr( $index );           #   $val--
-   $val   = $ar->getincr( $index );           #   $val++
-   $val   = $ar->incr( $index );              # ++$val
-   $val   = $ar->incrby( $index, $number );   #   $val += $number
-   $old   = $ar->getset( $index, $new );      #   $o = $v, $v = $n, $o
-
-=head1 DESCRIPTION
-
-An array helper class for use with L<MCE::Shared>.
-
-=head1 SYNTAX for QUERY STRING
-
-Several methods in C<MCE::Shared::Array> take a query string for an argument.
-
-   o Basic demonstration: @keys = $ar->keys( "val =~ /pattern/" );
-   o Supported operators: =~ !~ eq ne lt le gt ge == != < <= > >=
-   o Multiple expressions delimited by :AND or :OR
-   o Quoting optional inside the string
-
-     "key == 3 :or (val > 5 :and val < 9)"
-     "key =~ /pattern/i :and val =~ /pattern/i"
-     "key =~ /pattern/i :and val eq 'foo bar'"   # val eq "foo bar"
-     "key =~ /pattern/i :and val eq foo bar"     # val eq "foo bar"
-     "val eq foo baz :or key !~ /pattern/i"
-
-     * key matches on indices in the array
-     * val matches on values
-
-=over 3
-
-=item * The modifiers C<:AND> and C<:OR> may be mixed case. e.g. C<:And>
-
-=back
+   @vals  = $ar->vals( "key eq $string" );
+   @vals  = $ar->vals( "key ne $string with space" );
+   @vals  = $ar->vals( "key lt $string :or val =~ /$pat1|$pat2/" );
+   @vals  = $ar->vals( "val le $string :and val eq 'foo bar'" );
+   @vals  = $ar->vals( "val le $string :and val eq foo bar" );
+   @vals  = $ar->vals( "val gt $string" );
+   @vals  = $ar->vals( "val ge $string" );
 
 =head1 API DOCUMENTATION
 
 This module may involve TIE when accessing the object via array-like behavior.
 Only shared instances are impacted if doing so. Although likely fast enough for
-many use cases, use the OO interface if better performance is desired.
+many use cases, the OO interface is recommended for better performance.
 
 =over 3
 
