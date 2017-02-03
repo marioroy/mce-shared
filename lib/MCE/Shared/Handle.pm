@@ -227,7 +227,7 @@ A handle helper class for use as a standalone or managed by L<MCE::Shared>.
 
 =head1 SYNOPSIS
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Handle;
 
@@ -236,7 +236,7 @@ A handle helper class for use as a standalone or managed by L<MCE::Shared>.
 
    mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -300,23 +300,30 @@ whose filename is given by C<expr>, and associates it with C<filehandle>.
 When omitting error checking at the application level, MCE::Shared emits
 a message and stop if open fails.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Handle;
 
    MCE::Shared::Handle->open( my $fh, "<", "file.log" ) or die "$!";
    MCE::Shared::Handle::open  my $fh, "<", "file.log"   or die "$!";
 
-   # shared
+   mce_open my $fh, "<", "file.log" or die "$!"; # ditto
+
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
 
    MCE::Shared->open( my $fh, "<", "file.log" ) or die "$!";
    MCE::Shared::open  my $fh, "<", "file.log"   or die "$!";
 
+   mce_open my $fh, "<", "file.log" or die "$!"; # ditto
+
 Simple examples to open a file for reading:
 
-   # mce_open, exported
-   # creates a shared handle when MCE::Shared is present
-   # creates a non-shared handle, otherwise
+   # mce_open is exported by MCE::Shared::Handle or MCE::Shared
+   #
+   # it creates a shared handle when MCE::Shared is present
+   # or a non-shared handle, otherwise
 
    mce_open my $fh, "< input.txt"     or die "open error: $!";
    mce_open my $fh, "<", "input.txt"  or die "open error: $!";

@@ -239,7 +239,6 @@ The following example demonstrates barrier synchronization.
 Constructs a new condition variable. Its value defaults to C<0> when C<value>
 is not specified.
 
-   # shared
    use MCE::Shared;
 
    $cv = MCE::Shared->condvar( 100 );
@@ -327,7 +326,10 @@ In either case, the variable is *not* locked upon return.
 =head1 SUGAR METHODS
 
 This module is equipped with sugar methods to not have to call C<set>
-and C<get> explicitly. The API resembles a subset of the Redis primitives
+and C<get> explicitly. In shared context, the benefit is atomicity and
+reduction in inter-process communication.
+
+The API resembles a subset of the Redis primitives
 L<http://redis.io/commands#strings> without the key argument.
 
 =over 3

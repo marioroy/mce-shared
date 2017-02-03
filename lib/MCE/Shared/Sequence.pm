@@ -216,7 +216,7 @@ A number sequence class for use as a standalone or managed by L<MCE::Shared>.
 
 =head1 SYNOPSIS
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Sequence;
 
@@ -227,7 +227,7 @@ A number sequence class for use as a standalone or managed by L<MCE::Shared>.
       $begin, $end, $step, $fmt
    );
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -285,6 +285,8 @@ If C<bounds_only => 1> is specified, the C<next> method computes the C<begin>
 and C<end> values only for the chunk and not the numbers in between (hence
 boundaries only).
 
+   use MCE::Shared;
+
    # demo 1
    $seq1 = MCE::Shared->sequence(
       { chunk_size => 10, bounds_only => 0 },
@@ -319,7 +321,8 @@ boundaries only).
 
 Parameters may be given later with C<rewind> before calling C<next>.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Sequence;
 
    $seq = MCE::Shared::Sequence->new;
@@ -329,7 +332,8 @@ Parameters may be given later with C<rewind> before calling C<next>.
       { chunk_size => 10, bounds_only => 1 }, 1, 100
    );
 
-   # shared
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
 
    $seq = MCE::Shared->sequence;

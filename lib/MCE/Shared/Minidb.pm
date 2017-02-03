@@ -98,33 +98,33 @@ sub _new_list {
    MCE::Shared::Array->new();
 }
 
-# o The select_aref and select_href methods take a select string supporting
-#   field names or list indices and optionally sort modifiers. The syntax for
-#   the query string, between :WHERE and :ORDER BY, is the same as described
-#   in the documentation in section labeled SYNTAX for QUERY STRING.
+# _qparse ( "select string" )
 #
-# o HoH
-#    "f1 f2 f3 :WHERE f4 > 20 :AND key =~ /foo/ :ORDER BY f5 DESC ALPHA"
-#    "f5 f1 f2 :WHERE fN > 40 :AND key =~ /bar/ :ORDER BY key ALPHA"
-#    "f5 f1 f2 :WHERE fN > 40 :AND key =~ /bar/"
-#    "f5 f1 f2"
+# The select_aref and select_href methods take a select string supporting
+# field names or list indices and optionally sort modifiers. The syntax for
+# the query string, between :WHERE and :ORDER BY, is the same as described
+# in the documentation under the section labeled SYNTAX for QUERY STRING.
+#
+# The modifiers :WHERE, :AND, :OR, ORDER BY, ASC, DESC, ALPHA may be written
+# using mixed case. e.g. :Where
+#
+# o Hash of Hashes (HoH)
+#   "f1 f2 f3 :WHERE f4 > 20 :AND key =~ /foo/ :ORDER BY f5 DESC ALPHA"
+#   "f5 f1 f2 :WHERE fN > 40 :AND key =~ /bar/ :ORDER BY key ALPHA"
+#   "f5 f1 f2 :WHERE fN > 40 :AND key =~ /bar/"
+#   "f5 f1 f2"
 #
 #    * key matches on keys stored in the primary level hash (H)oH
 #
-# o HoA
-#    "17 15 11 :WHERE 12 > 20 :AND key =~ /foo/ :ORDER BY 10 DESC ALPHA"
-#    "17 15 11 :WHERE 12 > 40 :AND key =~ /bar/ :ORDER BY key ALPHA"
-#    "17 15 11 :WHERE 12 > 40 :AND key =~ /bar/"
-#    "17 15 11"
+# o Hash of Lists (HoA)
+#   "17 15 11 :where 12 > 20 :and key =~ /foo/ :order by 10 desc alpha"
+#   "17 15 11 :where 12 > 40 :and key =~ /bar/ :order by key alpha"
+#   "17 15 11 :where 12 > 40 :and key =~ /bar/"
+#   "17 15 11"
 #
-#    * key matches on keys stored in the primary level hash (H)oA
-#    * above, list indices are given as 17, 15, 11, 12, and 10
-#    * the shorter form is allowed e.g. "4 > 20 :AND key =~ /baz/"
-#
-# o The modifiers :WHERE, :AND, :OR, ORDER BY, ASC, DESC, and ALPHA may be
-#   mixed case. e.g. :Where
-
-# _qparse ( "select string" )
+#   * key matches on keys stored in the primary level hash (H)oA
+#   * above, list indices are given as 17, 15, 11, 12, and 10
+#   * the shorter form is allowed e.g. "4 > 20 :AND key =~ /baz/"
 
 sub _qparse {
    my ( $q ) = @_;
@@ -151,8 +151,9 @@ sub _qparse {
    return ( $f, $w, $o );
 }
 
-# _hselect_aref ( "select string" ) see _qparse
-# this returns an array containing [ key, aref ] pairs
+# _hselect_aref ( "select string" ), see _qparse for description
+#
+#  returns an array containing [ key, aref ] pairs
 
 sub _hselect_aref {
    my ( $self, $query ) = @_;
@@ -183,8 +184,9 @@ sub _hselect_aref {
    }
 }
 
-# _hselect_href ( "select string" ) see _qparse
-# this returns an array containing [ key, href ] pairs
+# _hselect_href ( "select string" ), see _qparse for description
+#
+#  returns an array containing [ key, href ] pairs
 
 sub _hselect_href {
    my ( $self, $query ) = @_;
@@ -222,8 +224,9 @@ sub _hselect_href {
    }
 }
 
-# _lselect_aref ( "select string" ) see _qparse
-# this returns an array containing [ key, aref ] pairs
+# _lselect_aref ( "select string" ), see _qparse for description
+#
+#  returns an array containing [ key, aref ] pairs
 
 sub _lselect_aref {
    my ( $self, $query ) = @_;
@@ -261,8 +264,9 @@ sub _lselect_aref {
    }
 }
 
-# _lselect_href ( "select string" ) see _qparse
-# this returns an array containing [ key, href ] pairs
+# _lselect_href ( "select string" ), see _qparse for description
+#
+#  returns an array containing [ key, href ] pairs
 
 sub _lselect_href {
    my ( $self, $query ) = @_;
@@ -1118,7 +1122,7 @@ L<MCE::Shared>.
 This module was created mainly for having an efficient manner in which to
 manipulate hashes-of-hashes (HoH) and hashes-of-lists (HoA) structures with
 MCE::Shared. An application may choose to use both structures or one or the
-other. Both structures reside in memory simultaneously.
+other. Internally, both structures reside in memory simultaneously.
 
    sub new {
       # Dual top-level hashes: [ HoH, HoA ]
@@ -1131,24 +1135,25 @@ other. Both structures reside in memory simultaneously.
    # each Ho(H) key => MCE::Shared::Hash->new()
    # each Ho(A) key => MCE::Shared::Array->new()
 
-Although several methods resemble the C<Redis> API, it is not the intent for
-this module to become 100% compatible.
+Several methods described below may resemble the C<Redis> API. It is not the
+intent for this module to become 100% compatible.
 
 =head1 SYNOPSIS
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Minidb;
 
    my $db = MCE::Shared::Minidb->new();
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
    my $db = MCE::Shared->minidb();
 
    # Hash of Hashes (HoH)
+   # Update the hash stored at key1/key2
 
    $db->hset( "key1", "f1", "foo" );
    $db->hset( "key2", "f1", "bar", "f2", "baz" );
@@ -1156,6 +1161,7 @@ this module to become 100% compatible.
    $val = $db->hget( "key2", "f2" );  # "baz"
 
    # Hash of Lists (HoA)
+   # Update the list stored at key1/key2
 
    $db->lset( "key1", 0, "foo" );
    $db->lset( "key2", 0, "bar", 1, "baz" );
@@ -1166,9 +1172,8 @@ this module to become 100% compatible.
 
 Several methods take a query string for an argument. The format of the string
 is described below. In the context of sharing, the query mechanism is beneficial
-for the shared-manager process. The shared-manager performs the query where
-the data resides versus sending data in whole to the client process for
-traversing. Only the data found is sent.
+for the shared-manager process. It is able to perform the query where the data
+resides versus the client-process greping locally involving lots of IPC.
 
    o Basic demonstration
 
@@ -1194,7 +1199,7 @@ traversing. Only the data found is sent.
      * index matches on HoA->{key}[index] e.g. 9
 
    o Quoting is optional inside the string
-   o Primary keys (H)oH may have spaces, but not so for field names
+   o Primary keys (H)oH may have spaces, but not so for field_names
 
      "key =~ /pattern/i :AND field eq 'foo bar'"    # address eq "foo bar"
      "key =~ /pattern/i :AND field eq foo bar"      # address eq "foo bar"
@@ -1257,12 +1262,14 @@ Examples.
 
 Constructs an empty in-memory C<HoH> and C<HoA> key-store database structure.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Minidb;
 
    $db = MCE::Shared::Minidb->new();
 
-   # shared
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
 
    $db = MCE::Shared->minidb();
@@ -1606,6 +1613,10 @@ wanting any result.
 =back
 
 =head1 SUGAR METHODS - HASHES ( HoH )
+
+This module is equipped with sugar methods to not have to call C<set>
+and C<get> explicitly. In shared context, the benefit is atomicity and
+reduction in inter-process communication.
 
 =over 3
 
@@ -1968,6 +1979,10 @@ returns the new length.
 =back
 
 =head1 SUGAR METHODS - LISTS ( HoA )
+
+This module is equipped with sugar methods to not have to call C<set>
+and C<get> explicitly. In shared context, the benefit is atomicity and
+reduction in inter-process communication.
 
 =over 3
 

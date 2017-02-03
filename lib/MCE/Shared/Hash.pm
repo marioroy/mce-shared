@@ -318,13 +318,13 @@ A hash helper class for use as a standalone or managed by L<MCE::Shared>.
 
 =head1 SYNOPSIS
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Hash;
 
    my $ha = MCE::Shared::Hash->new( @pairs );
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -334,6 +334,7 @@ A hash helper class for use as a standalone or managed by L<MCE::Shared>.
 
    my $val = $ha->{$key};
    $ha->{$key} = $val;
+
    %{$ha} = ();
 
    # OO interface
@@ -374,15 +375,15 @@ A hash helper class for use as a standalone or managed by L<MCE::Shared>.
    $val   = $ha->incrby( $key, $number );     #   $val += $number
    $old   = $ha->getset( $key, $new );        #   $o = $v, $v = $n, $o
 
-For normal hash behavior, construction via the TIE mechanism is supported.
+For normal hash behavior, the TIE interface is used.
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Hash;
 
    tie my %ha, "MCE::Shared::Hash";
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -405,9 +406,8 @@ For normal hash behavior, construction via the TIE mechanism is supported.
 
 Several methods take a query string for an argument. The format of the string
 is described below. In the context of sharing, the query mechanism is beneficial
-for the shared-manager process. The shared-manager performs the query where
-the data resides versus sending data in whole to the client process for
-traversing. Only the data found is sent.
+for the shared-manager process. It is able to perform the query where the data
+resides versus the client-process greping locally involving lots of IPC.
 
    o Basic demonstration
 
@@ -462,7 +462,7 @@ Examples.
 
 This module may involve TIE when accessing the object via hash-like behavior.
 Only shared instances are impacted if doing so. Although likely fast enough for
-many use cases, the OO interface is recommended for better performance.
+many use cases, the OO interface is recommended for best performance.
 
 =over 3
 
@@ -470,13 +470,15 @@ many use cases, the OO interface is recommended for better performance.
 
 Constructs a new object, with an optional list of key-value pairs.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Hash;
 
    $ha = MCE::Shared::Hash->new( @pairs );
    $ha = MCE::Shared::Hash->new( );
 
-   # shared
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
 
    $ha = MCE::Shared->hash( @pairs );
@@ -702,7 +704,10 @@ C<vals> is an alias for C<values>.
 =head1 SUGAR METHODS
 
 This module is equipped with sugar methods to not have to call C<set>
-and C<get> explicitly. The API resembles a subset of the Redis primitives
+and C<get> explicitly. In shared context, the benefit is atomicity and
+reduction in inter-process communication.
+
+The API resembles a subset of the Redis primitives
 L<http://redis.io/commands#strings> with key representing the hash key.
 
 =over 3

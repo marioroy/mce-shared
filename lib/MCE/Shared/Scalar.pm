@@ -108,17 +108,22 @@ A scalar helper class for use as a standalone or managed by L<MCE::Shared>.
 
 =head1 SYNOPSIS
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Scalar;
 
    my $var = MCE::Shared::Scalar->new( $val );
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
    my $var = MCE::Shared->scalar( $val );
+
+   # scalar-like dereferencing
+
+   my $val = ${ $var };
+   ${ $var } = $val;
 
    # OO interface
 
@@ -137,15 +142,15 @@ A scalar helper class for use as a standalone or managed by L<MCE::Shared>.
    $val = $var->incrby( $number );     #   $val += $number
    $old = $var->getset( $new );        #   $o = $v, $v = $n, $o
 
-For normal scalar behavior, construction via the TIE mechanism is supported.
+For normal scalar behavior, the TIE interface is used.
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Scalar;
 
    tie my $var, "MCE::Shared::Scalar";
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -161,7 +166,7 @@ For normal scalar behavior, construction via the TIE mechanism is supported.
 
 This module may involve TIE when accessing the object via scalar dereferencing.
 Only shared instances are impacted if doing so. Although likely fast enough for
-many use cases, the OO interface is recommended for better performance.
+many use cases, the OO interface is recommended for best performance.
 
 =over 3
 
@@ -169,13 +174,15 @@ many use cases, the OO interface is recommended for better performance.
 
 Constructs a new object. Its value is undefined when C<value> is not specified.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Scalar;
 
    $var = MCE::Shared::Scalar->new( "foo" );
    $var = MCE::Shared::Scalar->new;
 
-   # shared
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
 
    $var = MCE::Shared->scalar( "bar" );
@@ -211,7 +218,10 @@ is not defined.
 =head1 SUGAR METHODS
 
 This module is equipped with sugar methods to not have to call C<set>
-and C<get> explicitly. The API resembles a subset of the Redis primitives
+and C<get> explicitly. In shared context, the benefit is atomicity and
+reduction in inter-process communication.
+
+The API resembles a subset of the Redis primitives
 L<http://redis.io/commands#strings> without the key argument.
 
 =over 3

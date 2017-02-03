@@ -625,7 +625,7 @@ the shared-manager process, otherwise locally.
 
 =head1 SYNOPSIS
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Queue;
 
@@ -633,7 +633,7 @@ the shared-manager process, otherwise locally.
       await => 1, fast => 0, queue => [ "." ]
    );
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
    use MCE::Shared::Queue;
@@ -686,7 +686,8 @@ the shared-manager process, otherwise locally.
 Constructs a new object. Supported options are queue, porder, type, await, and
 fast.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Queue;
 
    $q1 = MCE::Shared::Queue->new();
@@ -701,7 +702,8 @@ fast.
    $q7 = MCE::Shared::Queue->new( await  => 1 );
    $q8 = MCE::Shared::Queue->new( fast   => 1 );
 
-   # shared;
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
    use MCE::Shared::Queue;
 

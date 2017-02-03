@@ -402,13 +402,13 @@ An array helper class for use as a standalone or managed by L<MCE::Shared>.
 
 =head1 SYNOPSIS
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Array;
 
    my $ar = MCE::Shared::Array->new( @list );
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -418,6 +418,7 @@ An array helper class for use as a standalone or managed by L<MCE::Shared>.
 
    my $val = $ar->[$index];
    $ar->[$index] = $val;
+
    @{$ar} = ();
 
    # OO interface
@@ -466,15 +467,15 @@ An array helper class for use as a standalone or managed by L<MCE::Shared>.
    $val   = $ar->incrby( $index, $number );   #   $val += $number
    $old   = $ar->getset( $index, $new );      #   $o = $v, $v = $n, $o
 
-For normal array behavior, construction via the TIE mechanism is supported.
+For normal array behavior, the TIE interface is used.
 
-   # non-shared/local construction for use by a single process
+   # non-shared or local construction for use by a single process
 
    use MCE::Shared::Array;
 
    tie my @ar, "MCE::Shared::Array";
 
-   # construction when sharing with other threads and processes
+   # construction for sharing with other threads and processes
 
    use MCE::Shared;
 
@@ -497,9 +498,8 @@ For normal array behavior, construction via the TIE mechanism is supported.
 
 Several methods take a query string for an argument. The format of the string
 is described below. In the context of sharing, the query mechanism is beneficial
-for the shared-manager process. The shared-manager performs the query where
-the data resides versus sending data in whole to the client process for
-traversing. Only the data found is sent.
+for the shared-manager process. It is able to perform the query where the data
+resides versus the client-process greping locally involving lots of IPC.
 
    o Basic demonstration
 
@@ -552,7 +552,7 @@ Examples.
 
 This module may involve TIE when accessing the object via array-like behavior.
 Only shared instances are impacted if doing so. Although likely fast enough for
-many use cases, the OO interface is recommended for better performance.
+many use cases, the OO interface is recommended for best performance.
 
 =over 3
 
@@ -560,13 +560,15 @@ many use cases, the OO interface is recommended for better performance.
 
 Constructs a new object, with an optional list of values.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Array;
 
    $ar = MCE::Shared::Array->new( @list );
    $ar = MCE::Shared::Array->new( );
 
-   # shared
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
 
    $ar = MCE::Shared->array( @list );
@@ -879,7 +881,10 @@ C<vals> is an alias for C<values>.
 =head1 SUGAR METHODS
 
 This module is equipped with sugar methods to not have to call C<set>
-and C<get> explicitly. The API resembles a subset of the Redis primitives
+and C<get> explicitly. In shared context, the benefit is atomicity and
+reduction in inter-process communication.
+
+The API resembles a subset of the Redis primitives
 L<http://redis.io/commands#strings> with key representing the array index.
 
 =over 3
