@@ -11,6 +11,7 @@ lib/MCE/Hobo.pm
 lib/MCE/Shared.pm
 lib/MCE/Shared/Array.pm
 lib/MCE/Shared/Base.pm
+lib/MCE/Shared/Cache.pm
 lib/MCE/Shared/Condvar.pm
 lib/MCE/Shared/Handle.pm
 lib/MCE/Shared/Hash.pm
@@ -22,6 +23,8 @@ lib/MCE/Shared/Sequence.pm
 lib/MCE/Shared/Server.pm
 t/05_mce_hobo.t
 t/07_shared_array.t
+t/07_shared_cache.t
+t/07_shared_cache_lru.t
 t/07_shared_condvar.t
 t/07_shared_handle.t
 t/07_shared_hash.t

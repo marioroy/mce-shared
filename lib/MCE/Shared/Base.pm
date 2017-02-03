@@ -21,7 +21,7 @@ use Scalar::Util qw( looks_like_number );
 use bytes;
 
 ##
-#  Several methods in MCE::Shared::{ Array, Hash, Minidb, Ordhash } take
+#  Several methods in MCE::Shared::{ Array, Cache, Hash, Minidb, Ordhash } take
 #  a query string for an argument. The format of the string is described below.
 #  The _compile function is where the query string is evaluated and expanded
 #  into Perl code.
@@ -46,7 +46,7 @@ use bytes;
 #    "index eq 'foo baz' :OR key !~ /pattern/i"    # 9 eq 'foo baz'
 #    "index eq foo baz :OR key !~ /pattern/i"      # 9 eq foo baz
 # 
-#    MCE::Shared::{ Array, Hash, Ordhash }
+#    MCE::Shared::{ Array, Cache, Hash, Ordhash }
 #    * key matches on keys in the hash or index in the array
 #    * likewise, val matches on values
 # 
@@ -141,7 +141,7 @@ sub _find_array {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Find items in HASH. Called by MCE::Shared::{ Hash, Minidb, Ordhash }.
+## Find items in HASH. Called by MCE::Shared::{ Cache, Hash, Minidb, Ordhash }.
 ##
 ###############################################################################
 
@@ -173,7 +173,7 @@ sub _find_hash {
       $q =~ s/(!ref)\(([^\$\)]+)\)/$1(\$data->{\$_}['$2'])/gi;
    }
 
-   # Hash/Ordhash value
+   # Cache/Hash/Ordhash value
    elsif ( $params->{'getvals'} && $q !~ /\(\$_/ ) {
       $grepvals = 1;
       $q =~ s/val[ ]+(==|!=|<|<=|>|>=|eq|ne|lt|le|gt|ge|=~|!~)/\$_ $1/gi;

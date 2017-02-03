@@ -25,7 +25,7 @@ our @CARP_NOT = qw(
    MCE::Shared::Array   MCE::Shared::Condvar  MCE::Shared::Handle
    MCE::Shared::Hash    MCE::Shared::Minidb   MCE::Shared::Ordhash
    MCE::Shared::Queue   MCE::Shared::Scalar   MCE::Shared::Sequence
-   MCE::Shared::Server  MCE::Shared::Object
+   MCE::Shared::Server  MCE::Shared::Object   MCE::Shared::Cache
 );
 
 sub import {
@@ -119,30 +119,35 @@ sub init {
    MCE::Shared::Object::_init(@_);
 }
 
+sub cache {
+   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
+   require MCE::Shared::Cache unless $INC{'MCE/Shared/Cache.pm'};
+   &share({}, MCE::Shared::Cache->new(@_));
+}
 sub condvar {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Condvar unless $INC{'MCE/Shared/Condvar.pm'};
-   &share( MCE::Shared::Condvar->new(@_) );
+   &share({}, MCE::Shared::Condvar->new(@_));
 }
 sub minidb {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Minidb unless $INC{'MCE/Shared/Minidb.pm'};
-   &share( MCE::Shared::Minidb->new(@_) );
+   &share({}, MCE::Shared::Minidb->new(@_));
 }
 sub queue {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Queue unless $INC{'MCE/Shared/Queue.pm'};
-   &share( MCE::Shared::Queue->new(@_) );
+   &share({}, MCE::Shared::Queue->new(@_));
 }
 sub scalar {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Scalar unless $INC{'MCE/Shared/Scalar.pm'};
-   &share( MCE::Shared::Scalar->new(@_) );
+   &share({}, MCE::Shared::Scalar->new(@_));
 }
 sub sequence {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Sequence unless $INC{'MCE/Shared/Sequence.pm'};
-   &share( MCE::Shared::Sequence->new(@_) );
+   &share({}, MCE::Shared::Sequence->new(@_));
 }
 
 ## 'num_sequence' is an alias for 'sequence'
@@ -271,20 +276,30 @@ sub TIESCALAR { shift; MCE::Shared->scalar(@_) }
 
 sub TIEHASH {
    shift;
-   my $_ordered;
+   my ($_cache, $_ordered);
 
    if ( ref $_[0] eq 'HASH' ) {
-      shift(), $_ordered = 1 if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} );
+      if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} ) {
+         $_ordered = 1; shift();
+      } elsif ( exists $_[0]->{'max_age'} || exists $_[0]->{'max_keys'} ) {
+         $_cache   = 1;
+      }
    }
    else {
-      shift(), shift(), $_ordered = 1 if (
-         @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) && $_[1]
-      );
+      if ( @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) ) {
+         $_ordered = $_[1]; splice(@_, 0, 2);
+      } elsif ( @_ < 5 && ( $_[0] eq 'max_age' || $_[0] eq 'max_keys' ) ) {
+         $_cache   = 1;
+      }
    }
 
-   ( $_ordered )
-      ? MCE::Shared->ordhash(@_)
-      : MCE::Shared->hash(@_);
+   if ( $_cache ) {
+      MCE::Shared->cache(@_);
+   } elsif ( $_ordered ) {
+      MCE::Shared->ordhash(@_);
+   } else {
+      MCE::Shared->hash(@_);
+   }
 }
 
 sub TIEHANDLE {
@@ -351,6 +366,7 @@ This document describes MCE::Shared version 1.808
    use MCE::Shared;
 
    my $ar = MCE::Shared->array( @list );
+   my $ca = MCE::Shared->cache( max_keys => 500, max_age => 60 );
    my $cv = MCE::Shared->condvar( 0 );
    my $fh = MCE::Shared->handle( '>>', \*STDOUT );
    my $ha = MCE::Shared->hash( @pairs );
@@ -376,6 +392,7 @@ This document describes MCE::Shared version 1.808
    tie my @ary, 'MCE::Shared', qw( a list of values );
    tie my %ha,  'MCE::Shared', ( key1 => 'value', key2 => 'value' );
    tie my %oh,  'MCE::Shared', { ordered => 1 }, ( key1 => 'value' );
+   tie my %ca,  'MCE::Shared', { max_keys => 500, max_age => 60 };
 
    tie my $cnt, 'MCE::Shared', 0;
    tie my @foo, 'MCE::Shared';
@@ -470,60 +487,69 @@ C<IO::FDPass> module.
 
 =over 3
 
-=item * array
+=item * array L<MCE::Shared::Array>
 
-=item * condvar
+=item * cache L<MCE::Shared::Cache>
 
-=item * handle
+=item * condvar L<MCE::Shared::Condvar>
 
-=item * hash
+=item * handle L<MCE::Shared::Handle>
 
-=item * minidb
+=item * hash L<MCE::Shared::Hash>
 
-=item * ordhash
+=item * minidb L<MCE::Shared::Minidb>
 
-=item * queue
+=item * ordhash L<MCE::Shared::Ordhash>
 
-=item * scalar
+=item * queue L<MCE::Shared::Queue>
 
-=item * sequence
+=item * scalar L<MCE::Shared::Scalar>
+
+=item * sequence L<MCE::Shared::Sequence>
 
 =back
 
-C<array>, C<condvar>, C<handle>, C<hash>, C<minidb>, C<ordhash>, C<queue>,
-C<scalar>, and C<sequence> are sugar syntax for constructing a shared object.
+Below, synopsis for sharing classes included with MCE::Shared.
 
-   # long form
+   # Short form
 
    use MCE::Shared;
 
+   $ar = MCE::Shared->array( @list );
+   $ca = MCE::Shared->cache( max_keys => 500, max_age => 60 );
+   $cv = MCE::Shared->condvar( 0 );
+   $fh = MCE::Shared->handle( '>>', \*STDOUT ); # see mce_open below
+   $ha = MCE::Shared->hash( @pairs );
+   $oh = MCE::Shared->ordhash( @pairs );
+   $db = MCE::Shared->minidb();
+   $qu = MCE::Shared->queue( await => 1, fast => 0 );
+   $va = MCE::Shared->scalar( $value );
+   $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
+
+   # Long form, must include the class module
+
    use MCE::Shared::Array;
+   use MCE::Shared::Cache;
    use MCE::Shared::Hash;
-   use MCE::Shared::OrdHash;
    use MCE::Shared::Minidb;
+   use MCE::Shared::Ordhash;
    use MCE::Shared::Queue;
    use MCE::Shared::Scalar;
 
-   my $ar = MCE::Shared->share( MCE::Shared::Array->new() );
-   my $ha = MCE::Shared->share( MCE::Shared::Hash->new() );
-   my $oh = MCE::Shared->share( MCE::Shared::Ordhash->new() );
-   my $db = MCE::Shared->share( MCE::Shared::Minidb->new() );
-   my $qu = MCE::Shared->share( MCE::Shared::Queue->new() );
-   my $va = MCE::Shared->share( MCE::Shared::Scalar->new() );
+   $ar = MCE::Shared->share( MCE::Shared::Array->new( ... ) );
+   $ca = MCE::Shared->share( MCE::Shared::Cache->new( ... ) );
+   $ha = MCE::Shared->share( MCE::Shared::Hash->new( ... ) );
+   $db = MCE::Shared->share( MCE::Shared::Minidb->new( ... ) );
+   $oh = MCE::Shared->share( MCE::Shared::Ordhash->new( ... ) );
+   $qu = MCE::Shared->share( MCE::Shared::Queue->new( ... ) );
+   $va = MCE::Shared->share( MCE::Shared::Scalar->new( ... ) );
 
-   # short form
+The restriction for sharing other classes, not included with MCE::Shared,
+is that the object must not have file-handles nor code-blocks.
 
-   use MCE::Shared;
+   use Hash::Ordered;
 
-   my $ar = MCE::Shared->array( @list );
-   my $cv = MCE::Shared->condvar( 0 );
-   my $fh = MCE::Shared->handle( '>>', \*STDOUT );
-   my $ha = MCE::Shared->hash( @pairs );
-   my $oh = MCE::Shared->ordhash( @pairs );
-   my $db = MCE::Shared->minidb();
-   my $qu = MCE::Shared->queue( await => 1, fast => 0 );
-   my $va = MCE::Shared->scalar( $value );
-   my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
+   $oh = MCE::Shared->share( Hash::Ordered->new( ... ) );
 
 =over 3
 

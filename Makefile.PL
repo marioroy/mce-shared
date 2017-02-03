@@ -22,8 +22,8 @@ if ( !$ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
       eval 'use IO::FDPass; 1' or do {
          print "\n",
             "The IO::FDPass module is known to work on this platform.\n",
-            "Thus, adding requirement to PREREQ for a better experience\n",
-            "sharing MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
+            "Thus adding requirement to PREREQ for a better experience\n",
+            "when using MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
 
          $require_io_fdpass{'IO::FDPass'} = '1.1';
       };
@@ -33,7 +33,7 @@ if ( !$ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
          print "\n",
             "The IO::FDPass requirement is optional on this platform.\n",
             "Try installing the module manually for a better experience\n",
-            "sharing MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
+            "when using MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
       };
    }
 }
@@ -97,6 +97,10 @@ WriteMakefile(
             },
             'MCE::Shared::Base' => {
                'file'    => 'lib/MCE/Shared/Base.pm',
+               'version' => '1.808'
+            },
+            'MCE::Shared::Cache' => {
+               'file'    => 'lib/MCE/Shared/Cache.pm',
                'version' => '1.808'
             },
             'MCE::Shared::Condvar' => {

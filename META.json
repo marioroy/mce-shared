@@ -68,6 +68,10 @@
          "file" : "lib/MCE/Shared/Base.pm",
          "version" : "1.808"
       },
+      "MCE::Shared::Cache" : {
+         "file" : "lib/MCE/Shared/Cache.pm",
+         "version" : "1.808"
+      },
       "MCE::Shared::Condvar" : {
          "file" : "lib/MCE/Shared/Condvar.pm",
          "version" : "1.808"

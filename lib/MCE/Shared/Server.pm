@@ -1417,6 +1417,7 @@ use constant {
 };
 
 my %_hash_deref_allow = (qw/
+   MCE::Shared::Cache   1
    MCE::Shared::Hash    1
    MCE::Shared::Ordhash 1
    Hash::Ordered        1
@@ -1796,6 +1797,7 @@ sub export {
    else {
       if    ( $_class eq 'MCE::Shared::Hash'    ) { $_data = $_item      }
       elsif ( $_class eq 'MCE::Shared::Ordhash' ) { $_data = $_item->[0] }
+      elsif ( $_class eq 'MCE::Shared::Cache'   ) { $_data = $_item->[0] }
       elsif ( $_class eq 'Hash::Ordered'        ) { $_data = $_item->[0] }
 
       ## no critic
@@ -2287,7 +2289,7 @@ This document describes MCE::Shared::Server version 1.808
 
 =head1 DESCRIPTION
 
-Core class for L<MCE::Shared>. See documentation there.
+The core engine for L<MCE::Shared>. See documentation there.
 
 =head1 INDEX
 
