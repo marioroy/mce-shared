@@ -467,7 +467,7 @@ An array helper class for use as a standalone or managed by L<MCE::Shared>.
    $val   = $ar->incrby( $index, $number );   #   $val += $number
    $old   = $ar->getset( $index, $new );      #   $o = $v, $v = $n, $o
 
-For normal array behavior, the TIE interface is used.
+For normal array behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
 

@@ -915,7 +915,7 @@ new level of performance, for a pure-Perl ordered hash implementation.
    $val   = $oh->incrby( $key, $number );     #   $val += $number
    $old   = $oh->getset( $key, $new );        #   $o = $v, $v = $n, $o
 
-For normal hash behavior, the TIE interface is used.
+For normal hash behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
 

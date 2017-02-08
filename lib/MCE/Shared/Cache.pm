@@ -930,19 +930,13 @@ A cache helper class for use as a standalone or managed by L<MCE::Shared>.
 
 This module implements a least-recently used (LRU) cache with its origin based
 on L<MCE::Shared::Ordhash> for its performance and low-memory consumption
-characteristics. The result is a reasonably fast implementation.
+characteristics. The result is a reasonably fast pure-Perl implementation.
 
 A LRU cache is such that new items are placed at the top of the cache while
 preserving key order. Upon reaching its size restriction, it prunes items from
 the bottom of the cache. Accessing an item will have it placed back at the top
 of the cache. Thereby, items which are acessed frequently are more likely to
-stay in the cache.
-
-The default options for the cache is C<max_keys => "unlimited"> and
-C<max_age => "never">. When C<max_age> is specified, accessing an item which
-has expired causes its data to be wiped prior to running the code associated
-with the method being called. For best performance, only set C<max_age> when
-required by the application.
+stay.
 
 =head1 SYNOPSIS
 
@@ -1036,7 +1030,7 @@ required by the application.
    $val   = $ca->incrby( $key, $number );     #   $val += $number
    $old   = $ca->getset( $key, $new );        #   $o = $v, $v = $n, $o
 
-For normal hash behavior, the TIE interface is used.
+For normal hash behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
 
@@ -1131,17 +1125,18 @@ Both non-shared and shared instances are impacted if doing so. Although likely
 fast enough for many use cases, the OO interface is recommended for best
 performance.
 
-Below, each description follows with a C<Reorder: Yes> or C<Reorder: No> line
-for identifying methods involving the reorder of keys. This is typical in any
-LRU implementation.
+Acessing an item is likely to involve moving its key to the top of the cache.
+Various methods described below state with C<Reorder: Yes> or C<Reorder: No>
+as an indication.
+
+When C<max_age> is set, accessing an item which has expired will behave
+similarly as if the item never existed.
 
 =over 3
 
 =item new ( { options }, key, value [, key, value, ... ] )
 
 Constructs a new object.
-
-Reorder: Yes, when given key-value pairs contain duplicate keys
 
    # non-shared or local construction for use by a single process
 
@@ -1191,20 +1186,20 @@ Reorder: Yes, when given key-value pairs contain duplicate keys
 
    $ca->assign( @pairs );
 
+Reorder: Yes, when given key-value pairs contain duplicate keys
+
 =item assign ( key, value [, key, value, ... ] )
 
 Clears the cache, then sets multiple key-value pairs and returns the number of
 keys stored in the cache. This is equivalent to C<clear>, C<mset>.
 
-Reorder: Yes, when given key-value pairs contain duplicate keys
-
    $len = $ca->assign( "key1" => "val1", "key2" => "val2" );
+
+Reorder: Yes, when given key-value pairs contain duplicate keys
 
 =item clear
 
 Removes all key-value pairs from the cache.
-
-Reorder: No
 
    $ca->clear;
    %{$ca} = ();
@@ -1213,8 +1208,6 @@ Reorder: No
 
 Deletes and returns the value by given key or C<undef> if the key does not
 exists in the cache.
-
-Reorder: No
 
    $val = $ca->delete( "some_key" );
    $val = delete $ca->{ "some_key" };
@@ -1227,20 +1220,20 @@ C<del> is an alias for C<delete>.
 
 Determines if a key exists in the cache.
 
-Reorder: No
-
    if ( $ca->exists( "some_key" ) ) { ... }
    if ( exists $ca->{ "some_key" } ) { ... }
+
+Reorder: No
 
 =item get ( key )
 
 Gets the value of a cache key or C<undef> if the key does not exists.
 See C<peek> to not promote the key internally to the top of the list.
 
-Reorder: Yes
-
    $val = $ca->get( "some_key" );
    $val = $ca->{ "some_key" };
+
+Reorder: Yes
 
 =item keys ( key [, key, ... ] )
 
@@ -1251,11 +1244,11 @@ are given. Otherwise, returns the given keys in the same order. Keys that do
 not exist will have the C<undef> value. In scalar context, returns the size
 of the cache.
 
-Reorder: No
-
    @keys = $ca->keys;
    @keys = $ca->keys( "key1", "key2" );
    $len  = $ca->keys;
+
+Reorder: No
 
 =item keys ( "query string" )
 
@@ -1265,12 +1258,12 @@ Returns only keys that match the given criteria. It returns an empty list
 if the search found nothing. The syntax for the C<query string> is described
 above. In scalar context, returns the size of the resulting list.
 
-Reorder: No
-
    @keys = $ca->keys( "val eq some_value" );
    @keys = $ca->keys( "key eq some_key :AND val =~ /sun|moon|air|wind/" );
    @keys = $ca->keys( "val eq sun :OR val eq moon :OR val eq foo" );
    $len  = $ca->keys( "key =~ /$pattern/" );
+
+Reorder: No
 
 =item len ( key )
 
@@ -1280,19 +1273,17 @@ Returns the size of the cache when no arguments are given. For the given key,
 returns the length of the value stored at key or the C<undef> value if the
 key does not exists.
 
-Reorder: Yes, possibly if key is given
-
    $size = $ca->len;
    $len  = $ca->len( "key1" );
    $len  = length $ca->{ "key1" };
+
+Reorder: Yes, only when key is given
 
 =item max_age ( [ secs ] )
 
 Returns the maximum age set on the cache or "never" if not defined internally.
 When seconds is given, it adjusts any keys by subtracting or adding the time
 difference accordingly.
-
-Reorder: No
 
    $age = $ca->max_age;
 
@@ -1311,8 +1302,6 @@ Returns the size limit set on the cache or "unlimited" if not defined
 internally. When size is given, it adjusts the cache accordingly to the
 new size by pruning the head of the list if necessary.
 
-Reorder: No
-
    $size = $ca->max_size;
 
    $ca->max_keys( "unlimited" );
@@ -1326,8 +1315,6 @@ Reorder: No
 Deletes one or more keys in the cache and returns the number of keys deleted.
 A given key which does not exist in the cache is not counted.
 
-Reorder: No
-
    $cnt = $ca->mdel( "key1", "key2" );
 
 =item mexists ( key [, key, ... ] )
@@ -1335,27 +1322,27 @@ Reorder: No
 Returns a true value if all given keys exists in the cache. A false value is
 returned otherwise.
 
-Reorder: No
-
    if ( $ca->mexists( "key1", "key2" ) ) { ... }
+
+Reorder: No
 
 =item mget ( key [, key, ... ] )
 
 Gets the values of all given keys. It returns C<undef> for keys which do not
 exists in the cache.
 
-Reorder: Yes
-
    ( $val1, $val2 ) = $ca->mget( "key1", "key2" );
+
+Reorder: Yes
 
 =item mset ( key, value [, key, value, ... ] )
 
 Sets multiple key-value pairs in a cache and returns the number of keys stored
 in the cache.
 
-Reorder: Yes
-
    $len = $ca->mset( "key1" => "val1", "key2" => "val2" );
+
+Reorder: Yes
 
 =item merge
 
@@ -1370,11 +1357,11 @@ arguments are given. Otherwise, returns key-value pairs for the given keys
 in the same order. Keys that do not exist will have the C<undef> value.
 In scalar context, returns the size of the cache.
 
-Reorder: No
-
    @pairs = $ca->pairs;
    @pairs = $ca->pairs( "key1", "key2" );
    $len   = $ca->pairs;
+
+Reorder: No
 
 =item pairs ( "query string" )
 
@@ -1384,22 +1371,22 @@ Returns only key-value pairs that match the given criteria. It returns an
 empty list if the search found nothing. The syntax for the C<query string> is
 described above. In scalar context, returns the size of the resulting list.
 
-Reorder: No
-
    @pairs = $ca->pairs( "val eq some_value" );
    @pairs = $ca->pairs( "key eq some_key :AND val =~ /sun|moon|air|wind/" );
    @pairs = $ca->pairs( "val eq sun :OR val eq moon :OR val eq foo" );
    $len   = $ca->pairs( "key =~ /$pattern/" );
+
+Reorder: No
 
 =item peek ( key )
 
 Same as C<get> without changing the order of the keys. Gets the value of a
 cache key or C<undef> if the key does not exists.
 
-Reorder: No
-
    $val = $ca->get( "some_key" );
    $val = $ca->{ "some_key" };
+
+Reorder: No
 
 =item purge ( )
 
@@ -1407,18 +1394,16 @@ A utility method for purging any *tombstones* in the keys array. It also
 resets a couple counters internally. Expired items are also purged when
 max_age is defined.
 
-Reorder: No
-
    $ca->purge;
 
 =item set ( key, value )
 
 Sets the value of the given cache key and returns its new value.
 
-Reorder: Yes
-
    $val = $ca->set( "key", "value" );
    $val = $ca->{ "key" } = "value";
+
+Reorder: Yes
 
 =item values ( key [, key, ... ] )
 
@@ -1429,11 +1414,11 @@ are given. Otherwise, returns values for the given keys in the same order.
 Keys that do not exist will have the C<undef> value. In scalar context,
 returns the size of the cache.
 
-Reorder: No
-
    @vals = $ca->values;
    @vals = $ca->values( "key1", "key2" );
    $len  = $ca->values;
+
+Reorder: No
 
 =item values ( "query string" )
 
@@ -1443,18 +1428,16 @@ Returns only values that match the given criteria. It returns an empty list
 if the search found nothing. The syntax for the C<query string> is described
 above. In scalar context, returns the size of the resulting list.
 
-Reorder: No
-
    @vals = $ca->values( "val eq some_value" );
    @vals = $ca->values( "key eq some_key :AND val =~ /sun|moon|air|wind/" );
    @vals = $ca->values( "val eq sun :OR val eq moon :OR val eq foo" );
    $len  = $ca->values( "key =~ /$pattern/" );
 
+Reorder: No
+
 =item vals
 
 C<vals> is an alias for C<values>.
-
-Reorder: No
 
 =back
 
@@ -1473,65 +1456,65 @@ L<http://redis.io/commands#strings> with key representing the cache key.
 
 Appends a value to a key and returns its new length.
 
-Reorder: Yes
-
    $len = $ca->append( $key, "foo" );
+
+Reorder: Yes
 
 =item decr ( key )
 
 Decrements the value of a key by one and returns its new value.
 
-Reorder: Yes
-
    $num = $ca->decr( $key );
+
+Reorder: Yes
 
 =item decrby ( key, number )
 
 Decrements the value of a key by the given number and returns its new value.
 
-Reorder: Yes
-
    $num = $ca->decrby( $key, 2 );
+
+Reorder: Yes
 
 =item getdecr ( key )
 
 Decrements the value of a key by one and returns its old value.
 
-Reorder: Yes
-
    $old = $ca->getdecr( $key );
+
+Reorder: Yes
 
 =item getincr ( key )
 
 Increments the value of a key by one and returns its old value.
 
-Reorder: Yes
-
    $old = $ca->getincr( $key );
+
+Reorder: Yes
 
 =item getset ( key, value )
 
 Sets the value of a key and returns its old value.
 
-Reorder: Yes
-
    $old = $ca->getset( $key, "baz" );
+
+Reorder: Yes
 
 =item incr ( key )
 
 Increments the value of a key by one and returns its new value.
 
-Reorder: Yes
-
    $num = $ca->incr( $key );
+
+Reorder: Yes
 
 =item incrby ( key, number )
 
 Increments the value of a key by the given number and returns its new value.
 
-Reorder: Yes
-
    $num = $ca->incrby( $key, 2 );
+
+Reorder: Yes
 
 =back
 

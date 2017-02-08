@@ -142,7 +142,7 @@ A scalar helper class for use as a standalone or managed by L<MCE::Shared>.
    $val = $var->incrby( $number );     #   $val += $number
    $old = $var->getset( $new );        #   $o = $v, $v = $n, $o
 
-For normal scalar behavior, the TIE interface is used.
+For normal scalar behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
 
