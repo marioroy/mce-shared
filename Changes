@@ -1,9 +1,10 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.809 Wed Feb 08 01:00:00 EST 2017
+1.809 Wed Feb 08 02:00:00 EST 2017
 
   * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has zero items.
+  * Applied small optimization in MCE::Shared::Sequence.
 
   * Added MCE::Shared::Cache, a fast memory-efficient LRU-cache module.
   * Added cross-platform template to MCE::Hobo for making an executable.

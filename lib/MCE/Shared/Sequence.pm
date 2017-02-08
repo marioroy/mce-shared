@@ -120,6 +120,9 @@ sub next {
             if ( $step * ( $chunk_size - 1 ) + $seqn <= $endv ) {
                $seqe = $step * ( $chunk_size - 1 ) + $seqn;
             }
+            elsif ( $step == 1 ) {
+               $seqe = $endv;
+            }
             else {
                for my $i ( 1 .. $chunk_size ) {
                   last if ( $seqn > $endv );
@@ -131,6 +134,9 @@ sub next {
          else {
             if ( $step * ( $chunk_size - 1 ) + $seqn >= $endv ) {
                $seqe = $step * ( $chunk_size - 1 ) + $seqn;
+            }
+            elsif ( $step == -1 ) {
+               $seqe = $endv;
             }
             else {
                for my $i ( 1 .. $chunk_size ) {
