@@ -566,23 +566,29 @@ a message and stop if open fails.
 
 See L<MCE::Shared::Handle> for chunk IO demonstrations.
 
-   # non-shared
+   # non-shared or local construction for use by a single process
+
    use MCE::Shared::Handle;
 
    MCE::Shared::Handle->open( my $fh, "<", "file.log" ) or die "$!";
    MCE::Shared::Handle::open  my $fh, "<", "file.log"   or die "$!";
 
-   # shared
+   mce_open my $fh, "<", "file.log" or die "$!";
+
+   # construction for sharing with other threads and processes
+
    use MCE::Shared;
 
    MCE::Shared->open( my $fh, "<", "file.log" ) or die "$!";
    MCE::Shared::open  my $fh, "<", "file.log"   or die "$!";
 
+   mce_open my $fh, "<", "file.log" or die "$!";
+
 Simple examples to open a file for reading:
 
-   # mce_open, exported
-   # creates a shared handle when MCE::Shared is present
-   # creates a non-shared handle, otherwise
+   # mce_open is exported by MCE::Shared or MCE::Shared::Handle.
+   # It creates a shared file handle with MCE::Shared present
+   # or a non-shared handle otherwise.
 
    mce_open my $fh, "< input.txt"     or die "open error: $!";
    mce_open my $fh, "<", "input.txt"  or die "open error: $!";
@@ -834,7 +840,7 @@ elements. Call C<ins_inplace> to update elements.
    my $res2 = $b->slice(":,3:4") + 10;
    $b->ins_inplace($res2, 0, 3);
 
-   # make non-shared, destroy/export
+   # make non-shared object, export-destroy the shared object
    $b = $b->destroy;
 
    print "$b\n";
@@ -871,7 +877,7 @@ The following provides parallel demonstrations using C<MCE::Flow>.
       $b->ins_inplace($result, 0, $row1);
    }, 0, 20 - 1;
 
-   # make non-shared, destroy/export
+   # make non-shared object, export-destroy the shared object
 
    $b = $b->destroy;
 

@@ -1131,9 +1131,9 @@ Both non-shared and shared instances are impacted if doing so. Although likely
 fast enough for many use cases, the OO interface is recommended for best
 performance.
 
-Being a LRU implementation means having to reorder frequently accessed items to
-the top of the list. Therefore, each description follows with a C<Reorder: Yes>
-or C<Reorder: No> line for indicating whether reordering takes place.
+Below, each description follows with a C<Reorder: Yes> or C<Reorder: No> line
+for identifying methods involving the reorder of keys. This is typical in any
+LRU implementation.
 
 =over 3
 

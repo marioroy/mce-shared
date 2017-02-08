@@ -320,10 +320,9 @@ a message and stop if open fails.
 
 Simple examples to open a file for reading:
 
-   # mce_open is exported by MCE::Shared::Handle or MCE::Shared
-   #
-   # it creates a shared handle when MCE::Shared is present
-   # or a non-shared handle, otherwise
+   # mce_open is exported by MCE::Shared or MCE::Shared::Handle.
+   # It creates a shared file handle with MCE::Shared present
+   # or a non-shared handle otherwise.
 
    mce_open my $fh, "< input.txt"     or die "open error: $!";
    mce_open my $fh, "<", "input.txt"  or die "open error: $!";
