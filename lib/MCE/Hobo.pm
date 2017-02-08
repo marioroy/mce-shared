@@ -1179,6 +1179,47 @@ C<sleep(0.0005)> on UNIX and C<sleep(0.015)> on Windows including Cygwin.
 
 =back
 
+=head1 CROSS-PLATFORM TEMPLATE FOR BINARY EXECUTABLE
+
+Making an executable is possible with the L<PAR::Packer> module.
+On the Windows platform, threads, threads::shared, and exiting via
+threads are all necessary for the binary to exit successfully.
+
+   # https://metacpan.org/pod/PAR::Packer
+   # https://metacpan.org/pod/pp
+   #
+   #   pp -o demo.exe demo.pl
+   #   ./demo.exe
+
+   use strict;
+   use warnings;
+
+   use if $^O eq "MSWin32", "threads";
+   use if $^O eq "MSWin32", "threads::shared";
+
+   use Time::HiRes (); # include minimum dependencies for MCE::Hobo
+   use Storable ();
+
+   use IO::FDPass ();  # optional: for MCE::Shared->condvar, handle, queue
+   use Sereal ();      # optional: faster serialization, may omit Storable
+
+   use MCE::Hobo;      # 1.808 or later on Windows
+   use MCE::Shared;
+
+   my $seq_a = MCE::Shared->sequence( 1, 30 );
+
+   sub task {
+      my ( $id ) = @_;
+      while ( defined ( my $num = $seq_a->next ) ) {
+         print "$id: $num\n";
+      }
+   }
+
+   MCE::Hobo->new( \&task, $_ ) for 1 .. 2;
+   MCE::Hobo->waitall;
+
+   threads->exit(0) if $INC{"threads.pm"};
+
 =head1 CREDITS
 
 The inspiration for C<MCE::Hobo> comes from wanting C<threads>-like behavior
