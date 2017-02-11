@@ -7,32 +7,36 @@ use warnings;
 
 use ExtUtils::MakeMaker;
 
+my $has_gcc = ( $^O eq 'MSWin32' )
+   ? `gcc.exe --version 2>nul`
+   : `gcc --version 2>/dev/null`;
+
 # IO::FDPass is beneficial for MCE::Shared::Condvar, Handle, and Queue.
-# Thus, adding IO::FDPass to PREREQ_PM if we can and not already installed.
+# Thus, add IO::FDPass to PREREQ_PM if we can and not already installed.
 
 my %io_fdpass;
 
-if ( !$ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
+if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_gcc ) {
    local $@; local $SIG{'__DIE__'};
    if ( $^O =~ /mingw|msys|cygwin/i ) {
-      # cygwin and friends lack file descriptor passing
+      # cygwin and friends lack file-descriptor passing capability
    }
    elsif ( $^O =~ /bsd|darwin|dragonfly|linux|mswin/i ) {
       eval 'use IO::FDPass; 1' or do {
-         print "\n",
-            "The IO::FDPass module is known to work on this platform.\n",
-            "Thus, adding IO::FDPass to PREREQ for a better experience\n",
-            "with MCE::Shared::Condvar, Handle, and Queue.\n\n";
+         warn "\n",
+            "## The IO::FDPass module is known to work on this platform.\n",
+            "## Thus, adding IO::FDPass to PREREQ for a better experience\n",
+            "## with MCE::Shared::Condvar, Handle, and Queue.\n\n";
 
          $io_fdpass{'IO::FDPass'} = '1.1';
       };
    }
    elsif ( $^O =~ /aix|hp-?ux|irix|gnu|osf|solaris|sunos|svr5|sco/i ) {
       eval 'use IO::FDPass; 1' or do {
-         print "\n",
-            "The IO::FDPass module is optional on this platform.\n",
-            "Install IO::FDPass manually for a better experience\n",
-            "with MCE::Shared::Condvar, Handle, and Queue.\n\n";
+         warn "\n",
+            "## The IO::FDPass module is optional on this platform.\n",
+            "## Install IO::FDPass manually for a better experience\n",
+            "## with MCE::Shared::Condvar, Handle, and Queue.\n\n";
       };
    }
 }
@@ -137,6 +141,14 @@ WriteMakefile(
             'MCE::Shared::Server' => {
                'file'    => 'lib/MCE/Shared/Server.pm',
                'version' => '1.808'
+            }
+         },
+         'prereqs' => {
+            runtime => {
+               recommends => {
+                  'IO::FDPass' => 1.1,
+                  'Sereal'     => 3.015
+               }
             }
          }
       } ) : () ),

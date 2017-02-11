@@ -34,6 +34,10 @@
          }
       },
       "runtime" : {
+         "recommends" : {
+            "IO::FDPass" : "1.1",
+            "Sereal" : "3.015"
+         },
          "requires" : {
             "Carp" : "0",
             "MCE" : "1.809",
