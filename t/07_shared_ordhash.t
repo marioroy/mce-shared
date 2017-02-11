@@ -74,6 +74,31 @@ is( $e2,  0, 'shared ordhash, check exists after delete' );
 is( $s1,  0, 'shared ordhash, check clear' );
 is( $h1{ret}->[1], 'air', 'shared ordhash, check auto freeze/thaw' );
 
+{
+   $h5->clear();
+
+   my @vals = $h5->pipeline(            # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
+   my $len = $h5->pipeline(             # 3, same as $h5->len
+      [ "set", foo => "i_i" ],
+      [ "set", bar => "j_j" ],
+      [ "set", baz => "k_k" ],
+      [ "len" ]
+   );
+
+   cmp_array(
+      [ @vals ], [ qw/ a_a b_b c_c / ],
+      'shared ordhash, check pipeline list'
+   );
+
+   is( $len, 3, 'shared ordhash, check pipeline scalar' );
+}
+
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
 ## Somewhere over the rainbow
@@ -105,7 +130,8 @@ $h2->splice( 1, 0, 'you' => 'dreamed' );
 is( join('', $h2->pairs), 'otheyoudreameduhigh', 'shared ordhash, check splice' );
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-
+## https://en.wikipedia.org/wiki/Prayer_of_Saint_Francis
+##
 ## {
 ##       'Make' => 'me',
 ##          'a' => 'channel',

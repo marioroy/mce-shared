@@ -17,9 +17,11 @@ our $VERSION = '1.808';
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
-use MCE::Shared::Base;
 use Scalar::Util qw( dualvar );
 use Time::HiRes qw( time );
+
+use MCE::Shared::Base;
+use parent -norequire, 'MCE::Shared::Base::Common';
 use bytes;
 
 # for marking a key to be garbage collected later
@@ -1030,6 +1032,15 @@ stay.
    $val   = $ca->incrby( $key, $number );     #   $val += $number
    $old   = $ca->getset( $key, $new );        #   $o = $v, $v = $n, $o
 
+   # pipeline, provides atomicity for shared objects, MCE::Shared v1.09+
+
+   @vals  = $ca->pipeline(                    # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
 For normal hash behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
@@ -1387,6 +1398,36 @@ cache key or C<undef> if the key does not exists.
    $val = $ca->{ "some_key" };
 
 Reorder: No
+
+=item pipeline
+
+Combines multiple commands for the object to be processed serially. For shared
+objects, the call is made atomically due to single IPC to the shared-manager
+process. The C<pipeline> method is fully C<wantarray>-aware and receives a list
+of commands and their arguments. In scalar or list context, it returns data
+from the last command in the pipeline.
+
+   @vals = $ca->pipeline(                     # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
+   $len = $ca->pipeline(                      # 3, same as $ca->len
+      [ "set", foo => "i_i" ],
+      [ "set", bar => "j_j" ],
+      [ "set", baz => "k_k" ],
+      [ "len" ]
+   );
+
+   $ca->pipeline(
+      [ "set", foo => "m_m" ],
+      [ "set", bar => "n_n" ],
+      [ "set", baz => "o_o" ]
+   );
+
+Reorder: Very likely, see API on given method
 
 =item purge ( )
 

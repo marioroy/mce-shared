@@ -22,7 +22,7 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_gcc ) {
       # cygwin and friends lack file-descriptor passing capability
    }
    elsif ( $^O =~ /bsd|darwin|dragonfly|linux|mswin/i ) {
-      eval 'use IO::FDPass; 1' or do {
+      eval 'use IO::FDPass; 1' or do {  ## no critic
          warn "\n",
             "## The IO::FDPass module is known to work on this platform.\n",
             "## Thus, adding IO::FDPass to PREREQ for a better experience\n",
@@ -32,7 +32,7 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_gcc ) {
       };
    }
    elsif ( $^O =~ /aix|hp-?ux|irix|gnu|osf|solaris|sunos|svr5|sco/i ) {
-      eval 'use IO::FDPass; 1' or do {
+      eval 'use IO::FDPass; 1' or do {  ## no critic
          warn "\n",
             "## The IO::FDPass module is optional on this platform.\n",
             "## Install IO::FDPass manually for a better experience\n",

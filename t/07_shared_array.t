@@ -93,8 +93,34 @@ is( join(' ', @a1), 'air sun', 'shared array, check push, unshift' );
 is( $s1, 'wind', 'shared array, check shift' );
 is( $s2, 'moon', 'shared array, check pop' );
 
-## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+{
+   $a5->clear();
 
+   my @vals = $a5->pipeline(            # ( "a_a", "b_b", "c_c" )
+      [ "set", 0 => "a_a" ],
+      [ "set", 1 => "b_b" ],
+      [ "set", 2 => "c_c" ],
+      [ "mget", qw/ 0 1 2 / ]
+   );
+
+   my $len = $a5->pipeline(             # 3, same as $a5->len
+      [ "set", 0 => "i_i" ],
+      [ "set", 1 => "j_j" ],
+      [ "set", 2 => "k_k" ],
+      [ "len" ]
+   );
+
+   cmp_array(
+      [ @vals ], [ qw/ a_a b_b c_c / ],
+      'shared array, check pipeline list'
+   );
+
+   is( $len, 3, 'shared array, check pipeline scalar' );
+}
+
+## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+## https://en.wikipedia.org/wiki/Prayer_of_Saint_Francis
+##
 ## {
 ##       0 => 'me',
 ##       1 => 'channel',

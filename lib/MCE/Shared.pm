@@ -1321,6 +1321,42 @@ obtained from a MacBook Pro (Haswell) running at 2.6 GHz, 1600 MHz RAM.
       OO Interface .. : 0.312 secs.
       threads::shared : 1.061 secs.
 
+Beginning with MCE::Shared 1.809, the C<pipeline> method provides another way.
+Included in C<Array>, C<Cache>, C<Hash>, C<Minidb>, and C<Ordhash>, it combines
+multiple commands for the object to be processed serially. For shared objects,
+the call is made atomically due to single IPC to the shared-manager process.
+
+The C<pipeline> method is fully C<wantarray>-aware and receives a list of
+commands and their arguments. In scalar or list context, it returns data from
+the last command in the pipeline.
+
+   use MCE::Mutex;
+   use MCE::Shared;
+
+   my $mutex = MCE::Mutex->new();
+   my $oh = MCE::Shared->ordhash();
+   my @vals;
+
+   # mutex locking
+
+   $mutex->lock;
+   $oh->set( foo => "a_a" );
+   $oh->set( bar => "b_b" );
+   $oh->set( baz => "c_c" );
+   @vals = $oh->mget( qw/ foo bar baz / );
+   $mutex->unlock;
+
+   # pipeline, same effect
+
+   @vals = $oh->pipeline(
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
+   # ( "a_a", "b_b", "c_c" )
+
 =head1 REQUIREMENTS
 
 MCE::Shared requires Perl 5.10.1 or later. The L<IO::FDPass> module is highly

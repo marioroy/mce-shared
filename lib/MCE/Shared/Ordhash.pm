@@ -30,6 +30,7 @@ our $VERSION = '1.808';
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use MCE::Shared::Base;
+use parent -norequire, 'MCE::Shared::Base::Common';
 use bytes;
 
 # for marking a key to be garbage collected later
@@ -915,6 +916,15 @@ new level of performance, for a pure-Perl ordered hash implementation.
    $val   = $oh->incrby( $key, $number );     #   $val += $number
    $old   = $oh->getset( $key, $new );        #   $o = $v, $v = $n, $o
 
+   # pipeline, provides atomicity for shared objects, MCE::Shared v1.09+
+
+   @vals  = $oh->pipeline(                    # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
 For normal hash behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
@@ -1207,6 +1217,36 @@ described above. In scalar context, returns the size of the resulting list.
    @pairs = $oh->pairs( "key eq some_key :AND val =~ /sun|moon|air|wind/" );
    @pairs = $oh->pairs( "val eq sun :OR val eq moon :OR val eq foo" );
    $len   = $oh->pairs( "key =~ /$pattern/" );
+
+=item pipeline
+
+Combines multiple commands for the object to be processed serially. For shared
+objects, the call is made atomically due to single IPC to the shared-manager
+process. The C<pipeline> method is fully C<wantarray>-aware and receives a list
+of commands and their arguments. In scalar or list context, it returns data
+from the last command in the pipeline.
+
+   @vals = $oh->pipeline(                     # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
+   $len = $oh->pipeline(                      # 3, same as $oh->len
+      [ "set", foo => "i_i" ],
+      [ "set", bar => "j_j" ],
+      [ "set", baz => "k_k" ],
+      [ "len" ]
+   );
+
+   $oh->pipeline(
+      [ "set", foo => "m_m" ],
+      [ "set", bar => "n_n" ],
+      [ "set", baz => "o_o" ]
+   );
+
+Current API available since 1.809.
 
 =item pop
 

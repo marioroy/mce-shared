@@ -1,13 +1,17 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.809 Wed Feb 08 02:00:00 EST 2017
+1.809 Sat Feb 11 03:00:00 EST 2017
 
   * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has zero items.
   * Applied small optimization in MCE::Shared::Sequence.
 
-  * Added MCE::Shared::Cache, a fast memory-efficient LRU-cache module.
+  * Added MCE::Shared::Cache, a fast and memory-efficient LRU-cache module.
+  * Added pipeline method to MCE::Shared::Array, Hash, Minidb, and Ordhash.
   * Added cross-platform template to MCE::Hobo for making an executable.
+
+  * Added recommends section to Makefile and META files: IO::FDPass, Sereal.
+  * Add IO::FDPass to PREREQ if we can on platforms known to work.
 
   * Added hobo_timeout option to MCE::Hobo for timeout capability.
     Also, imply posix_exit => 1 when Gearman::XS is present.

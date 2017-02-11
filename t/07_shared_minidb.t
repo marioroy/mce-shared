@@ -27,8 +27,31 @@ sub cmp_array {
    ok(1, $_[2]);
 }
 
+{
+   my @vals = $db->pipeline(            # ( "bar", "baz" )
+      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
+      [ "hget", "key2", "f1", "f2" ]
+   );
+
+   my $len = $db->pipeline(             # 2, same as $db->hlen("key2)
+      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
+      [ "hlen", "key2" ]
+   );
+
+   cmp_array(
+      [ @vals ], [ qw/ bar baz / ],
+      'shared minidb, check pipeline list'
+   );
+
+   is( $len, 2, 'shared minidb, check pipeline scalar' );
+
+   $db->hclear;
+}
+
 ##############################################################################
 ## ---------------------------------------------------------------------------
+## https://en.wikipedia.org/wiki/Prayer_of_Saint_Francis
+##
 ## HoH - Hashes
 ##
 ## { k1 } => {
@@ -361,6 +384,8 @@ is ( $db->hget('k1','f1'), '77bc', 'shared minidb hash, check value after hgetse
 
 ##############################################################################
 ## ---------------------------------------------------------------------------
+## https://en.wikipedia.org/wiki/Prayer_of_Saint_Francis
+##
 ## HoA - Lists
 ##
 ## { k1 } => [

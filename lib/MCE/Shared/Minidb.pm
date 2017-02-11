@@ -15,10 +15,12 @@ no warnings qw( threads recursion uninitialized numeric );
 our $VERSION = '1.808';
 
 use MCE::Shared::Base;
+use parent -norequire, 'MCE::Shared::Base::Common';
+use bytes;
+
 use MCE::Shared::Ordhash;
 use MCE::Shared::Array;
 use MCE::Shared::Hash;
-use bytes;
 
 use overload (
    q("")    => \&MCE::Shared::Base::_stringify,
@@ -1168,6 +1170,15 @@ intent for this module to become 100% compatible.
 
    $val = $db->lget( "key2", 1 );     # "baz"
 
+   # pipeline, provides atomicity for shared objects, MCE::Shared v1.09+
+
+   $db->pipeline(
+      [ "lset", "key1", 0, "foo" ],
+      [ "hset", "key1", "f1", "foo" ],
+      [ "lset", "key2", 0, "bar", 1, "baz" ],
+      [ "hset", "key2", "f1", "bar", "f2", "baz" ]
+   );
+
 =head1 SYNTAX for QUERY STRING
 
 Several methods take a query string for an argument. The format of the string
@@ -1279,6 +1290,33 @@ Constructs an empty in-memory C<HoH> and C<HoA> key-store database structure.
 Dumps the in-memory content to a file.
 
    $db->dump( "content.dat" );
+
+=item pipeline
+
+Combines multiple commands for the object to be processed serially. For shared
+objects, the call is made atomically due to single IPC to the shared-manager
+process. The C<pipeline> method is fully C<wantarray>-aware and receives a list
+of commands and their arguments. In scalar or list context, it returns data
+from the last command in the pipeline.
+
+   @vals = $db->pipeline(                     # ( "bar", "baz" )
+      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
+      [ "hget", "key2", "f1", "f2" ]
+   );
+
+   $len = $db->pipeline(                      # 2, same as $db->hlen("key2)
+      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
+      [ "hlen", "key2" ]
+   );
+
+   $db->pipeline(
+      [ "lset", "key1", 0, "foo" ],
+      [ "hset", "key1", "f1", "foo" ],
+      [ "lset", "key2", 0, "bar", 1, "baz" ],
+      [ "hset", "key2", "f1", "bar", "f2", "baz" ]
+   );
+
+Current API available since 1.809.
 
 =item restore ( "file.dat" )
 

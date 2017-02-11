@@ -17,6 +17,7 @@ our $VERSION = '1.808';
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use MCE::Shared::Base;
+use parent -norequire, 'MCE::Shared::Base::Common';
 use bytes;
 
 use overload (
@@ -375,6 +376,15 @@ A hash helper class for use as a standalone or managed by L<MCE::Shared>.
    $val   = $ha->incrby( $key, $number );     #   $val += $number
    $old   = $ha->getset( $key, $new );        #   $o = $v, $v = $n, $o
 
+   # pipeline, provides atomicity for shared objects, MCE::Shared v1.09+
+
+   @vals  = $ha->pipeline(                    # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
 For normal hash behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
@@ -662,6 +672,36 @@ described above. In scalar context, returns the size of the resulting list.
    @pairs = $ha->pairs( "key eq some_key :AND val =~ /sun|moon|air|wind/" );
    @pairs = $ha->pairs( "val eq sun :OR val eq moon :OR val eq foo" );
    $len   = $ha->pairs( "key =~ /$pattern/" );
+
+=item pipeline
+
+Combines multiple commands for the object to be processed serially. For shared
+objects, the call is made atomically due to single IPC to the shared-manager
+process. The C<pipeline> method is fully C<wantarray>-aware and receives a list
+of commands and their arguments. In scalar or list context, it returns data
+from the last command in the pipeline.
+
+   @vals = $ha->pipeline(                     # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+      [ "mget", qw/ foo bar baz / ]
+   );
+
+   $len = $ha->pipeline(                      # 3, same as $ha->len
+      [ "set", foo => "i_i" ],
+      [ "set", bar => "j_j" ],
+      [ "set", baz => "k_k" ],
+      [ "len" ]
+   );
+
+   $ha->pipeline(
+      [ "set", foo => "m_m" ],
+      [ "set", bar => "n_n" ],
+      [ "set", baz => "o_o" ]
+   );
+
+Current API available since 1.809.
 
 =item set ( key, value )
 

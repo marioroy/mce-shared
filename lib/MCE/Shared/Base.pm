@@ -257,6 +257,42 @@ sub _die {
    CORE::exit($?);
 }
 
+###############################################################################
+## ----------------------------------------------------------------------------
+## Common API for MCE::Shared::{ Array, Cache, Hash, Minidb, Ordhash }.
+##
+###############################################################################
+
+package MCE::Shared::Base::Common;
+
+use 5.010001;
+use strict;
+use warnings;
+
+no warnings qw( threads recursion uninitialized numeric );
+
+use bytes;
+
+sub pipeline {
+   my $self = shift;
+   my $temp; $temp = pop if ( defined wantarray );
+
+   while ( @_ ) {
+      my $next = shift; next if ( ref $next ne 'ARRAY' );
+      if ( my $code = $self->can(shift @{ $next }) ) {
+         $code->($self, @{ $next });
+      }
+   }
+
+   if ( ref $temp eq 'ARRAY' ) {
+      if ( my $code = $self->can(shift @{ $temp }) ) {
+         return $code->($self, @{ $temp });
+      }
+   }
+
+   return;
+}
+
 1;
 
 __END__

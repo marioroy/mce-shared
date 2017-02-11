@@ -17,6 +17,7 @@ our $VERSION = '1.808';
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use MCE::Shared::Base;
+use parent -norequire, 'MCE::Shared::Base::Common';
 use bytes;
 
 use overload (
@@ -467,6 +468,15 @@ An array helper class for use as a standalone or managed by L<MCE::Shared>.
    $val   = $ar->incrby( $index, $number );   #   $val += $number
    $old   = $ar->getset( $index, $new );      #   $o = $v, $v = $n, $o
 
+   # pipeline, provides atomicity for shared objects, MCE::Shared v1.09+
+
+   @vals  = $ar->pipeline(                    # ( "a_a", "b_b", "c_c" )
+      [ "set", 0 => "a_a" ],
+      [ "set", 1 => "b_b" ],
+      [ "set", 2 => "c_c" ],
+      [ "mget", qw/ 0 1 2 / ]
+   );
+
 For normal array behavior, the TIE interface is supported.
 
    # non-shared or local construction for use by a single process
@@ -760,6 +770,36 @@ described above. In scalar context, returns the size of the resulting list.
    @pairs = $ar->pairs( "key >= 50 :AND val =~ /sun|moon|air|wind/" );
    @pairs = $ar->pairs( "val eq sun :OR val eq moon :OR val eq foo" );
    $len   = $ar->pairs( "key =~ /$pattern/" );
+
+=item pipeline
+
+Combines multiple commands for the object to be processed serially. For shared
+objects, the call is made atomically due to single IPC to the shared-manager
+process. The C<pipeline> method is fully C<wantarray>-aware and receives a list
+of commands and their arguments. In scalar or list context, it returns data
+from the last command in the pipeline.
+
+   @vals = $ar->pipeline(                     # ( "a_a", "b_b", "c_c" )
+      [ "set", 0 => "a_a" ],
+      [ "set", 1 => "b_b" ],
+      [ "set", 2 => "c_c" ],
+      [ "mget", qw/ 0 1 2 / ]
+   );
+
+   $len = $ar->pipeline(                      # 3, same as $ar->len
+      [ "set", 0 => "i_i" ],
+      [ "set", 1 => "j_j" ],
+      [ "set", 2 => "k_k" ],
+      [ "len" ]
+   );
+
+   $ar->pipeline(
+      [ "set", 0 => "m_m" ],
+      [ "set", 1 => "n_n" ],
+      [ "set", 2 => "o_o" ]
+   );
+
+Current API available since 1.809.
 
 =item pop
 
