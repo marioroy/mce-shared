@@ -8,10 +8,8 @@ Revision history for Perl module MCE::Shared.
 
   * Added MCE::Shared::Cache, a fast and memory-efficient LRU-cache module.
   * Added pipeline method to MCE::Shared::Array, Hash, Minidb, and Ordhash.
-  * Added cross-platform template to MCE::Hobo for making an executable.
-
   * Added recommends section to Makefile and META files: IO::FDPass, Sereal.
-  * Add IO::FDPass to PREREQ if we can on platforms known to work.
+  * Added cross-platform template to MCE::Hobo for making an executable.
 
   * Added hobo_timeout option to MCE::Hobo for timeout capability.
     Also, imply posix_exit => 1 when Gearman::XS is present.
@@ -20,7 +18,7 @@ Revision history for Perl module MCE::Shared.
     respectively inside the documentation.
 
   * Having IO::FDPass is beneficial for Condvar(s), Handle(s), and Queue(s).
-    Thus, adding IO::FDPass to PREREQ_PM if we can and not already installed.
+    Thus, append IO::FDPass to PREREQ_PM if we can and not already installed.
     Run MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL to bypass the check.
 
   * Improved documentation for QUERY STRING in various helper classes.
