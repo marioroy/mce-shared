@@ -1838,11 +1838,10 @@ sub iterator {
    }
 }
 
-# rewind ( begin, end, [ step, format ] )
-#
-# rewind ( index [, index, ... ] )
-# rewind ( key [, key, ... ] )
-# rewind ( "query string" )
+# rewind ( begin, end, [ step, format ] )  # Sequence
+# rewind ( index [, index, ... ] )         # Array
+# rewind ( key [, key, ... ] )             # Hash, Ordhash
+# rewind ( "query string" )                # Array, Hash, Ordhash
 # rewind ( )
 
 sub rewind {

@@ -7,11 +7,10 @@ use warnings;
 
 use ExtUtils::MakeMaker;
 
-# Having IO::FDPass is beneficial for Condvar(s), Handle(s), and Queue(s).
-# Therefore, add IO::FDPass to PREREQ_PM if we can and not already installed.
-# Run MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL to bypass the check.
+# IO::FDPass is beneficial for MCE::Shared::Condvar, Handle, and Queue.
+# Thus, adding IO::FDPass to PREREQ_PM if we can and not already installed.
 
-my %require_io_fdpass;
+my %io_fdpass;
 
 if ( !$ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
    local $@; local $SIG{'__DIE__'};
@@ -22,18 +21,18 @@ if ( !$ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
       eval 'use IO::FDPass; 1' or do {
          print "\n",
             "The IO::FDPass module is known to work on this platform.\n",
-            "Thus adding requirement to PREREQ for a better experience\n",
-            "when using MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
+            "Thus, adding IO::FDPass to PREREQ for a better experience\n",
+            "with MCE::Shared::Condvar, Handle, and Queue.\n\n";
 
-         $require_io_fdpass{'IO::FDPass'} = '1.1';
+         $io_fdpass{'IO::FDPass'} = '1.1';
       };
    }
    elsif ( $^O =~ /aix|hp-?ux|irix|gnu|osf|solaris|sunos|svr5|sco/i ) {
       eval 'use IO::FDPass; 1' or do {
          print "\n",
-            "The IO::FDPass requirement is optional on this platform.\n",
-            "Try installing the module manually for a better experience\n",
-            "when using MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
+            "The IO::FDPass module is optional on this platform.\n",
+            "Install IO::FDPass manually for a better experience\n",
+            "with MCE::Shared::Condvar, Handle, and Queue.\n\n";
       };
    }
 }
@@ -61,7 +60,7 @@ WriteMakefile(
       'Storable'     => 2.04,
       'Symbol'       => 0,
       'Time::HiRes'  => 0,
-      %require_io_fdpass
+      %io_fdpass
    },
 
    ((!eval { ExtUtils::MakeMaker->VERSION(6.25) } ) ?

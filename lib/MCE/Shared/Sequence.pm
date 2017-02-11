@@ -267,7 +267,9 @@ A number sequence class for use as a standalone or managed by L<MCE::Shared>.
    MCE::Hobo->new( \&parallel_a, $_ ) for 1 .. 2;
    MCE::Hobo->new( \&parallel_b, $_ ) for 3 .. 4;
 
-   $_->join for MCE::Hobo->list();
+   # ... do other work ...
+
+   MCE::Hobo->waitall();
 
 =head1 API DOCUMENTATION
 

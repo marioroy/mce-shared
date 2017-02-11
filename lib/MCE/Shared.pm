@@ -377,9 +377,9 @@ This document describes MCE::Shared version 1.808
    my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
    my $ob = MCE::Shared->share( $blessed_object );
 
-   # open function, MCE::Shared 1.002 and later
+   # open function in MCE::Shared 1.002 and later
 
-   mce_open my $fh, ">", "/foo/bar.log" or die "$!";
+   mce_open my $fh, ">", "/foo/bar.log" or die "open error: $!";
 
    # Tie construction
 
@@ -511,14 +511,14 @@ C<IO::FDPass> module.
 
 Below, synopsis for sharing classes included with MCE::Shared.
 
-   # Short form
+   # short form
 
    use MCE::Shared;
 
    $ar = MCE::Shared->array( @list );
    $ca = MCE::Shared->cache( max_keys => 500, max_age => 60 );
    $cv = MCE::Shared->condvar( 0 );
-   $fh = MCE::Shared->handle( '>>', \*STDOUT ); # see mce_open below
+   $fh = MCE::Shared->handle( ">>", \*STDOUT ); # see mce_open below
    $ha = MCE::Shared->hash( @pairs );
    $oh = MCE::Shared->ordhash( @pairs );
    $db = MCE::Shared->minidb();
@@ -526,7 +526,9 @@ Below, synopsis for sharing classes included with MCE::Shared.
    $va = MCE::Shared->scalar( $value );
    $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
 
-   # Long form, must include the class module
+   mce_open my $fh, ">>", \*STDOUT or die "open error: $!";
+
+   # long form, must include class module
 
    use MCE::Shared::Array;
    use MCE::Shared::Cache;
@@ -544,7 +546,7 @@ Below, synopsis for sharing classes included with MCE::Shared.
    $qu = MCE::Shared->share( MCE::Shared::Queue->new( ... ) );
    $va = MCE::Shared->share( MCE::Shared::Scalar->new( ... ) );
 
-The restriction for sharing other classes, not included with MCE::Shared,
+The restriction for sharing classes not included with MCE::Shared
 is that the object must not have file-handles nor code-blocks.
 
    use Hash::Ordered;
@@ -717,8 +719,8 @@ For further reading, see L<MCE::Shared::Minidb>.
 
 This class method transfers the blessed-object to the shared-manager
 process and returns a C<MCE::Shared::Object> containing the C<SHARED_ID>.
-The object must not contain any C<GLOB>'s or C<CODE_REF>'s or the transfer
-will fail.
+For classes not included with C<MCE::Shared>, the object must not contain
+any C<GLOB>'s or C<CODE_REF>'s or the transfer will fail.
 
    use MCE::Shared;
    use MCE::Shared::Ordhash;
@@ -1019,7 +1021,7 @@ The following example iterates through a shared array in parallel.
 
    # ... do other work ...
 
-   $_->join() for MCE::Hobo->list();
+   MCE::Hobo->waitall();
 
    # Output
 
@@ -1045,8 +1047,7 @@ the amount of traffic to and from the shared-manager process.
    my $pi  = MCE::Shared->scalar( 0.0 );
 
    my $seq = MCE::Shared->sequence(
-      { chunk_size => 200_000, bounds_only => 1 },
-      0, $N - 1
+      { chunk_size => 200_000, bounds_only => 1 }, 0, $N - 1
    );
 
    sub compute_pi {
@@ -1068,7 +1069,7 @@ the amount of traffic to and from the shared-manager process.
 
    # ... do other stuff ...
 
-   $_->join() for MCE::Hobo->list();
+   MCE::Hobo->waitall();
 
    printf "pi = %0.13f\n", $pi->get / $N;
 
