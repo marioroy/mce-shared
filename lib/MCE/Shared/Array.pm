@@ -771,7 +771,7 @@ described above. In scalar context, returns the size of the resulting list.
    @pairs = $ar->pairs( "val eq sun :OR val eq moon :OR val eq foo" );
    $len   = $ar->pairs( "key =~ /$pattern/" );
 
-=item pipeline
+=item pipeline ( [ func1, @args ], [ func2, @args ], ... )
 
 Combines multiple commands for the object to be processed serially. For shared
 objects, the call is made atomically due to single IPC to the shared-manager
@@ -797,6 +797,18 @@ from the last command in the pipeline.
       [ "set", 0 => "m_m" ],
       [ "set", 1 => "n_n" ],
       [ "set", 2 => "o_o" ]
+   );
+
+Current API available since 1.809.
+
+=item pipeline_ex ( [ func1, @args ], [ func2, @args ], ... )
+
+Same as C<pipeline>, but returns data for every command in the pipeline.
+
+   @vals = $ar->pipeline_ex(                  # ( "a_a", "b_b", "c_c" )
+      [ "set", 0 => "a_a" ],
+      [ "set", 1 => "b_b" ],
+      [ "set", 2 => "c_c" ]
    );
 
 Current API available since 1.809.

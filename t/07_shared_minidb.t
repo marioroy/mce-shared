@@ -29,13 +29,13 @@ sub cmp_array {
 
 {
    my @vals = $db->pipeline(            # ( "bar", "baz" )
-      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
-      [ "hget", "key2", "f1", "f2" ]
+      [ "hset", "some_key", "f1", "bar", "f2", "baz" ],
+      [ "hget", "some_key", "f1", "f2" ]
    );
 
    my $len = $db->pipeline(             # 2, same as $db->hlen("key2)
-      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
-      [ "hlen", "key2" ]
+      [ "hset", "some_key", "f1", "bar", "f2", "baz" ],
+      [ "hlen", "some_key" ]
    );
 
    cmp_array(
@@ -44,6 +44,16 @@ sub cmp_array {
    );
 
    is( $len, 2, 'shared minidb, check pipeline scalar' );
+
+   @vals = $db->pipeline_ex(            # ( "foo", "bar" )
+      [ "hset", "some_key", "field1", "foo" ],
+      [ "hset", "some_key", "field2", "bar" ]
+   );
+
+   cmp_array(
+      [ @vals ], [ qw/ foo bar / ],
+      'shared minidb, check pipeline_ex list'
+   );
 
    $db->hclear;
 }

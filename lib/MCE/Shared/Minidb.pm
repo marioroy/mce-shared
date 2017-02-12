@@ -1174,9 +1174,9 @@ intent for this module to become 100% compatible.
 
    $db->pipeline(
       [ "lset", "key1", 0, "foo" ],
-      [ "hset", "key1", "f1", "foo" ],
+      [ "hset", "key1", "field1", "foo" ],
       [ "lset", "key2", 0, "bar", 1, "baz" ],
-      [ "hset", "key2", "f1", "bar", "f2", "baz" ]
+      [ "hset", "key2", "field1", "bar", "field2", "baz" ]
    );
 
 =head1 SYNTAX for QUERY STRING
@@ -1291,7 +1291,7 @@ Dumps the in-memory content to a file.
 
    $db->dump( "content.dat" );
 
-=item pipeline
+=item pipeline ( [ func1, @args ], [ func2, @args ], ... )
 
 Combines multiple commands for the object to be processed serially. For shared
 objects, the call is made atomically due to single IPC to the shared-manager
@@ -1300,21 +1300,48 @@ of commands and their arguments. In scalar or list context, it returns data
 from the last command in the pipeline.
 
    @vals = $db->pipeline(                     # ( "bar", "baz" )
-      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
-      [ "hget", "key2", "f1", "f2" ]
+      [ "hset", "some_key", "f1", "bar", "f2", "baz" ],
+      [ "hget", "some_key", "f1", "f2" ]
    );
 
    $len = $db->pipeline(                      # 2, same as $db->hlen("key2)
-      [ "hset", "key2", "f1", "bar", "f2", "baz" ],
-      [ "hlen", "key2" ]
+      [ "hset", "some_key", "f1", "bar", "f2", "baz" ],
+      [ "hlen", "some_key" ]
    );
 
    $db->pipeline(
       [ "lset", "key1", 0, "foo" ],
-      [ "hset", "key1", "f1", "foo" ],
+      [ "hset", "key1", "field1", "foo" ],
       [ "lset", "key2", 0, "bar", 1, "baz" ],
-      [ "hset", "key2", "f1", "bar", "f2", "baz" ]
+      [ "hset", "key2", "field1", "bar", "field2", "baz" ]
    );
+
+Current API available since 1.809.
+
+=item pipeline_ex ( [ func1, @args ], [ func2, @args ], ... )
+
+Same as C<pipeline>, but returns data for every command in the pipeline.
+
+   @vals = $db->pipeline_ex(                  # ( "bar", "baz" )
+      [ "hset", "key3", "field1", "bar" ],
+      [ "hset", "key3", "field2", "baz" ],
+   );
+
+   $chunk_size = 3;
+
+   $db->hset("some_key", chunk_id => 0);
+   $db->lassign("some_key", @ARGV);
+
+   while (1) {
+      ($chunk_id, @next) = $db->pipeline_ex(
+         [ "hincr",   "some_key", "chunk_id"     ],
+         [ "lsplice", "some_key", 0, $chunk_size ]
+      );
+
+      last unless @next;
+
+      ...
+   }
 
 Current API available since 1.809.
 

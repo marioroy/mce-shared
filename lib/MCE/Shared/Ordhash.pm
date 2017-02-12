@@ -1218,7 +1218,7 @@ described above. In scalar context, returns the size of the resulting list.
    @pairs = $oh->pairs( "val eq sun :OR val eq moon :OR val eq foo" );
    $len   = $oh->pairs( "key =~ /$pattern/" );
 
-=item pipeline
+=item pipeline ( [ func1, @args ], [ func2, @args ], ... )
 
 Combines multiple commands for the object to be processed serially. For shared
 objects, the call is made atomically due to single IPC to the shared-manager
@@ -1244,6 +1244,18 @@ from the last command in the pipeline.
       [ "set", foo => "m_m" ],
       [ "set", bar => "n_n" ],
       [ "set", baz => "o_o" ]
+   );
+
+Current API available since 1.809.
+
+=item pipeline_ex ( [ func1, @args ], [ func2, @args ], ... )
+
+Same as C<pipeline>, but returns data for every command in the pipeline.
+
+   @vals = $oh->pipeline_ex(                  # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
    );
 
 Current API available since 1.809.

@@ -97,6 +97,17 @@ is( $h1{ret}->[1], 'air', 'shared hash, check auto freeze/thaw' );
    );
 
    is( $len, 3, 'shared hash, check pipeline scalar' );
+
+   @vals = $h5->pipeline_ex(            # ( "c_c", "b_b", "a_a" )
+      [ "set", foo => "c_c" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "a_a" ]
+   );
+
+   cmp_array(
+      [ @vals ], [ qw/ c_c b_b a_a / ],
+      'shared hash, check pipeline_ex list'
+   );
 }
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---

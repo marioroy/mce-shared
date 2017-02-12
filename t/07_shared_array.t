@@ -116,6 +116,17 @@ is( $s2, 'moon', 'shared array, check pop' );
    );
 
    is( $len, 3, 'shared array, check pipeline scalar' );
+
+   @vals = $a5->pipeline_ex(            # ( "c_c", "b_b", "a_a" )
+      [ "set", 0 => "c_c" ],
+      [ "set", 1 => "b_b" ],
+      [ "set", 2 => "a_a" ]
+   );
+
+   cmp_array(
+      [ @vals ], [ qw/ c_c b_b a_a / ],
+      'shared array, check pipeline_ex list'
+   );
 }
 
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---

@@ -1399,7 +1399,7 @@ cache key or C<undef> if the key does not exists.
 
 Reorder: No
 
-=item pipeline
+=item pipeline ( [ func1, @args ], [ func2, @args ], ... )
 
 Combines multiple commands for the object to be processed serially. For shared
 objects, the call is made atomically due to single IPC to the shared-manager
@@ -1428,6 +1428,18 @@ from the last command in the pipeline.
    );
 
 Reorder: Very likely, see API on given method
+
+=item pipeline_ex ( [ func1, @args ], [ func2, @args ], ... )
+
+Same as C<pipeline>, but returns data for every command in the pipeline.
+
+   @vals = $ca->pipeline_ex(                  # ( "a_a", "b_b", "c_c" )
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ],
+   );
+
+Reorder: Very likely, see API on given command
 
 =item purge ( )
 
