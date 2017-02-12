@@ -10,15 +10,11 @@ use ExtUtils::MakeMaker;
 # IO::FDPass is beneficial for MCE::Shared::Condvar, Handle, and Queue.
 # Thus, add IO::FDPass to PREREQ_PM if we can and not already installed.
 
-my $env_cc = $ENV{'CC'};
 my $has_cc;
 
 if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
    eval 'use IO::FDPass; 1' or do {  ## no critic
-      if ( defined $env_cc && -x $env_cc ) {
-         $has_cc = 1;
-      }
-      elsif ( $^O eq 'MSWin32' ) {
+      if ( $^O eq 'MSWin32' ) {
          $has_cc = `gcc.exe --version 2>nul`     ||
                    `cl.exe /? 2>nul`;
       }
@@ -43,8 +39,8 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_cc ) {
       if ( ! exists $INC{'IO::FDPass.pm'} ) {
          warn "\n",
             "## The IO::FDPass module is known to work on this platform.\n",
-            "## Thus, adding IO::FDPass to PREREQ for better experience\n",
-            "## sharing MCE::Shared::Condvar, Handle, and Queue.\n\n";
+            "## Thus, adding IO::FDPass to PREREQ for a better experience\n",
+            "## sharing MCE::Shared::{ Condvar, Handle, Queue } objects.\n\n";
 
          $io_fdpass{'IO::FDPass'} = '1.1';
       }
@@ -53,8 +49,8 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_cc ) {
       if ( ! exists $INC{'IO::FDPass.pm'} ) {
          warn "\n",
             "## The IO::FDPass module is optional on this platform.\n",
-            "## Install IO::FDPass manually for better experience\n",
-            "## sharing MCE::Shared::Condvar, Handle, and Queue.\n\n";
+            "## Install IO::FDPass manually for a better experience\n",
+            "## sharing MCE::Shared::{ Condvar, Handle, Queue } objects.\n\n";
       }
    }
 }
