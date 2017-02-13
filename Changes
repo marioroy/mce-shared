@@ -1,7 +1,7 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.809 Sun Feb 12 21:45:00 EST 2017
+1.809 Mon Feb 13 06:00:00 EST 2017
 
   * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has zero items.
   * Applied small optimization in MCE::Shared::Sequence.
@@ -14,8 +14,9 @@ Revision history for Perl module MCE::Shared.
   * Added hobo_timeout option to MCE::Hobo for timeout capability.
     Also, imply posix_exit => 1 when Gearman::XS is present.
 
-  * Added MCE::Hobo + Gearman::XS demonstrations at Github:
+  * Added MCE::Hobo + Gearman demonstrations (xs and non-xs) on Github:
     https://github.com/marioroy/mce-examples/tree/master/gearman_xs
+    https://github.com/marioroy/mce-examples/tree/master/gearman
 
   * Changed kilobytes and megabytes to kibiBytes (KiB) and mebiBytes (MiB)
     respectively inside the documentation.
