@@ -1436,7 +1436,7 @@ Same as C<pipeline>, but returns data for every command in the pipeline.
    @vals = $ca->pipeline_ex(                  # ( "a_a", "b_b", "c_c" )
       [ "set", foo => "a_a" ],
       [ "set", bar => "b_b" ],
-      [ "set", baz => "c_c" ],
+      [ "set", baz => "c_c" ]
    );
 
 Reorder: Very likely, see API on given command

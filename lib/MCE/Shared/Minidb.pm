@@ -1324,7 +1324,7 @@ Same as C<pipeline>, but returns data for every command in the pipeline.
 
    @vals = $db->pipeline_ex(                  # ( "bar", "baz" )
       [ "hset", "key3", "field1", "bar" ],
-      [ "hset", "key3", "field2", "baz" ],
+      [ "hset", "key3", "field2", "baz" ]
    );
 
    $chunk_size = 3;

@@ -1346,13 +1346,24 @@ the last command in the pipeline.
    @vals = $oh->mget( qw/ foo bar baz / );
    $mutex->unlock;
 
-   # pipeline, same effect
+   # pipeline, same thing done atomically
 
    @vals = $oh->pipeline(
       [ "set", foo => "a_a" ],
       [ "set", bar => "b_b" ],
       [ "set", baz => "c_c" ],
       [ "mget", qw/ foo bar baz / ]
+   );
+
+   # ( "a_a", "b_b", "c_c" )
+
+There is also C<pipeline_ex>, same as C<pipeline>, but returns data for every
+command in the pipeline.
+
+   @vals = $oh->pipeline_ex(
+      [ "set", foo => "a_a" ],
+      [ "set", bar => "b_b" ],
+      [ "set", baz => "c_c" ]
    );
 
    # ( "a_a", "b_b", "c_c" )

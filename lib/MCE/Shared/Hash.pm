@@ -710,7 +710,7 @@ Same as C<pipeline>, but returns data for every command in the pipeline.
    @vals = $ha->pipeline_ex(                  # ( "a_a", "b_b", "c_c" )
       [ "set", foo => "a_a" ],
       [ "set", bar => "b_b" ],
-      [ "set", baz => "c_c" ],
+      [ "set", baz => "c_c" ]
    );
 
 Current API available since 1.809.

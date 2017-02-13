@@ -26,6 +26,7 @@ Revision history for Perl module MCE::Shared.
 
   * Improved documentation for QUERY STRING in various helper classes.
   * Updated SYNOPSIS in various helper classes.
+  * Updated LOCKING section in MCE::Shared.
 
 1.808 Fri Dec 09 23:30:00 EST 2016
 
