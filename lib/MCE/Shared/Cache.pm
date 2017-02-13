@@ -963,8 +963,8 @@ stay.
    $ca = MCE::Shared::Cache->new( max_age  => "12 hours" );
    $ca = MCE::Shared::Cache->new( max_age  => "0.5 days" );
    $ca = MCE::Shared::Cache->new( max_age  => "1 week" );
-   $ca = MCE::Shared::Cache->new( max_age  => "never" ); # undef
-   $ca = MCE::Shared::Cache->new( max_age  => "now" );   # 0
+   $ca = MCE::Shared::Cache->new( max_age  => "never" ); # or undef
+   $ca = MCE::Shared::Cache->new( max_age  => "now" );   # or 0
 
    # construction for sharing with other threads and processes
 
@@ -987,8 +987,8 @@ stay.
    $ca = MCE::Shared->cache( max_age  => "12 hours" );
    $ca = MCE::Shared->cache( max_age  => "0.5 days" );
    $ca = MCE::Shared->cache( max_age  => "1 week" );
-   $ca = MCE::Shared->cache( max_age  => "never" ); # undef
-   $ca = MCE::Shared->cache( max_age  => "now" );   # 0
+   $ca = MCE::Shared->cache( max_age  => "never" ); # or undef
+   $ca = MCE::Shared->cache( max_age  => "now" );   # or 0
 
    # hash-like dereferencing
 
@@ -1168,8 +1168,8 @@ Constructs a new object.
    $ca = MCE::Shared::Cache->new( max_age  => "12 hours" );
    $ca = MCE::Shared::Cache->new( max_age  => "0.5 days" );
    $ca = MCE::Shared::Cache->new( max_age  => "1 week" );
-   $ca = MCE::Shared::Cache->new( max_age  => "never" ); # undef
-   $ca = MCE::Shared::Cache->new( max_age  => "now" );   # 0
+   $ca = MCE::Shared::Cache->new( max_age  => "never" ); # or undef
+   $ca = MCE::Shared::Cache->new( max_age  => "now" );   # or 0
 
    $ca->assign( @pairs );
 
@@ -1192,8 +1192,8 @@ Constructs a new object.
    $ca = MCE::Shared->cache( max_age  => "12 hours" );
    $ca = MCE::Shared->cache( max_age  => "0.5 days" );
    $ca = MCE::Shared->cache( max_age  => "1 week" );
-   $ca = MCE::Shared->cache( max_age  => "never" ); # undef
-   $ca = MCE::Shared->cache( max_age  => "now" );   # 0
+   $ca = MCE::Shared->cache( max_age  => "never" ); # or undef
+   $ca = MCE::Shared->cache( max_age  => "now" );   # or 0
 
    $ca->assign( @pairs );
 
@@ -1304,8 +1304,8 @@ difference accordingly.
    $ca->max_age( "12 hours" );
    $ca->max_age( "0.5 days" );
    $ca->max_age( "1 week" );
-   $ca->max_age( "never" );   # undef
-   $ca->max_age( "now" );     # 0
+   $ca->max_age( "never" );   # or undef
+   $ca->max_age( "now" );     # or 0
 
 =item max_keys ( [ size ] )
 
