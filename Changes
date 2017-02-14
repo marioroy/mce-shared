@@ -1,6 +1,11 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.810 Tue Feb 14 17:00:00 EST 2017
+
+  * Bumped minimum requirement for Sereal to 3.015 when available.
+    Added regression ensuring matching version for Encoder and Decoder.
+
 1.809 Mon Feb 13 23:30:00 EST 2017
 
   * Fixed bug in MCE::Shared::Queue (dequeue_nb) when queue has zero items.

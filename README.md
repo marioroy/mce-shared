@@ -1,6 +1,6 @@
 ## MCE::Shared for Perl
 
-This document describes MCE::Shared version 1.809.
+This document describes MCE::Shared version 1.810.
 
 ### Description
 
@@ -103,18 +103,19 @@ MCE::Shared utilizes the following modules:
     constant
     overload
     Carp
-    IO::FDPass (optional, highly recommended on UNIX and Windows)
-    MCE::Mutex 1.809+
-    MCE::Util 1.809+
+    IO::FDPass (optional, recommended on UNIX and Windows)
+    MCE::Mutex 1.812+
+    MCE::Util  1.812+
     Scalar::Util
+    Sereal::Encoder 3.015+ (optional)
+    Sereal::Decoder 3.015+ (optional)
     Socket
-    Storable 2.04+
+    Storable 2.04+ (default when Sereal 3.015+ isn't available)
     Symbol
     Test::More 0.45+ (for make test only)
     Time::HiRes
 
-The IO::FDPass module is used by MCE::Shared::Server if available and applies
-to MCE::Shared::{ Condvar, Handle, and Queue } only.
+The IO::FDPass module applies to MCE::Shared::{ Condvar, Handle, and Queue }.
 
 ### Further Reading
 
@@ -127,7 +128,7 @@ and [MCE Cookbook](https://github.com/marioroy/mce-cookbook) for recipes.
 
 ### Copyright and Licensing
 
-Copyright (C) 2016 by Mario E. Roy <marioeroy AT gmail DOT com>
+Copyright (C) 2016-2017 by Mario E. Roy <marioeroy AT gmail DOT com>
 
 This program is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself:

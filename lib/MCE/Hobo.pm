@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.809';
+our $VERSION = '1.810';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -37,12 +37,20 @@ BEGIN {
    $_is_MSWin32  = ( $^O eq 'MSWin32' && $_has_threads ) ? 1 : 0;
 
    if (!exists $INC{'PDL.pm'}) {
-      eval 'use Sereal 3.008 qw( encode_sereal decode_sereal )';
+      eval '
+         use Sereal::Encoder 3.015 qw( encode_sereal );
+         use Sereal::Decoder 3.015 qw( decode_sereal );
+      ';
       if ( !$@ ) {
-         $_freeze = sub { encode_sereal( @_, { freeze_callbacks => 1 } ) };
-         $_thaw   = \&decode_sereal;
+         my $_encoder_ver = int( Sereal::Encoder->VERSION() );
+         my $_decoder_ver = int( Sereal::Decoder->VERSION() );
+         if ( $_encoder_ver - $_decoder_ver == 0 ) {
+            $_freeze = sub { encode_sereal( @_, { freeze_callbacks => 1 } ) };
+            $_thaw   = \&decode_sereal;
+         }
       }
    }
+
    if (!defined $_freeze) {
       require Storable;
       $_freeze = \&Storable::freeze;
@@ -674,7 +682,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.809
+This document describes MCE::Hobo version 1.810
 
 =head1 SYNOPSIS
 

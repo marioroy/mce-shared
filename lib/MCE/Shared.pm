@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.809';
+our $VERSION = '1.810';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -357,7 +357,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.809
+This document describes MCE::Shared version 1.810
 
 =head1 SYNOPSIS
 
@@ -1397,7 +1397,7 @@ Mario E. Roy, S<E<lt>marioeroy AT gmail DOT comE<gt>>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2016 by Mario E. Roy
+Copyright (C) 2016-2017 by Mario E. Roy
 
 MCE::Shared is released under the same license as Perl.
 
