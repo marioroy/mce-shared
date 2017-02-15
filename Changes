@@ -1,10 +1,17 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.811 Wed Feb 15 17:00:00 EST 2017
+
+  * Bumped IO::FDPass minimum version to 1.2 if not already installed (1.1+)
+    and have a CC compiler on hand. IO::FDPass is optional otherwise.
+
+  * Support csh redirection in Makefile.PL via bash for locating CC compiler.
+
 1.810 Tue Feb 14 17:00:00 EST 2017
 
   * Bumped minimum requirement for Sereal to 3.015 when available.
-    Added regression ensuring matching version for Encoder and Decoder.
+    Added check ensuring matching version for Encoder and Decoder.
 
 1.809 Mon Feb 13 23:30:00 EST 2017
 

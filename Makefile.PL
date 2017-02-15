@@ -12,17 +12,21 @@ use ExtUtils::MakeMaker;
 
 my $has_cc;
 
+## no critic (BuiltinFunctions::ProhibitStringyEval)
+
 if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
-   eval 'use IO::FDPass; 1' or do {  ## no critic
+   eval 'use IO::FDPass 1.1; 1' or do {
       if ( $^O eq 'MSWin32' ) {
-         $has_cc = `gcc.exe --version 2>nul`     ||
-                   `cl.exe /? 2>nul`;
+         $has_cc = `gcc.exe --version 2>nul` || `cl.exe /? 2>nul`;
       }
       else {
-         $has_cc = `gcc --version 2>/dev/null`   ||
-                   `clang --version 2>/dev/null` ||
-                   `cc -xhelp=flags 2>/dev/null` ||
-                   `xlC -qversion 2>/dev/null`;
+         require Config; my $perl_cc = $Config::Config{cc};
+
+         $has_cc = `bash -c "which $perl_cc  2>/dev/null"` ||
+                   `bash -c "gcc --version   2>/dev/null"` ||
+                   `bash -c "clang --version 2>/dev/null"` ||
+                   `bash -c "cc -xhelp=flags 2>/dev/null"` ||  # Solaris
+                   `bash -c "xlC -qversion   2>/dev/null"`;    # AIX
       }
    };
 }
@@ -40,9 +44,9 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_cc ) {
          warn "\n",
             "## The IO::FDPass module is known to work on this platform.\n",
             "## Thus, adding IO::FDPass to PREREQ for a better experience\n",
-            "## sharing MCE::Shared::{ Condvar, Handle, Queue } objects.\n\n";
+            "## sharing MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
 
-         $io_fdpass{'IO::FDPass'} = '1.1';
+         $io_fdpass{'IO::FDPass'} = '1.2';
       }
    }
    elsif ( $^O =~ /aix|hp-?ux|irix|gnu|osf|solaris|sunos|svr5|sco/i ) {
@@ -50,7 +54,7 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_cc ) {
          warn "\n",
             "## The IO::FDPass module is optional on this platform.\n",
             "## Install IO::FDPass manually for a better experience\n",
-            "## sharing MCE::Shared::{ Condvar, Handle, Queue } objects.\n\n";
+            "## sharing MCE::Shared::{ Condvar, Handle, and Queue }.\n\n";
       }
    }
 }
@@ -61,7 +65,7 @@ WriteMakefile(
    ABSTRACT => 'MCE extension for sharing data supporting threads and processes',
    AUTHOR   => 'Mario E. Roy <marioeroy AT gmail DOT com>',
    NAME     => 'MCE::Shared',
-   VERSION  => '1.810',
+   VERSION  => '1.811',
 
    NO_META  => 1,
 
@@ -102,65 +106,65 @@ WriteMakefile(
          'provides' => {
             'MCE::Hobo' => {
                'file'    => 'lib/MCE/Hobo.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared' => {
                'file'    => 'lib/MCE/Shared.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Array' => {
                'file'    => 'lib/MCE/Shared/Array.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Base' => {
                'file'    => 'lib/MCE/Shared/Base.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Cache' => {
                'file'    => 'lib/MCE/Shared/Cache.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Condvar' => {
                'file'    => 'lib/MCE/Shared/Condvar.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Handle' => {
                'file'    => 'lib/MCE/Shared/Handle.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Hash' => {
                'file'    => 'lib/MCE/Shared/Hash.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Minidb' => {
                'file'    => 'lib/MCE/Shared/Minidb.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Ordhash' => {
                'file'    => 'lib/MCE/Shared/Ordhash.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Queue' => {
                'file'    => 'lib/MCE/Shared/Queue.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Scalar' => {
                'file'    => 'lib/MCE/Shared/Scalar.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Sequence' => {
                'file'    => 'lib/MCE/Shared/Sequence.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             },
             'MCE::Shared::Server' => {
                'file'    => 'lib/MCE/Shared/Server.pm',
-               'version' => '1.810'
+               'version' => '1.811'
             }
          },
          'prereqs' => {
             runtime => {
                recommends => {
-                  'IO::FDPass' => 1.1,
+                  'IO::FDPass' => 1.2,
                   'Sereal'     => 3.015
                }
             }

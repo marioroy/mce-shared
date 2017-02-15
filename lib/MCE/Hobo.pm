@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.810';
+our $VERSION = '1.811';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -142,10 +142,10 @@ sub create {
    $func = $pkg.'::'.$func if ( !ref($func) && index($func,':') < 0 );
 
    if ( !exists $self->{posix_exit} ) {
-      $self->{posix_exit} = 1 if ( $_has_threads && $_tid );
-      $self->{posix_exit} = 1 if ( $INC{'CGI.pm'} || $INC{'FCGI.pm'} );
-      $self->{posix_exit} = 1 if ( $INC{'Mojo/IOLoop.pm'} || $INC{'Tk.pm'} );
-      $self->{posix_exit} = 1 if ( $INC{'Gearman/XS.pm'} );
+      $self->{posix_exit} = 1 if ($_has_threads && $_tid);
+      $self->{posix_exit} = 1 if ($INC{'CGI.pm'} || $INC{'FCGI.pm'});
+      $self->{posix_exit} = 1 if ($INC{'Mojo/IOLoop.pm'} || $INC{'Tk.pm'});
+      $self->{posix_exit} = 1 if ($INC{'Gearman/XS.pm'} || $INC{'Gearman/Util.pm'});
    }
 
    if ( !exists $_LIST->{$pkg} ) {
@@ -682,7 +682,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.810
+This document describes MCE::Hobo version 1.811
 
 =head1 SYNOPSIS
 
@@ -833,7 +833,7 @@ you want the hobo process to terminate after some time. The default is C<0>
 for no timeout.
 
 Constructing a Hobo inside a thread implies C<posix_exit => 1> or if present
-CGI.pm, FCGI.pm, Gearman::XS, Mojo::IOLoop, or Tk.
+CGI.pm, FCGI.pm, Gearman::Util, Gearman::XS, Mojo::IOLoop, or Tk.
 
    my $hobo1 = MCE::Hobo->create( { posix_exit => 1 }, sub {
       ...

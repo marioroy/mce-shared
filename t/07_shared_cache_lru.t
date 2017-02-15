@@ -4,7 +4,6 @@ use strict;
 use warnings;
 
 use Test::More;
-use Time::HiRes qw(sleep);
 
 BEGIN {
    use_ok "MCE::Shared";
@@ -131,7 +130,7 @@ BEGIN {
    is($cache->get("cnt"), 1, "cnt inserted & incremented");
 
    # test raising max_age
-   $cache->max_age(5);
+   $cache->max_age(10);
 
    sleep 3;
    is($cache->len, 1, "len() after raising max age");

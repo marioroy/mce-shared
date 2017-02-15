@@ -63,7 +63,7 @@ my $cv = MCE::Shared->condvar();
    ok( $procs[2]->join, 'shared condvar, check broadcast to process3' );
 
    cmp_ok(
-      time() - $start, '<', 7,
+      time() - $start, '<', 8,
       'shared condvar, check processes exited timely'
    );
 }
