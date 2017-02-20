@@ -11,7 +11,11 @@ BEGIN {
 }
 
 ##
-# adapted from Tie-Cache-LRU-20150301/t/LRU.t
+# Adapted from Tie-Cache-LRU-20150301/t/LRU.t
+#
+# MCE::Shared::Cache is a hybrid cache, combining LRU and plain implementations.
+# A key retrieved from the bottom half follows LRU logic, thus key promotion.
+# A key retrieved from the upper half has lesser-overhead, no promotion.
 ##
 
 {
@@ -25,17 +29,17 @@ BEGIN {
 
    $cache->set("bar", "yar");
    $cache->set("car", "jar");
-   # should be car, bar, foo
+   # should be foo, bar, car
 
    my @test_order = qw(car bar foo);
    my @keys = $cache->keys;
    is_deeply(\@test_order, \@keys, "basic keys");
 
    # try a key reordering
-   my $foo = $cache->get("bar");
+   my $foo = $cache->get("foo");
    # should be bar, car, foo
 
-   @test_order = qw(bar car foo);
+   @test_order = qw(foo car bar);
    @keys = $cache->keys;
    is_deeply(\@test_order, \@keys, "basic promote");
 
@@ -45,21 +49,21 @@ BEGIN {
    $cache->set("zip", "zap");
    # should be zip, bing, har, bar, car
 
-   @test_order = qw(zip bing har bar car);
+   @test_order = qw(zip bing har foo car);
    @keys = $cache->keys;
    is_deeply(\@test_order, \@keys, "basic cull");
 
    # try deleting from the end
    $cache->del("car");
-   is_deeply([ qw(zip bing har bar) ], [ $cache->keys ], "end delete");
+   is_deeply([ qw(zip bing har foo) ], [ $cache->keys ], "end delete");
 
    # try from the front
    $cache->del("zip");
-   is_deeply([ qw(bing har bar) ], [ $cache->keys ], "front delete");
+   is_deeply([ qw(bing har foo) ], [ $cache->keys ], "front delete");
 
    # try in the middle
    $cache->del("har");
-   is_deeply([ qw(bing bar) ], [ $cache->keys ], "middle delete");
+   is_deeply([ qw(bing foo) ], [ $cache->keys ], "middle delete");
 
    # add a bunch of stuff and make sure the index doesn't grow
    $cache->mset( qw(1 11 2 12 3 13 4 14 5 15 6 16 7 17 8 18 9 19 10 20) );

@@ -1,12 +1,21 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.812 Mon Feb 20 05:30:00 EST 2017
+
+  * Improved performance for MCE::Shared::Cache.
+    This is now a hybrid LRU-plain cache implementation.
+    Added parallel demonstration at the end of the documentation.
+
+  * Bumped MCE dependency to 1.814 for the example to run.
+  * Tweaked MCE::Shared::Ordhash and MCE::Shared::Server.
+
 1.811 Wed Feb 15 17:00:00 EST 2017
 
-  * Bumped IO::FDPass minimum version to 1.2 if not already installed (1.1+)
+  * Bumped IO::FDPass dependency to 1.2 if not already installed (1.1+)
     and have a CC compiler on hand. IO::FDPass is optional otherwise.
 
-  * Support csh redirection in Makefile.PL via bash for locating CC compiler.
+  * Support csh redirection in Makefile.PL via bash for locating a C compiler.
 
 1.810 Tue Feb 14 17:00:00 EST 2017
 

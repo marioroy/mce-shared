@@ -1,6 +1,9 @@
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## LRU-cache helper class.
+## A hybrid LRU-plain cache helper class.
+##
+## An optimized, pure-Perl LRU implementation with a bit of "plain" applied
+## to fetch for extra performance.
 ##
 ###############################################################################
 
@@ -12,7 +15,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.811';
+our $VERSION = '1.812';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -23,11 +26,6 @@ use Time::HiRes qw( time );
 use MCE::Shared::Base;
 use parent -norequire, 'MCE::Shared::Base::Common';
 use bytes;
-
-# for marking a key to be garbage collected later
-use constant {
-   _TOMBSTONE => undef,
-};
 
 use constant {
    _DATA => 0,  # unordered data
@@ -46,6 +44,7 @@ use overload (
    q(0+)    => \&MCE::Shared::Base::_numify,
    q(%{})   => sub {
       $_[0]->[_HREF] //= do {
+         # no circular reference to original, therefore no memory leaks
          tie my %h, __PACKAGE__.'::_href', bless([ @{ $_[0] } ], __PACKAGE__);
          \%h;
       };
@@ -97,32 +96,29 @@ sub STORE {
    if ( defined ( my $off = $indx->{ $_[1] } ) ) {
       $off -= ${ $begi };
 
+      # update expiration
       $keys->[ $off ] = dualvar( time + ${ $expi }, $_[1] )
          if ( defined ${ $expi } );
 
-      # promote key, inlined for performance
-      if ( $off != @{ $keys } - 1 ) {
+      # promote key if not last, inlined for performance
+      if ( ! $off ) {
+         return $data->{ $_[1] } = $_[2] if @{ $keys } == 1;
 
-         # check the first key
-         if ( ! $off ) {
-            ${ $begi }++; push @{ $keys }, shift @{ $keys };
-            $indx->{ $_[1] } = ${ $begi } + $#{ $keys };
+         ${ $begi }++; push @{ $keys }, shift @{ $keys };
+         $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
 
-            if ( ${ $gcnt } && !defined $keys->[0] ) {
-               MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt );
-            }
-         }
+         MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
+            if ( ${ $gcnt } && !defined $keys->[0] );
 
-         # the key is in the middle
-         else {
-            push @{ $keys }, delete $keys->[ $off ];
-            $indx->{ $_[1] } = ${ $begi } + $#{ $keys };
+         # safety to not overrun
+         $_[0]->purge() if ( ${ $begi } > 2.147e9 );
+      }
+      elsif ( $off != @{ $keys } - 1 ) {
+         push @{ $keys }, delete $keys->[ $off ];
+         $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
 
-            # GC keys if 75% or more are tombstones
-            if ( ++${ $gcnt } >= ( @{ $keys } >> 2 ) * 3 ) {
-               $_[0]->purge;
-            }
-         }
+         # GC keys if gcnt:size ratio is greater than 2:3
+         $_[0]->purge() if ( ++${ $gcnt } > @{ $keys } * 0.667 );
       }
 
       return $data->{ $_[1] } = $_[2];
@@ -137,19 +133,15 @@ sub STORE {
       : "$_[1]";
 
    # evict the least used key, inlined for performance
-   if ( defined ${ $size } && @{ $keys } > ${ $size } ) {
+   if ( defined ${ $size } && @{ $keys } - ${ $gcnt } > ${ $size } ) {
       my $key = shift @{ $keys };
-      ${ $begi }++;
+      ${ $begi }++; delete $data->{ $key }; delete $indx->{ $key };
 
-      if ( ${ $gcnt } && !defined $keys->[0] ) {
-         MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt );
-      }
-      delete $indx->{ $key };
-      delete $data->{ $key };
+      MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
+         if ( ${ $gcnt } && !defined $keys->[0] );
 
-      if ( abs ${ $begi } > 2.147e9 ) {
-         $_[0]->purge;
-      }
+      # safety to not overrun
+      $_[0]->purge() if ( ${ $begi } > 2.147e9 );
    }
 
    $_[2];
@@ -167,32 +159,30 @@ sub FETCH {
 
    $off -= ${ $begi };
 
-   # return if key has expired
+   # return if key expired
    $_[0]->del( $_[1] ), return undef if (
       defined ${ $expi } && $keys->[ $off ] < time
    );
 
-   # promote key, inlined for performance
-
-   # check the first key
+   # promote key if not upper half, inlined for performance
    if ( ! $off ) {
+      return $data->{ $_[1] } if @{ $keys } == 1;
+
       ${ $begi }++; push @{ $keys }, shift @{ $keys };
-      $indx->{ $_[1] } = ${ $begi } + $#{ $keys };
+      $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
 
-      if ( ${ $gcnt } && !defined $keys->[0] ) {
-         MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt );
-      }
+      MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
+         if ( ${ $gcnt } && !defined $keys->[0] );
+
+      # safety to not overrun
+      $_[0]->purge() if ( ${ $begi } > 2.147e9 );
    }
-
-   # or maybe a middle key
-   elsif ( $off != @{ $keys } - 1 ) {
+   elsif ( $off - ${ $gcnt } < ( (@{ $keys } - ${ $gcnt }) >> 1 ) ) {
       push @{ $keys }, delete $keys->[ $off ];
-      $indx->{ $_[1] } = ${ $begi } + $#{ $keys };
+      $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
 
-      # GC keys if 75% or more are tombstones
-      if ( ++${ $gcnt } >= ( @{ $keys } >> 2 ) * 3 ) {
-         $_[0]->purge;
-      }
+      # GC keys if gcnt:size ratio is greater than 2:3
+      $_[0]->purge() if ( ++${ $gcnt } > @{ $keys } * 0.667 );
    }
 
    $data->{ $_[1] };
@@ -233,13 +223,11 @@ sub DELETE {
       return delete $data->{ $_[1] };
    }
 
-   # tombstone, middle key
-   $keys->[ $off ] = _TOMBSTONE;
+   # must be a key somewhere in-between
+   $keys->[ $off ] = undef;   # tombstone
 
-   # GC keys if 75% or more are tombstones
-   if ( ++${ $gcnt } >= ( @{ $keys } >> 2 ) * 3 ) {
-      $_[0]->purge;
-   }
+   # GC keys if gcnt:size ratio is greater than 2:3
+   $_[0]->purge() if ( ++${ $gcnt } > @{ $keys } * 0.667 );
 
    delete $data->{ $_[1] };
 }
@@ -415,32 +403,29 @@ sub _inskey {
       $data->{ $_[1] } = undef
          if ( defined ${ $expi } && $keys->[ $off ] < time );
 
+      # update expiration
       $keys->[ $off ] = dualvar( time + ${ $expi }, $_[1] )
          if ( defined ${ $expi } );
 
-      # promote key, inlined for performance
-      if ( $off != @{ $keys } - 1 ) {
+      # promote key if not last, inlined for performance
+      if ( ! $off ) {
+         return if @{ $keys } == 1;
 
-         # check the first key
-         if ( ! $off ) {
-            ${ $begi }++; push @{ $keys }, shift @{ $keys };
-            $indx->{ $_[1] } = ${ $begi } + $#{ $keys };
+         ${ $begi }++; push @{ $keys }, shift @{ $keys };
+         $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
 
-            if ( ${ $gcnt } && !defined $keys->[0] ) {
-               MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt );
-            }
-         }
+         MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
+            if ( ${ $gcnt } && !defined $keys->[0] );
 
-         # the key is in the middle
-         else {
-            push @{ $keys }, delete $keys->[ $off ];
-            $indx->{ $_[1] } = ${ $begi } + $#{ $keys };
+         # safety to not overrun
+         $_[0]->purge() if ( ${ $begi } > 2.147e9 );
+      }
+      elsif ( $off != @{ $keys } - 1 ) {
+         push @{ $keys }, delete $keys->[ $off ];
+         $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
 
-            # GC keys if 75% or more are tombstones
-            if ( ++${ $gcnt } >= ( @{ $keys } >> 2 ) * 3 ) {
-               $_[0]->purge;
-            }
-         }
+         # GC keys if gcnt:size ratio is greater than 2:3
+         $_[0]->purge() if ( ++${ $gcnt } > @{ $keys } * 0.667 );
       }
 
       return;
@@ -454,19 +439,15 @@ sub _inskey {
       : "$_[1]";
 
    # evict the least used key, inlined for performance
-   if ( defined ${ $size } && @{ $keys } > ${ $size } ) {
+   if ( defined ${ $size } && @{ $keys } - ${ $gcnt } > ${ $size } ) {
       my $key = shift @{ $keys };
-      ${ $begi }++;
+      ${ $begi }++; delete $data->{ $key }; delete $indx->{ $key };
 
-      if ( ${ $gcnt } && !defined $keys->[0] ) {
-         MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt );
-      }
-      delete $indx->{ $key };
-      delete $data->{ $key };
+      MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
+         if ( ${ $gcnt } && !defined $keys->[0] );
 
-      if ( abs ${ $begi } > 2.147e9 ) {
-         $_[0]->purge;
-      }
+      # safety to not overrun
+      $_[0]->purge() if ( ${ $begi } > 2.147e9 );
    }
 
    return;
@@ -661,20 +642,20 @@ sub max_age {
    $secs = MCE::Shared::Cache::_secs( $secs );
 
    if ( defined $secs ) {
-      $self->purge;
+      $self->purge();
       if ( defined ${ $expi } ) {
-         my $off = $secs - ${ $expi };
+         my $off    = $secs - ${ $expi };
          @{ $keys } = map { dualvar( $_ + $off, $_.'' ) } @{ $keys };
-         ${ $expi } = $secs, $self->_prune_head;
+         ${ $expi } = $secs, $self->_prune_head();
       }
       else {
-         my $time = time;
+         my $time   = time;
          @{ $keys } = map { dualvar( $time + $secs, $_ ) } @{ $keys };
-         ${ $expi } = $secs, $self->_prune_head;
+         ${ $expi } = $secs, $self->_prune_head();
       }
    }
    elsif ( @_ == 2 ) {
-      $self->purge;
+      $self->purge();
       if ( defined ${ $expi } ) {
          @{ $keys } = map { $_.'' } @{ $keys };
          ${ $expi } = undef;
@@ -682,9 +663,7 @@ sub max_age {
    }
 
    if ( defined wantarray ) {
-      defined ${ $expi }
-         ? ${ $expi } > 0 ? ${ $expi } : 'now'
-         : 'never';
+      defined ${ $expi } ? ${ $expi } > 0 ? ${ $expi } : 'now' : 'never';
    }
 }
 
@@ -699,16 +678,16 @@ sub max_keys {
       my ( $data, $keys, $indx, $begi, $gcnt ) = @{ $self };
       my $count = CORE::keys( %{ $data } ) - $size;
 
-      # evict the least used key
+      # evict the least used keys
       while ( $count-- > 0 ) {
          my $key = shift @{ $keys };
-         ${ $begi }++;
+         ${ $begi }++; delete $data->{ $key }; delete $indx->{ $key };
 
-         if ( ${ $gcnt } && !defined $keys->[0] ) {
-            MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt );
-         }
-         delete $indx->{ $key };
-         delete $data->{ $key };
+         MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
+            if ( ${ $gcnt } && !defined $keys->[0] );
+
+         # safety to not overrun
+         $self->purge() if ( ${ $begi } > 2.147e9 );
       }
 
       ${ $self->[_SIZE] } = $size;
@@ -787,7 +766,7 @@ sub purge {
    my ( $data, $keys, $indx, $begi, $gcnt, $expi ) = @{ $_[0] };
    my $i; $i = ${ $begi } = ${ $gcnt } = 0;
 
-   # TOMBSTONES, in-place purging for minimum memory consumption.
+   # purge in-place for minimum memory consumption
 
    if ( defined ${ $expi } ) {
       my $time = time;
@@ -920,25 +899,40 @@ __END__
 
 =head1 NAME
 
-MCE::Shared::Cache - LRU-cache helper class
+MCE::Shared::Cache - A hybrid LRU-plain cache helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Cache version 1.811
+This document describes MCE::Shared::Cache version 1.812
 
 =head1 DESCRIPTION
 
 A cache helper class for use as a standalone or managed by L<MCE::Shared>.
 
 This module implements a least-recently used (LRU) cache with its origin based
-on L<MCE::Shared::Ordhash> for its performance and low-memory consumption
+on L<MCE::Shared::Ordhash>, for its performance and low-memory consumption
 characteristics. The result is a reasonably fast pure-Perl implementation.
 
-A LRU cache is such that new items are placed at the top of the cache while
-preserving key order. Upon reaching its size restriction, it prunes items from
-the bottom of the cache. Accessing an item will have it placed back at the top
-of the cache. Thereby, items which are acessed frequently are more likely to
-stay.
+It is both a LRU and plain implementation. LRU logic is applied to new items
+and future updates. A fetch involves LRU reordering only to keys residing in
+the bottom section of the cache. This equates to extra performance for keys
+located in the upper section, where LRU movement is not applied.
+
+That said, this mostly LRU implementation is such that new items are placed
+at the top of the cache while preserving key order. Upon reaching its size
+restriction, it prunes items from the bottom of the cache. Accessing an item
+by inserting or updating including fetching from the lower section will have
+it placed back at the top of the cache. Thereby, items which are accessed
+frequently are still available in the cache.
+
+The 50% LRU (bottom half), 50% plain (upper-half) applies to fetches only.
+Fetching an item from the upper section is the only time the cache behaves
+similarly to a plain cache. Sometime, an item may shift down to the lower
+section. That's alright. A later fetch will cause the item to move back to
+the top of the cache.
+
+The idea is a LRU cache implementation with a tiny-bit of plain applied
+to it for extra performance.
 
 =head1 SYNOPSIS
 
@@ -1140,8 +1134,14 @@ Acessing an item is likely to involve moving its key to the top of the cache.
 Various methods described below state with C<Reorder: Yes> or C<Reorder: No>
 as an indication.
 
+The methods C<keys>, C<pairs>, and C<values> return the most frequently
+accessed items from the upper section of the cache first before the lower
+section. Returned values may not be orderd as expected. This abnormally is
+normal for this hybrid LRU-plain implementation. It comes from fetches not
+involving LRU movement on keys residing in the upper section of the cache. 
+
 When C<max_age> is set, accessing an item which has expired will behave
-similarly as if the item never existed.
+similarly to a non-existing item.
 
 =over 3
 
@@ -1239,7 +1239,8 @@ Reorder: No
 =item get ( key )
 
 Gets the value of a cache key or C<undef> if the key does not exists.
-See C<peek> to not promote the key internally to the top of the list.
+LRU reordering occurs only for keys residing in the lower section of the
+cache. See C<peek> to not promote the key internally to the top of the list.
 
    $val = $ca->get( "some_key" );
    $val = $ca->{ "some_key" };
@@ -1570,6 +1571,107 @@ Increments the value of a key by the given number and returns its new value.
 Reorder: Yes
 
 =back
+
+=head1 PERFORMANCE TESTING
+
+One might want to benchmark this module. If yes, remember to use the non-shared
+construction for running on a single core.
+
+   use MCE::Shared::Cache;
+
+   my $cache = MCE::Shared::Cache->new( max_keys => 500_000 );
+
+Otherwise, the following is a parallel version for a L<benchmark script|https://blog.celogeek.com/201401/426/perl-benchmark-cache-with-expires-and-max-size> found on the web. The serial version was created by Celogeek for benchmarking various caching modules.
+
+The MCE C<progress> option makes it possible to track progress while running
+among many workers. Being a parallel script means that it involves IPC to and
+from the shared-manager process where the data resides. In regards to IPC,
+fetches may take longer on Linux versus a BSD-based OS. YMMV.
+
+   #!/usr/bin/perl
+
+   use strict;
+   use warnings;
+   use feature 'say', 'state';
+
+   use Digest::MD5 qw/md5_base64/;
+   use Time::HiRes qw/time/;
+   use Proc::ProcessTable;
+
+   use MCE 1.814;   # requires 1.814 minimally
+   use MCE::Shared;
+
+   sub get_current_process_memory {
+       state $pt = Proc::ProcessTable->new;
+       my %info = map { $_->pid => $_ } @{$pt->table};
+       return $info{$$}->rss;
+   }
+
+   $| = 1; srand(0);
+
+   # construct shared variables
+   # MCE::Shared handles serialization automatically, when needed
+
+   my $c     = MCE::Shared->cache( max_keys => 500_000 );
+   my $found = MCE::Shared->scalar( 0 );
+
+   # construct and spawn MCE workers
+   # workers increment a local variable $f
+
+   my $mce = MCE->new(
+       chunk_size  => 4000,
+       max_workers => 4,
+       user_func   => sub {
+           my ($mce, $chunk_ref, $chunk_id) = @_;
+           if ( $mce->user_args()->[0] eq 'setter' ) {
+               for ( @{ $chunk_ref } ) { $c->set($_, {md5 => $_})  }
+           }
+           else {
+               my $f = 0;
+               for ( @{ $chunk_ref } ) { $f++ if ref $c->get($_) eq 'HASH' }
+               $found->incrby($f);
+           }
+       }
+   )->spawn();
+
+   say "Mapping";
+   my @todo = map { md5_base64($_) } (1..600_000);
+   say "Starting";
+
+   my $mem = get_current_process_memory();
+   my ($read, $write);
+
+   {
+       my $s = time;
+       $mce->process({
+           progress  => sub { print "Write: $_[0]\r" },
+           user_args => [ 'setter' ],
+       }, \@todo);
+       $write = time - $s;
+   }
+
+   say "Write: ", sprintf("%0.3f", scalar(@todo) / $write);
+
+   {
+       my $s = time;
+       $found->set(0);
+       $mce->process({
+           progress  => sub { print "Read $_[0]\r" },
+           user_args => [ 'getter' ],
+       }, \@todo);
+       $read = time - $s;
+   }
+
+   $mce->shutdown();
+
+   say "Read : ", sprintf("%0.3f", scalar(@todo) / $read);
+   say "Found: ", $found->get();
+   say "Mem  : ", get_current_process_memory() - $mem;
+
+The C<progress> option is further described on Metacpan. Several examples
+are provided, accommodating all input data-types in MCE.
+
+L<Progress Demonstrations|https://metacpan.org/pod/MCE::Core#PROGRESS-DEMONSTRATIONS>
 
 =head1 SEE ALSO
 

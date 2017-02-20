@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.811';
+our $VERSION = '1.812';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -830,8 +830,13 @@ sub _loop {
       SHR_M_DES.$LF => sub {                      # Destroy request
          chomp($_id = <$_DAU_R_SOCK>);
 
-         $_ret = (exists $_all{ $_id }) ? '1' : '0';
-         _destroy({}, $_obj{ $_id }, $_id) if $_ret;
+         local $SIG{__DIE__}  = sub { };
+         local $SIG{__WARN__} = sub { };
+
+         local $@; eval {
+            $_ret = (exists $_all{ $_id }) ? '1' : '0';
+            _destroy({}, $_obj{ $_id }, $_id) if $_ret;
+         };
 
          return;
       },
@@ -1438,6 +1443,7 @@ use overload (
       no overloading;
       $_[0]->[_DREF] || do {
          return $_[0] if $_[0]->[_CLASS] ne 'MCE::Shared::Array';
+         # no circular reference to original, therefore no memory leaks
          tie my @a, __PACKAGE__, bless([ $_[0]->[_ID] ], __PACKAGE__);
          $_[0]->[_DREF] = \@a;
       };
@@ -1445,6 +1451,7 @@ use overload (
    q(%{})   => sub {
       $_[0]->[_DREF] || do {
          return $_[0] unless $_hash_deref_allow{ $_[0]->[_CLASS] };
+         # no circular reference to original, will not memory leak
          tie my %h, __PACKAGE__, bless([ $_[0]->[_ID] ], __PACKAGE__);
          $_[0]->[_DREF] = \%h;
       };
@@ -1452,6 +1459,7 @@ use overload (
    q(${})   => sub {
       $_[0]->[_DREF] || do {
          return $_[0] if $_[0]->[_CLASS] ne 'MCE::Shared::Scalar';
+         # no circular reference to original, ditto...
          tie my $s, __PACKAGE__, bless([ $_[0]->[_ID] ], __PACKAGE__);
          $_[0]->[_DREF] = \$s;
       };
@@ -2292,7 +2300,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.811
+This document describes MCE::Shared::Server version 1.812
 
 =head1 DESCRIPTION
 

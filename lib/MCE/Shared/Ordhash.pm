@@ -24,7 +24,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.811';
+our $VERSION = '1.812';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -32,11 +32,6 @@ our $VERSION = '1.811';
 use MCE::Shared::Base;
 use parent -norequire, 'MCE::Shared::Base::Common';
 use bytes;
-
-# for marking a key to be garbage collected later
-use constant {
-   _TOMBSTONE => undef,
-};
 
 use constant {
    _DATA => 0,  # unordered data
@@ -53,6 +48,7 @@ use overload (
    q(0+)    => \&MCE::Shared::Base::_numify,
    q(%{})   => sub {
       $_[0]->[_HREF] //= do {
+         # no circular reference to original, therefore no memory leaks
          tie my %h, __PACKAGE__.'::_href', bless([ @{ $_[0] } ], __PACKAGE__);
          \%h;
       };
@@ -140,7 +136,7 @@ sub DELETE {
       return delete $data->{ $key };
    }
 
-   # check the middle key
+   # must be a key somewhere in-between
    my $off = delete $indx->{ $key } // do {
       return undef unless ( exists $data->{ $key } );
 
@@ -154,10 +150,10 @@ sub DELETE {
       delete $indx->{ $key };
    };
 
-   $keys->[ $off -= ${ $begi } ] = _TOMBSTONE;
+   $keys->[ $off -= ${ $begi } ] = undef;   # tombstone
 
-   # GC keys if 75% or more are tombstones
-   if ( ++${ $gcnt } >= ( @{ $keys } >> 2 ) * 3 ) {
+   # GC keys if gcnt:size ratio is greater than 2:3
+   if ( ++${ $gcnt } > @{ $keys } * 0.667 ) {
       my $i; $i = ${ $begi } = ${ $gcnt } = 0;
 
       for my $k ( @{ $keys } ) {
@@ -216,7 +212,7 @@ sub _fill_index {
 
    # from end of list
    if ( !exists $indx->{ $keys->[-1] } ) {
-      my $i = ${ $begi } + $#{ $keys };
+      my $i = ${ $begi } + @{ $keys } - 1;
 
       for my $k ( reverse @{ $keys } ) {
          $i--, next unless ( defined $k );
@@ -601,7 +597,7 @@ sub mset {
 sub purge {
    my ( $data, $keys, $indx, $begi, $gcnt ) = @{ $_[0] };
 
-   # TOMBSTONES, in-place purging for minimum memory consumption.
+   # purge in-place for minimum memory consumption
 
    if ( ${ $gcnt } ) {
       my $i = 0;
@@ -823,7 +819,7 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 =head1 VERSION
 
-This document describes MCE::Shared::Ordhash version 1.811
+This document describes MCE::Shared::Ordhash version 1.812
 
 =head1 DESCRIPTION
 
