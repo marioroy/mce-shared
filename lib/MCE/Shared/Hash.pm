@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.812';
+our $VERSION = '1.813';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -311,7 +311,7 @@ MCE::Shared::Hash - Hash helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Hash version 1.812
+This document describes MCE::Shared::Hash version 1.813
 
 =head1 DESCRIPTION
 
@@ -417,7 +417,7 @@ For normal hash behavior, the TIE interface is supported.
 Several methods take a query string for an argument. The format of the string
 is described below. In the context of sharing, the query mechanism is beneficial
 for the shared-manager process. It is able to perform the query where the data
-resides versus the client-process greping locally involving lots of IPC.
+resides versus the client-process grep locally involving lots of IPC.
 
    o Basic demonstration
 

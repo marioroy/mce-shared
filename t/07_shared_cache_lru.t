@@ -11,9 +11,9 @@ BEGIN {
 }
 
 ##
-# Adapted from Tie-Cache-LRU-20150301/t/LRU.t
+# Borrowed and adapted from Tie-Cache-LRU-20150301/t/LRU.t
 #
-# MCE::Shared::Cache is a hybrid cache, combining LRU and plain implementations.
+# MCE::Shared::Cache is a hybrid cache, a LRU and plain implementation.
 # A key retrieved from the bottom half follows LRU logic, thus key promotion.
 # A key retrieved from the upper half has lesser-overhead, no promotion.
 ##

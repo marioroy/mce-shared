@@ -2,8 +2,8 @@
 ## ----------------------------------------------------------------------------
 ## A hybrid LRU-plain cache helper class.
 ##
-## An optimized, pure-Perl LRU implementation with a bit of "plain" applied
-## to fetch for extra performance.
+## An optimized, pure-Perl LRU implementation with extra performance when
+## fetching items from the upper-section of the cache.
 ##
 ###############################################################################
 
@@ -15,7 +15,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.812';
+our $VERSION = '1.813';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -68,8 +68,8 @@ sub TIEHASH {
 
    if ( !defined $opts ) {
       $opts = {};
-      for my $cnt ( 1 .. 2 ) {
-         if ( @_ && $_[0] =~ /^(max_keys|max_age)$/ ) {
+      for my $cnt ( 1 .. 3 ) {
+         if ( @_ && $_[0] =~ /^(max_keys|max_age|_shared)$/ ) {
             $opts->{ $1 } = $_[1];
             splice @_, 0, 2;
          }
@@ -78,10 +78,14 @@ sub TIEHASH {
 
    my $size = MCE::Shared::Cache::_size( $opts->{'max_keys'} // undef );
    my $expi = MCE::Shared::Cache::_secs( $opts->{'max_age' } // undef );
-   my $begi = 0;
-   my $gcnt = 0;
+   my ( $begi, $gcnt ) = ( 0, 0 );
 
    my $obj = bless [ {}, [], {}, \$begi, \$gcnt, \$expi, \$size ], $class;
+
+   # The shared-server preallocates the two hashes automatically, where the
+   # data resides, when constructed with MCE::Shared->cache( ... ).
+
+   $obj->_prealloc() unless $opts->{_shared};
 
    $obj->mset(@_) if @_;
    $obj;
@@ -104,8 +108,8 @@ sub STORE {
       if ( ! $off ) {
          return $data->{ $_[1] } = $_[2] if @{ $keys } == 1;
 
-         ${ $begi }++; push @{ $keys }, shift @{ $keys };
-         $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
+         push @{ $keys }, shift @{ $keys };
+         $indx->{ $_[1] } = ++${ $begi } + @{ $keys } - 1;
 
          MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
             if ( ${ $gcnt } && !defined $keys->[0] );
@@ -159,7 +163,7 @@ sub FETCH {
 
    $off -= ${ $begi };
 
-   # return if key expired
+   # key expired
    $_[0]->del( $_[1] ), return undef if (
       defined ${ $expi } && $keys->[ $off ] < time
    );
@@ -168,8 +172,8 @@ sub FETCH {
    if ( ! $off ) {
       return $data->{ $_[1] } if @{ $keys } == 1;
 
-      ${ $begi }++; push @{ $keys }, shift @{ $keys };
-      $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
+      push @{ $keys }, shift @{ $keys };
+      $indx->{ $_[1] } = ++${ $begi } + @{ $keys } - 1;
 
       MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
          if ( ${ $gcnt } && !defined $keys->[0] );
@@ -177,7 +181,7 @@ sub FETCH {
       # safety to not overrun
       $_[0]->purge() if ( ${ $begi } > 2.147e9 );
    }
-   elsif ( $off - ${ $gcnt } < ( (@{ $keys } - ${ $gcnt }) >> 1 ) ) {
+   elsif ( $off - ${ $gcnt } < ((@{ $keys } - ${ $gcnt }) >> 1) ) {
       push @{ $keys }, delete $keys->[ $off ];
       $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
 
@@ -360,7 +364,7 @@ sub THAW {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## _gckeys_head, _gckeys_tail, _inskey, _prune_head, _secs, _size
+## _gckeys_head, _gckeys_tail, _inskey, _prealloc, _prune_head, _secs, _size
 ##
 ###############################################################################
 
@@ -411,8 +415,8 @@ sub _inskey {
       if ( ! $off ) {
          return if @{ $keys } == 1;
 
-         ${ $begi }++; push @{ $keys }, shift @{ $keys };
-         $indx->{ $_[1] } = ${ $begi } + @{ $keys } - 1;
+         push @{ $keys }, shift @{ $keys };
+         $indx->{ $_[1] } = ++${ $begi } + @{ $keys } - 1;
 
          MCE::Shared::Cache::_gckeys_head( $keys, $begi, $gcnt )
             if ( ${ $gcnt } && !defined $keys->[0] );
@@ -449,6 +453,18 @@ sub _inskey {
       # safety to not overrun
       $_[0]->purge() if ( ${ $begi } > 2.147e9 );
    }
+
+   return;
+}
+
+# preallocate two hashes internally
+
+sub _prealloc {
+   my ( $self ) = @_;
+   my $size = ${ $self->[_SIZE] } // 500;
+
+   keys %{ $self->[_DATA] } = $size + 1;
+   keys %{ $self->[_INDX] } = $size + 1;
 
    return;
 }
@@ -903,36 +919,23 @@ MCE::Shared::Cache - A hybrid LRU-plain cache helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Cache version 1.812
+This document describes MCE::Shared::Cache version 1.813
 
 =head1 DESCRIPTION
 
 A cache helper class for use as a standalone or managed by L<MCE::Shared>.
 
 This module implements a least-recently used (LRU) cache with its origin based
-on L<MCE::Shared::Ordhash>, for its performance and low-memory consumption
-characteristics. The result is a reasonably fast pure-Perl implementation.
-
+on L<MCE::Shared::Ordhash>, for its performance and low-memory characteristics.
 It is both a LRU and plain implementation. LRU logic is applied to new items
-and future updates. A fetch involves LRU reordering only to keys residing in
-the bottom section of the cache. This equates to extra performance for keys
-located in the upper section, where LRU movement is not applied.
+and subsequent updates. A fetch however, involves LRU reorder only if the item
+is found in the lower section of the cache. This equates to extra performance
+for the upper section as fetch behaves similarly to accessing a plain cache.
+Upon reaching its size restriction, it prunes items from the bottom of the
+cache.
 
-That said, this mostly LRU implementation is such that new items are placed
-at the top of the cache while preserving key order. Upon reaching its size
-restriction, it prunes items from the bottom of the cache. Accessing an item
-by inserting or updating including fetching from the lower section will have
-it placed back at the top of the cache. Thereby, items which are accessed
-frequently are still available in the cache.
-
-The 50% LRU (bottom half), 50% plain (upper-half) applies to fetches only.
-Fetching an item from the upper section is the only time the cache behaves
-similarly to a plain cache. Sometime, an item may shift down to the lower
-section. That's alright. A later fetch will cause the item to move back to
-the top of the cache.
-
-The idea is a LRU cache implementation with a tiny-bit of plain applied
-to it for extra performance.
+The 50% LRU-mode (bottom section), 50% plain-mode (upper-section) applies to
+fetches only.
 
 =head1 SYNOPSIS
 
@@ -1072,7 +1075,7 @@ For normal hash behavior, the TIE interface is supported.
 Several methods take a query string for an argument. The format of the string
 is described below. In the context of sharing, the query mechanism is beneficial
 for the shared-manager process. It is able to perform the query where the data
-resides versus the client-process greping locally involving lots of IPC.
+resides versus the client-process grep locally involving lots of IPC.
 
    o Basic demonstration
 
@@ -1130,15 +1133,15 @@ Both non-shared and shared instances are impacted if doing so. Although likely
 fast enough for many use cases, the OO interface is recommended for best
 performance.
 
-Acessing an item is likely to involve moving its key to the top of the cache.
+Accessing an item is likely to involve moving its key to the top of the cache.
 Various methods described below state with C<Reorder: Yes> or C<Reorder: No>
 as an indication.
 
 The methods C<keys>, C<pairs>, and C<values> return the most frequently
 accessed items from the upper section of the cache first before the lower
-section. Returned values may not be orderd as expected. This abnormally is
+section. Returned values may not be ordered as expected. This abnormally is
 normal for this hybrid LRU-plain implementation. It comes from fetches not
-involving LRU movement on keys residing in the upper section of the cache. 
+involving LRU movement on keys residing in the upper section of the cache.
 
 When C<max_age> is set, accessing an item which has expired will behave
 similarly to a non-existing item.
@@ -1239,7 +1242,7 @@ Reorder: No
 =item get ( key )
 
 Gets the value of a cache key or C<undef> if the key does not exists.
-LRU reordering occurs only for keys residing in the lower section of the
+LRU reordering occurs only if the key is found in the lower section of the
 cache. See C<peek> to not promote the key internally to the top of the list.
 
    $val = $ca->get( "some_key" );
@@ -1585,8 +1588,8 @@ Otherwise, the following is a parallel version for a L<benchmark script|https://
 
 The MCE C<progress> option makes it possible to track progress while running
 among many workers. Being a parallel script means that it involves IPC to and
-from the shared-manager process where the data resides. In regards to IPC,
-fetches may take longer on Linux versus a BSD-based OS. YMMV.
+from the shared-manager process, where the data resides. In regards to IPC,
+fetches may take longer on Linux versus running on Darwin or FreeBSD.
 
    #!/usr/bin/perl
 

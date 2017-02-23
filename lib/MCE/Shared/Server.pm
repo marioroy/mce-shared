@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.812';
+our $VERSION = '1.813';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -321,6 +321,10 @@ sub _share {
 
    my $self = bless [ $_id, $_class ], 'MCE::Shared::Object';
    $_ob2{ $_id } = $_freeze->($self);
+
+   if ($_class eq 'MCE::Shared::Cache') {
+      $_obj{ $_id }->_prealloc();
+   }
 
    return $self;
 }
@@ -2300,7 +2304,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.812
+This document describes MCE::Shared::Server version 1.813
 
 =head1 DESCRIPTION
 

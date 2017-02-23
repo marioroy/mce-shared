@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.812';
+our $VERSION = '1.813';
 
 use MCE::Shared::Base;
 use parent -norequire, 'MCE::Shared::Base::Common';
@@ -1114,7 +1114,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.812
+This document describes MCE::Shared::Minidb version 1.813
 
 =head1 DESCRIPTION
 
@@ -1184,7 +1184,7 @@ intent for this module to become 100% compatible.
 Several methods take a query string for an argument. The format of the string
 is described below. In the context of sharing, the query mechanism is beneficial
 for the shared-manager process. It is able to perform the query where the data
-resides versus the client-process greping locally involving lots of IPC.
+resides versus the client-process grep locally involving lots of IPC.
 
    o Basic demonstration
 

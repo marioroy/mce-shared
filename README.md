@@ -1,6 +1,6 @@
 ## MCE::Shared for Perl
 
-This document describes MCE::Shared version 1.812.
+This document describes MCE::Shared version 1.813.
 
 ### Description
 

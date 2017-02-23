@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.812';
+our $VERSION = '1.813';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -682,7 +682,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.812
+This document describes MCE::Hobo version 1.813
 
 =head1 SYNOPSIS
 
@@ -831,6 +831,11 @@ C<hobo_timeout> are the only options supported. Set C<posix_exit> to avoid all
 END and destructor processing. Set C<hobo_timeout>, in number of seconds, if
 you want the hobo process to terminate after some time. The default is C<0>
 for no timeout.
+
+Many modules on CPAN are not thread-safe nor safe to use with many processes.
+The C<posix_exit> option must be set explicitly if your application is crashing,
+due to a module with a C<DESTROY> or C<END> block not accounting for the process
+ID C<$$.$tid> the object was constructed under: e.g. C<Cache::BDB>.
 
 Constructing a Hobo inside a thread implies C<posix_exit => 1> or if present
 CGI.pm, FCGI.pm, Gearman::Util, Gearman::XS, Mojo::IOLoop, or Tk.

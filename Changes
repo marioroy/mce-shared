@@ -1,6 +1,14 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.813 Wed Feb 22 18:00:00 EST 2017
+
+  * Revised the main description in MCE::Shared::Cache.
+    Improved write performance by up to 8 percent.
+    Fixed spelling mistakes.
+
+  * Revised the description on posix_exit in MCE::Hobo.
+
 1.812 Mon Feb 20 05:30:00 EST 2017
 
   * Improved performance for MCE::Shared::Cache.

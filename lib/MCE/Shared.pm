@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.812';
+our $VERSION = '1.813';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -122,7 +122,7 @@ sub init {
 sub cache {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Cache unless $INC{'MCE/Shared/Cache.pm'};
-   &share({}, MCE::Shared::Cache->new(@_));
+   &share({}, MCE::Shared::Cache->new(_shared => 1, @_));
 }
 sub condvar {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
@@ -357,7 +357,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.812
+This document describes MCE::Shared version 1.813
 
 =head1 SYNOPSIS
 
