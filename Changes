@@ -1,6 +1,21 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.814 Wed Mar 01 22:00:00 EST 2017
+
+  * Fixed an issue in regards to deeply sharing an array or hash.
+
+  * Replaced Sereal with Sereal::Decoder and Sereal::Encoder in Makefile,
+    inside recommends section. Ditto for META files.
+
+  * Revised limitations section in documentation, in regards to not having
+    IO::FDPass. E.g. Condvar, Handle, and Queue.
+
+  * Added 'end' method to MCE::Shared::Queue.
+    Updated documentation on dequeue and pending.
+
+  * Bumped MCE dependency to 1.818.
+
 1.813 Wed Feb 22 18:00:00 EST 2017
 
   * Revised the main description in MCE::Shared::Cache.

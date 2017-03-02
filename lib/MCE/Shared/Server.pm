@@ -6,13 +6,13 @@
 
 package MCE::Shared::Server;
 
-use 5.010001;
 use strict;
 use warnings;
+use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.813';
+our $VERSION = '1.814';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -370,6 +370,8 @@ sub _stop {
 
    return if ($INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED);
    return if ($MCE::Shared::Server::KILLED);
+
+   MCE::Hobo->finish('MCE') if $INC{'MCE/Hobo.pm'};
 
    local ($!, $?); %_all = (), %_obj = ();
 
@@ -1172,8 +1174,10 @@ sub _loop {
          my (@_items, $_buf);
 
          if ($_cnt) {
+            $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
             for my $_i (1 .. $_cnt) { push(@_items, $_Q->_dequeue()) }
-         } else {
+         }
+         else {
             $_buf = $_Q->_dequeue();
          }
 
@@ -1195,6 +1199,10 @@ sub _loop {
          else {
             # Otherwise, never to exceed one byte in the channel
             if ($_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
+         }
+
+         if ($_Q->{_ended}) {
+            if (!$_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
          }
 
          if ($_cnt) {
@@ -1251,6 +1259,7 @@ sub _loop {
          else {
             my @_items;
 
+            $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
             for my $_i (1 .. $_cnt) { push(@_items, $_Q->_dequeue()) }
 
             if (defined $_items[0]) {
@@ -1417,9 +1426,9 @@ sub _loop {
 
 package MCE::Shared::Object;
 
-use 5.010001;
 use strict;
 use warnings;
+use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
@@ -1584,13 +1593,16 @@ sub _auto {
       print {$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . $_wa.$LF .
          length($_[2]).$LF, $_[2];
    }
-   elsif ( @_ == 4 && !ref($_[3]) && defined($_[3]) ) {
+   elsif ( @_ == 4 && !ref($_[3]) && defined($_[3])
+                   && !ref($_[2]) && defined($_[2]) ) {
       $_dat_ex->();
       print {$_DAT_W_SOCK} 'M~OB2'.$LF . $_chn.$LF;
       print {$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . $_wa.$LF .
          length($_[2]).$LF . length($_[3]).$LF . $_[2], $_[3];
    }
-   elsif ( @_ == 5 && !ref($_[4]) && defined($_[4]) ) {
+   elsif ( @_ == 5 && !ref($_[4]) && defined($_[4])
+                   && !ref($_[3]) && defined($_[3])
+                   && !ref($_[2]) && defined($_[2]) ) {
       $_dat_ex->();
       print {$_DAT_W_SOCK} 'M~OB3'.$LF . $_chn.$LF;
       print {$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . $_wa.$LF .
@@ -1901,7 +1913,7 @@ sub next {
 
 sub lock {
    return unless ( my $_CV = $_obj{ $_[0]->[_ID] } );
-   return unless ( exists $_CV->{_cr_sock} );
+   return unless ( exists $_CV->{_mutex} );
 
    $_CV->{_mutex}->lock;
 }
@@ -1910,7 +1922,7 @@ sub lock {
 
 sub unlock {
    return unless ( my $_CV = $_obj{ $_[0]->[_ID] } );
-   return unless ( exists $_CV->{_cr_sock} );
+   return unless ( exists $_CV->{_mutex} );
 
    $_CV->{_mutex}->unlock;
 }
@@ -2188,7 +2200,7 @@ sub dequeue {
    return unless ( my $_Q = $_obj{ $_id } );
    return unless ( exists $_Q->{_qr_sock} );
 
-   my $_buf; my $_cnt = shift;
+   my $_cnt = shift;
 
    if (defined $_cnt && $_cnt ne '1') {
       _croak('Queue: (dequeue count argument) is not valid')
@@ -2208,7 +2220,7 @@ sub dequeue_nb {
    return unless ( my $_Q = $_obj{ $_id } );
    return unless ( exists $_Q->{_qr_sock} );
 
-   my $_buf; my $_cnt = shift;
+   my $_cnt = shift;
 
    if ($_Q->{_fast}) {
       warn "Queue: (dequeue_nb) is not allowed for fast => 1\n";
@@ -2304,7 +2316,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.813
+This document describes MCE::Shared::Server version 1.814
 
 =head1 DESCRIPTION
 

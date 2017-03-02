@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.813';
+our $VERSION = '1.814';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -149,18 +149,33 @@ sub await {
 # clear ( ) 
 
 sub clear {
-   my $_next; my ($_Q) = @_;
+   my ($_Q) = @_;
 
    if ($_Q->{_fast}) {
       warn "Queue: (clear) is not allowed for fast => 1\n";
    }
    else {
       if ($_Q->_has_data()) {
-         sysread $_Q->{_qr_sock}, $_next, 1;
+         sysread $_Q->{_qr_sock}, my($_buf), 1;
       }
       %{ $_Q->{_datp} } = ();
       @{ $_Q->{_datq} } = ();
       @{ $_Q->{_heap} } = ();
+   }
+
+   return;
+}
+
+# end ( )
+
+sub end {
+   my ($_Q) = @_;
+
+   if (!$_Q->{_ended}) {
+      if (!$_Q->{_nb_flag}) {
+         syswrite $_Q->{_qw_sock}, $LF;
+      }
+      $_Q->{_ended} = 1;
    }
 
    return;
@@ -173,6 +188,10 @@ sub enqueue {
 
    return unless (scalar @_);
 
+   if ($_Q->{_ended}) {
+      warn "Queue: (enqueue) called on queue that has been 'end'ed\n";
+      return;
+   }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
       syswrite $_Q->{_qw_sock}, $LF;
    }
@@ -192,6 +211,10 @@ sub enqueuep {
 
    return unless (scalar @_);
 
+   if ($_Q->{_ended}) {
+      warn "Queue: (enqueuep) called on queue that has been 'end'ed\n";
+      return;
+   }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
       syswrite $_Q->{_qw_sock}, $LF;
    }
@@ -211,8 +234,13 @@ sub dequeue {
    sysread $_Q->{_qr_sock}, $_next, 1;  # block
 
    if (defined $_cnt && $_cnt ne '1') {
+      _croak('Queue: (dequeue count argument) is not valid')
+         if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
+
+      $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
       @_items = $_Q->_dequeue($_cnt);
-   } else {
+   }
+   else {
       $_buf = $_Q->_dequeue();
    }
 
@@ -236,9 +264,13 @@ sub dequeue {
       if ($_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
    }
 
+   if ($_Q->{_ended}) {
+      if (!$_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
+   }
+
    $_Q->{_nb_flag} = 0;
 
-   return @_items if (defined $_cnt && $_cnt ne '1');
+   return @_items if (scalar @_items);
    return $_buf;
 }
 
@@ -252,11 +284,18 @@ sub dequeue_nb {
       warn "Queue: (dequeue_nb) is not allowed for fast => 1\n";
       return;
    }
-   else {
-      $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
 
-      return (defined $_cnt && $_cnt ne '1')
-         ? $_Q->_dequeue($_cnt) : $_Q->_dequeue();
+   $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
+
+   if (defined $_cnt && $_cnt ne '1') {
+      _croak('Queue: (dequeue count argument) is not valid')
+         if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
+
+      $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
+      return $_Q->_dequeue($_cnt);
+   }
+   else {
+      return $_Q->_dequeue();
    }
 }
 
@@ -273,7 +312,9 @@ sub pending {
 
    $_pending += @{ $_Q->{_datq} };
 
-   return $_pending;
+   return ($_Q->{_ended})
+      ? $_pending ? $_pending : undef
+      : $_pending;
 }
 
 # insert ( index, item [, item, ... ] )
@@ -286,6 +327,10 @@ sub insert {
 
    return unless (scalar @_);
 
+   if ($_Q->{_ended}) {
+      warn "Queue: (insert) called on queue that has been 'end'ed\n";
+      return;
+   }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
       syswrite $_Q->{_qw_sock}, $LF;
    }
@@ -330,6 +375,10 @@ sub insertp {
 
    return unless (scalar @_);
 
+   if ($_Q->{_ended}) {
+      warn "Queue: (insertp) called on queue that has been 'end'ed\n";
+      return;
+   }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
       syswrite $_Q->{_qw_sock}, $LF;
    }
@@ -477,12 +526,7 @@ sub _dequeue {
    my ($_Q, $_cnt) = @_;
 
    if (defined $_cnt && $_cnt ne '1') {
-      _croak('Queue: (dequeue count argument) is not valid')
-         if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
-
-      my @_items; push(@_items, $_Q->_dequeue()) for (1 .. $_cnt);
-
-      return @_items;
+      return map { $_Q->_dequeue() } 1 .. $_cnt;
    }
 
    # Return item from the non-priority queue.
@@ -612,7 +656,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.813
+This document describes MCE::Shared::Queue version 1.814
 
 =head1 DESCRIPTION
 
@@ -660,6 +704,7 @@ the shared-manager process, otherwise locally.
 
    $qu->await( [ $pending_threshold ] );
    $qu->clear();
+   $qu->end();
 
    $qu->enqueue( $item [, $item, ... ] );
    $qu->enqueuep( $priority, $item [, $item, ... ] );
@@ -760,7 +805,7 @@ increasing too high. Below, the number of items pending will never go above 20.
       }
 
       ## notify consumers no more work
-      $q->enqueue( (undef) x $consumers );
+      $q->end();
 
    },
    sub {
@@ -776,6 +821,22 @@ increasing too high. Below, the number of items pending will never go above 20.
 Clears the queue of any items.
 
    $q->clear;
+
+=item end ( )
+
+Stops the queue from receiving more items. Any worker blocking on C<dequeue>
+will be unblocked automatically. Subsequent calls to C<dequeue> will behave
+like C<dequeue_nb>. Current API available since MCE::Shared 1.814.
+
+   $q->end();
+
+MCE Models (e.g. MCE::Flow) may persist between runs. In that case, one might
+want to enqueue C<undef>'s versus calling C<end>. The number of C<undef>'s
+depends on how many items workers dequeue at a time.
+
+   $q->enqueue((undef) x ($N_workers * 1));  # $q->dequeue()   1 item
+   $q->enqueue((undef) x ($N_workers * 2));  # $q->dequeue(2)  2 items
+   $q->enqueue((undef) x ($N_workers * N));  # $q->dequeue(N)  N items
 
 =item enqueue ( item [, item, ... ] )
 
@@ -801,7 +862,7 @@ data will always dequeue first before any data from the normal queue.
 
 The method will block if the queue contains zero items. If the queue contains
 fewer than the requested number of items, the method will not block, but
-return the remaining items and C<undef> for up to the count requested.
+return whatever items there are on the queue.
 
 The $count, used for requesting the number of items, is beneficial when workers
 are passing parameters through the queue. For this reason, always remember to
@@ -841,7 +902,8 @@ priority. The behavior is similarly to C<$q->insert> otherwise.
 =item pending ( )
 
 Returns the number of items in the queue. The count includes both normal
-and priority data.
+and priority data. Returns C<undef> if the queue has been ended, and there
+are no more items in the queue.
 
    $q = MCE::Shared->queue();
    $q->enqueuep(5, 'foo', 'bar');
@@ -942,22 +1004,39 @@ queues simultaneously; e.g.
 
 =back
 
-=head1 LIMITATION
+=head1 LIMITATIONS
 
 Perl must have L<IO::FDPass> for constructing a shared C<condvar>, C<handle>,
-or C<queue> while the shared-manager process is running. For platforms where
-C<IO::FDPass> is not feasible, construct any C<condvar>, C<handle>, and
-C<queue> first before other classes. The shared-manager process is delayed
-until sharing other classes or starting the manager explicitly.
+and C<queue>, while the shared-manager process is running. For platforms where
+L<IO::FDPass> is not possible, construct C<condvar>, C<handle>, and C<queue>
+first, before other classes. On systems without C<IO::FDPass>, the manager
+process is delayed until sharing other classes or started explicitly.
 
    use MCE::Shared;
 
+   my $has_IO_FDPass = $INC{'IO/FDPass.pm'} ? 1 : 0;
+
    my $cv  = MCE::Shared->condvar();
-   my $que = MCE::Shared->queue();
+   my $que = MCE::Shared->queue();              # <-- this module
 
-   mce_open my $fh, ">>", "/path/to/file.log";
+   mce_open my $fh, ">", "/path/to/file.log";
 
-   MCE::Shared->start();
+   MCE::Shared->start() unless $has_IO_FDPass;
+
+Passing a file handle by reference to C<mce_open> also has the same limitation.
+The file handle, associated with the reference, must be constructed before the
+manager process is started.
+
+   open NON_SHARED_FH, ">", "/path/to/output.txt";
+
+   MCE::Shared->start() unless $has_IO_FDPass;
+
+   mce_open my $shared_fh, ">", \*NON_SHARED_FH;
+
+The L<IO::FDPass> module is known to work reliably on most platforms.
+Install 1.1 or later to rid of limitations.
+
+   perl -MIO::FDPass -le "print 'Cheers! Perl has IO::FDPass.'"
 
 =head1 INDEX
 

@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.813';
+our $VERSION = '1.814';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -219,7 +219,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.813
+This document describes MCE::Shared::Handle version 1.814
 
 =head1 DESCRIPTION
 
@@ -447,31 +447,43 @@ The benefit of chunk IO is from lesser IPC for the shared-manager process
 
    say scalar( @result );
 
-=head1 LIMITATION
+=head1 CREDITS
+
+Implementation inspired by L<Tie::StdHandle>.
+
+=head1 LIMITATIONS
 
 Perl must have L<IO::FDPass> for constructing a shared C<condvar>, C<handle>,
-or C<queue> while the shared-manager process is running. For platforms where
-C<IO::FDPass> is not feasible, construct any C<condvar>, C<handle>, and
-C<queue> first before other classes. The shared-manager process is delayed
-until sharing other classes or starting the manager explicitly.
+and C<queue>, while the shared-manager process is running. For platforms where
+L<IO::FDPass> is not possible, construct C<condvar>, C<handle>, and C<queue>
+first, before other classes. On systems without C<IO::FDPass>, the manager
+process is delayed until sharing other classes or started explicitly.
 
    use MCE::Shared;
+
+   my $has_IO_FDPass = $INC{'IO/FDPass.pm'} ? 1 : 0;
 
    my $cv  = MCE::Shared->condvar();
    my $que = MCE::Shared->queue();
 
-   mce_open my $fh, ">>", "/path/to/file.log";
+   mce_open my $fh, ">", "/path/to/file.log";   # <-- this module
 
-   MCE::Shared->start();
+   MCE::Shared->start() unless $has_IO_FDPass;
 
-When passing a C<reference>, be sure to construct its C<file handle> associated
-with C<reference> prior to the shared-manager process being spawned.
+Passing a file handle by reference to C<mce_open> also has the same limitation.
+The file handle, associated with the reference, must be constructed before the
+manager process is started.
 
-   mce_open my $fh, ">>", \*non_shared_fh;
+   open NON_SHARED_FH, ">", "/path/to/output.txt";
 
-=head1 CREDITS
+   MCE::Shared->start() unless $has_IO_FDPass;
 
-Implementation inspired by L<Tie::StdHandle>.
+   mce_open my $shared_fh, ">", \*NON_SHARED_FH;
+
+The L<IO::FDPass> module is known to work reliably on most platforms.
+Install 1.1 or later to rid of limitations.
+
+   perl -MIO::FDPass -le "print 'Cheers! Perl has IO::FDPass.'"
 
 =head1 INDEX
 
