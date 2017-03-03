@@ -1,6 +1,11 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.815 Fri Mar 03 05:00:00 EST 2017
+
+  * Do not localize AUTOFLUSH variable before autoflush file handles.
+    Thank you, Charles Hendry for raising the issue.
+
 1.814 Wed Mar 01 22:00:00 EST 2017
 
   * Fixed an issue in regards to deeply sharing an array or hash.
