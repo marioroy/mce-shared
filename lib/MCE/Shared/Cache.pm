@@ -15,7 +15,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.814';
+our $VERSION = '1.815';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -367,6 +367,12 @@ sub THAW {
 ## _gckeys_head, _gckeys_tail, _inskey, _prealloc, _prune_head, _secs, _size
 ##
 ###############################################################################
+
+# Called by MCE::Shared::Server::_share
+
+sub _shared_init {
+   $_[0]->_prealloc();
+}
 
 # GC start of list
 
@@ -919,7 +925,7 @@ MCE::Shared::Cache - A hybrid LRU-plain cache helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Cache version 1.814
+This document describes MCE::Shared::Cache version 1.815
 
 =head1 DESCRIPTION
 

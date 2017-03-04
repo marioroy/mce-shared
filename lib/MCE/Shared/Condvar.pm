@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.814';
+our $VERSION = '1.815';
 
 use MCE::Shared::Base;
 use MCE::Util ();
@@ -132,7 +132,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.814
+This document describes MCE::Shared::Condvar version 1.815
 
 =head1 DESCRIPTION
 
