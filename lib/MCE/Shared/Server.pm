@@ -12,7 +12,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.815';
+our $VERSION = '1.816';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -2316,7 +2316,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.815
+This document describes MCE::Shared::Server version 1.816
 
 =head1 DESCRIPTION
 

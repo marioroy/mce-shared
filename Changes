@@ -1,6 +1,10 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.816 Mon Mar 06 13:00:00 EST 2017
+
+  * Optimized SHIFT and UNSHIFT methods in MCE::Shared::Ordhash.
+
 1.815 Fri Mar 03 23:00:00 EST 2017
 
   * Fixed issue with localizing AUTOFLUSH variable before autoflush handles.

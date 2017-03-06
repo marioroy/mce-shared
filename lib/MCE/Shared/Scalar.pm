@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.815';
+our $VERSION = '1.816';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -100,7 +100,7 @@ MCE::Shared::Scalar - Scalar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Scalar version 1.815
+This document describes MCE::Shared::Scalar version 1.816
 
 =head1 DESCRIPTION
 

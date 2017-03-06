@@ -24,7 +24,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.815';
+our $VERSION = '1.816';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -266,28 +266,16 @@ sub POP {
 # PUSH ( key, value [, key, value, ... ] )
 
 sub PUSH {
-   if ( @_ == 3 ) {
-      my ( $key, $data, $keys ) = ( $_[1], @{ $_[0] } );
+   my $self = shift;
+   my ( $data, $keys ) = @{ $self };
+   my $key;
 
-      $_[0]->delete( $key ) if ( exists $data->{ $key } );
-      push @{ $keys }, "$key";
-      $data->{ $key } = $_[2];
-
-      defined wantarray ? scalar keys %{ $data } : ();
+   while ( @_ ) {
+      $self->delete( $key ) if ( exists $data->{ $key = shift } );
+      $data->{ $key } = shift, push @{ $keys }, "$key";
    }
-   else {
-      my $self = shift;
-      my ( $data, $keys ) = @{ $self };
-      my $key;
 
-      while ( @_ ) {
-         $self->delete( $key ) if ( exists $data->{ $key = shift } );
-         push @{ $keys }, "$key";
-         $data->{ $key } = shift;
-      }
-
-      defined wantarray ? scalar keys %{ $data } : ();
-   }
+   defined wantarray ? scalar keys %{ $data } : ();
 }
 
 # SHIFT ( )
@@ -316,24 +304,13 @@ sub SHIFT {
 
 sub UNSHIFT {
    my $self = shift;
-   my ( $data, $keys ) = @{ $self };
+   my ( $data, $keys, $indx, $begi ) = @{ $self };
    my $key;
 
-   if ( @_ == 2 ) {
-      $self->delete( $key ) if ( exists $data->{ $key = $_[0] } );
-      ${ $self->[_BEGI] }-- if %{ $self->[_INDX] };
-      unshift @{ $keys }, "$key";
-      $data->{ $key } = $_[1];
-   }
-   else {
-      my ( $indx, $begi ) = @{ $self }[ _INDX, _BEGI ];
-      while ( @_ ) {
-         $self->delete( $key ) if ( exists $data->{ $key = $_[-2] } );
-         ${ $begi }-- if %{ $indx };
-         unshift @{ $keys }, "$key";
-         $data->{ $key } = pop;
-         pop;
-      }
+   while ( @_ ) {
+      $self->delete( $key ) if ( exists $data->{ $key = $_[-2] } );
+      $data->{ $key } = pop, pop, unshift @{ $keys }, "$key";
+      ${ $begi }-- if %{ $indx };
    }
 
    defined wantarray ? scalar keys %{ $data } : ();
@@ -819,7 +796,7 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 =head1 VERSION
 
-This document describes MCE::Shared::Ordhash version 1.815
+This document describes MCE::Shared::Ordhash version 1.816
 
 =head1 DESCRIPTION
 
@@ -1459,7 +1436,7 @@ C<MCE::Hobo->list_joinable>.
    use List::Util 'shuffle';
    use Time::HiRes 'time';
 
-   srand 1618;
+   srand 0;
 
    my $oh = MCE::Shared::Ordhash->new();
    my $num_keys = 200000;
@@ -1474,14 +1451,14 @@ C<MCE::Hobo->list_joinable>.
    printf "duration: %7.03f secs\n", time() - $start;
 
 Both the runtime and memory consumption are captured for the demonstration.
-Result for MCE::Shared::Hash, an unordered hash, is included for comparison.
+Results are included for MCE::Shared::Hash (unordered hash) for comparison.
 
    for ( shuffle $oh->keys ) { $oh->delete($_) }
 
    0.378 secs.  35 MB  MCE::Shared::Hash (unordered)
    0.437 secs.  49 MB  Tie::Hash::Indexed (XS)
-   0.733 secs.  54 MB  MCE::Shared::Ordhash
-   1.065 secs.  60 MB  Hash::Ordered
+   0.743 secs.  54 MB  MCE::Shared::Ordhash
+   1.028 secs.  60 MB  Hash::Ordered
    1.752 secs. 112 MB  Tie::LLHash
     > 42 mins.  66 MB  Tie::IxHash
 
@@ -1494,16 +1471,13 @@ Hobos provided by C<MCE::Hobo->list>.
    0.353 secs.  35 MB  MCE::Shared::Hash (unordered)
    0.349 secs.  49 MB  Tie::Hash::Indexed (XS)
    0.452 secs.  41 MB  MCE::Shared::Ordhash
-   0.797 secs.  54 MB  Hash::Ordered
+   0.735 secs.  54 MB  Hash::Ordered
    1.338 secs. 112 MB  Tie::LLHash
     > 42 mins.  66 MB  Tie::IxHash
 
 No matter if orderly or randomly, even backwards, hash-key deletion in
-C<MCE::Shared::Ordhash> performs reasonably well.
-
-The following provides the construction used for the modules mentioned.
-Basically, key setting and deletion is through the OO interface for fair
-comparison.
+C<MCE::Shared::Ordhash> performs reasonably well. The following provides
+the construction used for the modules mentioned.
 
    my $oh = Hash::Ordered->new();
       $oh->set($_,$_);   $oh->keys;  $oh->delete($_);
@@ -1517,15 +1491,17 @@ comparison.
    my $oh = tie my %hash, 'Tie::LLHash';
       $oh->last($_,$_);  keys %hash; $oh->DELETE($_);
 
-Hash::Ordered is supported for use with MCE::Shared. The on-demand hash-like
-dereferencing is provided by MCE::Shared.
+Hash::Ordered is supported for use with MCE::Shared. This includes on-demand
+hash-like dereferencing, similarly to C<hash> and C<ordhash>.
 
    use feature 'say';
 
    use MCE::Hobo;
    use MCE::Shared;
+   use Hash::Ordered; # 0.010 or later
 
-   use Hash::Ordered;  # 0.010 or later
+   my $ha = MCE::Shared->hash();    # shared MCE::Shared::Hash
+   my $oh = MCE::Shared->ordhash(); # shared MCE::Shared::Ordhash
 
    my $ho = MCE::Shared->share( Hash::Ordered->new() );
 
@@ -1533,10 +1509,17 @@ dereferencing is provided by MCE::Shared.
       my ($id) = @_;
 
       # OO interface
-      $ho->set("$id", "foo") if ($id == 1);
-
+      if ($id == 1) {
+         $ha->set("$id", "foo");
+         $oh->set("$id", "foo");
+         $ho->set("$id", "foo");
+      }
       # hash-like dereferencing
-      $ho->{"$id"} = "baz"   if ($id == 2);
+      elsif ($id == 2) {
+         $ha->{"$id"} = "baz";
+         $oh->{"$id"} = "baz";
+         $ho->{"$id"} = "baz";
+      }
 
       return;
    }
@@ -1544,8 +1527,13 @@ dereferencing is provided by MCE::Shared.
    MCE::Hobo->create("parallel_task", $_) for 1..2;
    MCE::Hobo->waitall;
 
-   say $ho->{"1"};     # foo
-   say $ho->get("2");  # baz
+   say $ha->{"1"};     # foo
+   say $oh->{"1"};
+   say $ho->{"1"};
+
+   say $ha->get("2");  # baz
+   say $oh->get("2");
+   say $ho->get("2");
 
 =head1 SEE ALSO
 
