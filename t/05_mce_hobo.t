@@ -68,25 +68,20 @@ BEGIN {
 {
    sub task {
       my ( $id ) = @_;
-      sleep $id * 0.45;
+
       return $id;
    }
 
+   MCE::Hobo->create(\&task, 2);
+
+   my $hobo = MCE::Hobo->waitone;
+   my $err = $hobo->error // 'no error';
+   my $res = $hobo->result;
+   my $pid = $hobo->pid;
+
+   is ( $res, "2", 'check waitone' );
+
    my @result; local $_;
-
-   MCE::Hobo->create(\&task, $_) for ( reverse 1 .. 3 );
-
-   while ( my $hobo = MCE::Hobo->waitone ) {
-      my $err = $hobo->error // 'no error';
-      my $res = $hobo->result;
-      my $pid = $hobo->pid;
-
-      push @result, $res;
-   }
-
-   is ( "@result", "1 2 3", 'check waitone' );
-
-   @result = ();
 
    MCE::Hobo->create(\&task, $_) for ( 1 .. 3 );
 

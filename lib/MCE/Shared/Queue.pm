@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.816';
+our $VERSION = '1.817';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -237,8 +237,16 @@ sub dequeue {
       _croak('Queue: (dequeue count argument) is not valid')
          if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
 
-      $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
-      @_items = $_Q->_dequeue($_cnt);
+      my $_pending = @{ $_Q->{_datq} };
+
+      if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
+         for my $_h (@{ $_Q->{_heap} }) {
+            $_pending += @{ $_Q->{_datp}->{$_h} };
+         }
+      }
+      $_cnt = $_pending if $_pending < $_cnt;
+
+      for my $_i (1 .. $_cnt) { push @_items, $_Q->_dequeue() }
    }
    else {
       $_buf = $_Q->_dequeue();
@@ -251,7 +259,7 @@ sub dequeue {
          $_pending = int($_pending / $_cnt) if (defined $_cnt);
          if ($_pending) {
             $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
-            for (1 .. $_pending) { syswrite $_Q->{_qw_sock}, $LF }
+            for my $_i (1 .. $_pending) { syswrite $_Q->{_qw_sock}, $LF }
          }
          $_Q->{_dsem} = $_pending;
       }
@@ -264,14 +272,14 @@ sub dequeue {
       if ($_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
    }
 
-   if ($_Q->{_ended}) {
-      if (!$_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
+   if ($_Q->{_ended} && !$_Q->_has_data()) {
+      syswrite $_Q->{_qw_sock}, $LF;
    }
 
    $_Q->{_nb_flag} = 0;
 
    return @_items if (scalar @_items);
-   return $_buf;
+   return $_buf // ();
 }
 
 # dequeue_nb ( count )
@@ -291,26 +299,32 @@ sub dequeue_nb {
       _croak('Queue: (dequeue count argument) is not valid')
          if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
 
-      $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
-      return $_Q->_dequeue($_cnt);
+      my $_pending = @{ $_Q->{_datq} };
+
+      if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
+         for my $_h (@{ $_Q->{_heap} }) {
+            $_pending += @{ $_Q->{_datp}->{$_h} };
+         }
+      }
+      $_cnt = $_pending if $_pending < $_cnt;
+
+      return map { $_Q->_dequeue() } 1 .. $_cnt;
    }
-   else {
-      return $_Q->_dequeue();
-   }
+
+   return $_Q->_dequeue() // ();
 }
 
 # pending ( )
 
 sub pending {
-   my $_pending = 0; my ($_Q) = @_;
+   my ($_Q) = @_;
+   my $_pending = @{ $_Q->{_datq} };
 
    if (scalar @{ $_Q->{_heap} }) {
       for my $_h (@{ $_Q->{_heap} }) {
          $_pending += @{ $_Q->{_datp}->{$_h} };
       }
    }
-
-   $_pending += @{ $_Q->{_datq} };
 
    return ($_Q->{_ended})
       ? $_pending ? $_pending : undef
@@ -520,14 +534,10 @@ sub _enqueuep {
    return;
 }
 
-# Return item(s) from the queue.
+# Return one item from the queue.
 
 sub _dequeue {
-   my ($_Q, $_cnt) = @_;
-
-   if (defined $_cnt && $_cnt ne '1') {
-      return map { $_Q->_dequeue() } 1 .. $_cnt;
-   }
+   my ($_Q) = @_;
 
    # Return item from the non-priority queue.
    unless (scalar @{ $_Q->{_heap} }) {
@@ -656,7 +666,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.816
+This document describes MCE::Shared::Queue version 1.817
 
 =head1 DESCRIPTION
 
@@ -869,11 +879,22 @@ are passing parameters through the queue. For this reason, always remember to
 dequeue using the same multiple for the count. This is unlike Thread::Queue
 which will block until the requested number of items are available.
 
+   # MCE::Shared::Queue 1.816 and prior releases
+   while ( my @items = $q->dequeue(2) ) {
+      last unless ( defined $items[0] );
+      ...
+   }
+
+   # MCE::Shared::Queue 1.817 and later
+   while ( my @items = $q->dequeue(2) ) {
+      ...
+   }
+
 =item dequeue_nb ( [ count ] )
 
 Returns the requested number of items (default 1) from the queue. Like with
 dequeue, priority data will always dequeue first. This method is non-blocking
-and will return C<undef> in the absence of data from the queue.
+and returns C<undef> in the absence of data.
 
    $q->dequeue_nb( 2 );
    $q->dequeue_nb; # default 1

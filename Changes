@@ -1,6 +1,23 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.817 Sun Mar 19 04:00:00 EST 2017
+
+  * Fixed broken SIG{'PIPE'} handling: e.g. script.pl | head.
+  * Improved reliability when running MCE::Shared with threads.
+
+  * Added parallel Net::Pcap and Ping demonstrations on Github:
+    https://github.com/marioroy/mce-examples/tree/master/network
+
+  * Default to ':raw' for BINMODE in MCE::Shared::Handle.
+  * Optimized 'dequeue' method in MCE::Shared::Queue.
+
+  * Refactored MCE::Hobo to spawn children on the Windows platform.
+    This is necessary for Mojo::IOLoop::HoboProcess to run properly,
+    with Mojolicous 7.25 and later.
+
+  * Bumped MCE dependency to 1.821.
+
 1.816 Mon Mar 06 13:00:00 EST 2017
 
   * Optimized SHIFT and UNSHIFT methods in MCE::Shared::Ordhash.

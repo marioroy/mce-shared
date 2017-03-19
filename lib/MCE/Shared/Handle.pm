@@ -12,7 +12,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.816';
+our $VERSION = '1.817';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -66,7 +66,7 @@ sub TELL    { tell($_[0]) }
 sub FILENO  { fileno($_[0]) }
 sub SEEK    { seek($_[0], $_[1], $_[2]) }
 sub CLOSE   { close($_[0]) }
-sub BINMODE { binmode($_[0]) }
+sub BINMODE { binmode($_[0], $_[1] // ':raw') }
 sub GETC    { getc($_[0]) }
 
 sub OPEN {
@@ -219,7 +219,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.816
+This document describes MCE::Shared::Handle version 1.817
 
 =head1 DESCRIPTION
 

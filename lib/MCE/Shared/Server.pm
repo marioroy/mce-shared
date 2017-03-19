@@ -12,7 +12,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.816';
+our $VERSION = '1.817';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -333,7 +333,7 @@ sub _start {
    return if $_svr_pid;
 
    $SIG{HUP} = $SIG{INT} = $SIG{PIPE} = $SIG{QUIT} = $SIG{TERM} = \&_trap
-      if (!$_is_MSWin32 && !$INC{'MCE/Signal.pm'});
+      if (!$_is_MSWin32 && !$INC{'MCE/Signal.pm'} && !$INC{'threads.pm'});
 
    $_init_pid = "$$.$_tid"; local $_;
 
@@ -387,7 +387,7 @@ sub _stop {
       MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
 
       for my $_i (1 .. $_SVR->{_data_channels}) {
-         $_SVR->{'_mutex_'.$_i}->DESTROY('shutdown');
+         delete $_SVR->{'_mutex_'.$_i};
       }
 
       $_init_pid = $_svr_pid = undef;
@@ -465,16 +465,22 @@ sub _loop {
    };
 
    $SIG{PIPE} = sub {
+      $SIG{PIPE} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub { };
+
       for my $_o ( values %_obj ) {
          close $_o if ref($_o) eq 'MCE::Shared::Handle' && defined fileno($_o);
       }
-      _exit();
+
+      CORE::kill('PIPE', $_is_MSWin32 ? -$$ : -getpgrp), _exit();
    };
+
+   my $_running_inside_eval = $^S;
 
    $SIG{__DIE__} = sub {
       if (!defined $^S || $^S) {
          if ( ($INC{'threads.pm'} && threads->tid() != 0) ||
-               $ENV{'PERL_IPERL_RUNNING'}
+               $ENV{'PERL_IPERL_RUNNING'} ||
+               $_running_inside_eval
          ) {
             # thread env or running inside IPerl, check stack trace
             my $_t = Carp::longmess(); $_t =~ s/\teval [^\n]+\n$//;
@@ -1174,8 +1180,16 @@ sub _loop {
          my (@_items, $_buf);
 
          if ($_cnt) {
-            $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
-            for my $_i (1 .. $_cnt) { push(@_items, $_Q->_dequeue()) }
+            my $_pending = @{ $_Q->{_datq} };
+
+            if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
+               for my $_h (@{ $_Q->{_heap} }) {
+                  $_pending += @{ $_Q->{_datp}->{$_h} };
+               }
+            }
+            $_cnt = $_pending if $_pending < $_cnt;
+
+            for my $_i (1 .. $_cnt) { push @_items, $_Q->_dequeue() }
          }
          else {
             $_buf = $_Q->_dequeue();
@@ -1201,17 +1215,13 @@ sub _loop {
             if ($_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
          }
 
-         if ($_Q->{_ended}) {
-            if (!$_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
+         if ($_Q->{_ended} && !$_Q->_has_data()) {
+            syswrite $_Q->{_qw_sock}, $LF;
          }
 
          if ($_cnt) {
-            if (defined $_items[0]) {
-               $_buf = $_freeze->(\@_items);
-               print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
-            } else {
-               print {$_DAU_R_SOCK} '-1'.$LF;
-            }
+            $_buf = $_freeze->(\@_items);
+            print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
          }
          elsif (defined $_buf) {
             if (!ref($_buf)) {
@@ -1258,11 +1268,18 @@ sub _loop {
          }
          else {
             my @_items;
+            my $_pending = @{ $_Q->{_datq} };
 
-            $_cnt = $_Q->pending() || 1 if $_Q->pending() < $_cnt;
-            for my $_i (1 .. $_cnt) { push(@_items, $_Q->_dequeue()) }
+            if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
+               for my $_h (@{ $_Q->{_heap} }) {
+                  $_pending += @{ $_Q->{_datp}->{$_h} };
+               }
+            }
+            $_cnt = $_pending if $_pending < $_cnt;
 
-            if (defined $_items[0]) {
+            for my $_i (1 .. $_cnt) { push @_items, $_Q->_dequeue() }
+
+            if ($_cnt) {
                my $_buf = $_freeze->(\@_items);
                print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
             } else {
@@ -1491,10 +1508,7 @@ my $_rdy     = \&MCE::Util::_sock_ready;
 
 sub CLONE {
    $_tid = threads->tid() if $_has_threads;
-
-   if (!$INC{'MCE.pm'} && !$INC{'MCE/Hobo.pm'}) {
-      %_new = (), &_init($_tid);
-   }
+   &_init($_tid)          if $_tid;
 }
 
 # Private functions.
@@ -1678,6 +1692,7 @@ sub _req3 {
    chomp(my $_len = <$_DAU_W_SOCK>);
 
    if ($_len < 0) { $_dat_un->(); return undef; }
+
    read $_DAU_W_SOCK, my($_buf), $_len;
    $_dat_un->();
 
@@ -1699,10 +1714,7 @@ sub _req4 {
 
    chomp(my $_len = <$_DAU_W_SOCK>);
 
-   if ($_len < 0) {
-      $_dat_un->();
-      return undef;  # do not change to return;
-   }
+   $_dat_un->(), return if ($_len < 0);
 
    my $_frozen = chop($_len);
    read $_DAU_W_SOCK, my($_buf), $_len;
@@ -2316,7 +2328,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.816
+This document describes MCE::Shared::Server version 1.817
 
 =head1 DESCRIPTION
 
