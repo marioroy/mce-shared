@@ -6,13 +6,14 @@
 
 package MCE::Shared::Scalar;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -100,7 +101,7 @@ MCE::Shared::Scalar - Scalar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Scalar version 1.817
+This document describes MCE::Shared::Scalar version 1.818
 
 =head1 DESCRIPTION
 

@@ -6,13 +6,14 @@
 
 package MCE::Shared::Base;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -265,9 +266,10 @@ sub _die {
 
 package MCE::Shared::Base::Common;
 
-use 5.010001;
 use strict;
 use warnings;
+
+use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
@@ -325,7 +327,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.817
+This document describes MCE::Shared::Base version 1.818
 
 =head1 DESCRIPTION
 

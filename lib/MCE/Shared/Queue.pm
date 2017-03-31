@@ -6,13 +6,14 @@
 
 package MCE::Shared::Queue;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -127,7 +128,7 @@ sub new {
    MCE::Util::_sock_pair($_Q, qw(_ar_sock _aw_sock)) if $_Q->{_await};
 
    if (exists $_argv{queue} && scalar @{ $_argv{queue} }) {
-      syswrite $_Q->{_qw_sock}, $LF;
+      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
 
    return $_Q;
@@ -156,7 +157,7 @@ sub clear {
    }
    else {
       if ($_Q->_has_data()) {
-         sysread $_Q->{_qr_sock}, my($_buf), 1;
+         1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
       }
       %{ $_Q->{_datp} } = ();
       @{ $_Q->{_datq} } = ();
@@ -173,7 +174,7 @@ sub end {
 
    if (!$_Q->{_ended}) {
       if (!$_Q->{_nb_flag}) {
-         syswrite $_Q->{_qw_sock}, $LF;
+         1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
       }
       $_Q->{_ended} = 1;
    }
@@ -193,7 +194,7 @@ sub enqueue {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      syswrite $_Q->{_qw_sock}, $LF;
+      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
 
    push @{ $_Q->{_datq} }, @_;
@@ -216,7 +217,7 @@ sub enqueuep {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      syswrite $_Q->{_qw_sock}, $LF;
+      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
 
    $_Q->_enqueuep($_p, @_);
@@ -231,7 +232,7 @@ sub dequeue {
    my ($_Q, $_cnt) = @_;
    my (@_items, $_buf, $_next, $_pending);
 
-   sysread $_Q->{_qr_sock}, $_next, 1;  # block
+   1 until sysread($_Q->{_qr_sock}, $_next, 1) || ($! && !$!{'EINTR'});
 
    if (defined $_cnt && $_cnt ne '1') {
       _croak('Queue: (dequeue count argument) is not valid')
@@ -259,7 +260,9 @@ sub dequeue {
          $_pending = int($_pending / $_cnt) if (defined $_cnt);
          if ($_pending) {
             $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
-            for my $_i (1 .. $_pending) { syswrite $_Q->{_qw_sock}, $LF }
+            for my $_i (1 .. $_pending) {
+               1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+            }
          }
          $_Q->{_dsem} = $_pending;
       }
@@ -269,11 +272,13 @@ sub dequeue {
    }
    else {
       # Otherwise, never to exceed one byte in the channel
-      if ($_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
+      if ($_Q->_has_data()) {
+         1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+      }
    }
 
    if ($_Q->{_ended} && !$_Q->_has_data()) {
-      syswrite $_Q->{_qw_sock}, $LF;
+      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
 
    $_Q->{_nb_flag} = 0;
@@ -346,7 +351,7 @@ sub insert {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      syswrite $_Q->{_qw_sock}, $LF;
+      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
 
    if (abs($_i) > scalar @{ $_Q->{_datq} }) {
@@ -394,7 +399,7 @@ sub insertp {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      syswrite $_Q->{_qw_sock}, $LF;
+      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
 
    if (exists $_Q->{_datp}->{$_p} && scalar @{ $_Q->{_datp}->{$_p} }) {
@@ -666,7 +671,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.817
+This document describes MCE::Shared::Queue version 1.818
 
 =head1 DESCRIPTION
 

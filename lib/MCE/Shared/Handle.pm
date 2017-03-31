@@ -6,15 +6,17 @@
 
 package MCE::Shared::Handle;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
+## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -38,21 +40,15 @@ sub TIEHANDLE {
 
    if (ref $_[0] eq 'ARRAY') {
       # For use with MCE::Shared in order to reach the Server process.
-      # Basically, without a GLOB initially.
-      bless $_[0], $class;
-   }
-   else {
-      my $fh = \do { no warnings 'once'; local *FH };
-      bless $fh, $class;
+      # Therefore constructed without a GLOB handle initially.
 
-      if (@_ == 2 && ref $_[1] && defined(my $_fd = fileno($_[1]))) {
-         $fh->OPEN($_[0]."&=$_fd") or _croak("open error: $!");
-      } elsif (@_) {
-         $fh->OPEN(@_) or _croak("open error: $!");
-      }
-
-      $fh;
+      return bless $_[0], $class;
    }
+
+   bless my $fh = \do { no warnings 'once'; local *FH }, $class;
+   $fh->OPEN(@_) or _croak("open error: $!") if @_;
+
+   $fh;
 }
 
 ###############################################################################
@@ -66,18 +62,24 @@ sub TELL    { tell($_[0]) }
 sub FILENO  { fileno($_[0]) }
 sub SEEK    { seek($_[0], $_[1], $_[2]) }
 sub CLOSE   { close($_[0]) }
-sub BINMODE { binmode($_[0], $_[1] // ':raw') }
+sub BINMODE { binmode($_[0], $_[1] || ':raw') }
 sub GETC    { getc($_[0]) }
 
 sub OPEN {
    $_[0]->CLOSE if defined ( $_[0]->FILENO );
-   @_ == 2
+
+   if ( @_ == 3 && ref $_[2] && defined( my $_fd = fileno($_[2]) ) ) {
+      return CORE::open($_[0], $_[1]."&=$_fd");
+   }
+
+   ( @_ == 2 )
       ? CORE::open($_[0], $_[1])
       : CORE::open($_[0], $_[1], $_[2]);
 }
 
 sub open (@) {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared::Handle' );
+   return TIEHANDLE(@_) if ( defined $_[0] && $_[0] eq 'MCE::Shared::Handle' );
+
    my $item;
 
    if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } &&
@@ -199,8 +201,25 @@ sub PRINTF {
 }
 
 sub WRITE {
-   @_ > 2 ? syswrite($_[0], $_[1], $_[2], $_[3] || 0)
-          : syswrite($_[0], $_[1]);
+   # based on IO::SigGuard::syswrite 0.011 by Felipe Gasper (FELIPE)
+   my $wrote = 0;
+
+   WRITE: {
+      $wrote += (
+        ( @_ == 2 )
+          ? syswrite($_[0], $_[1], length($_[1]) - $wrote, $wrote)
+          : ( @_ == 3 )
+              ? syswrite($_[0], $_[1], $_[2] - $wrote, $wrote)
+              : syswrite($_[0], $_[1], $_[2] - $wrote, $_[3] + $wrote)
+      ) || do {
+         if ( $! ) {
+            redo WRITE if $!{'EINTR'};
+            return undef;
+         }
+      };
+   }
+
+   $wrote;
 }
 
 1;
@@ -219,7 +238,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.817
+This document describes MCE::Shared::Handle version 1.818
 
 =head1 DESCRIPTION
 

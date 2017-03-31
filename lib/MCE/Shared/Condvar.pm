@@ -6,13 +6,14 @@
 
 package MCE::Shared::Condvar;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 use MCE::Shared::Base;
 use MCE::Util ();
@@ -32,7 +33,7 @@ sub new {
    my ($_class, $_cv) = (shift, {});
 
    $_cv->{_init_pid} = $_has_threads ? $$ .'.'. $_tid : $$;
-   $_cv->{_mutex}    = MCE::Mutex->new;
+   $_cv->{_mutex}    = MCE::Mutex->new( impl => 'Channel' );
    $_cv->{_value}    = shift || 0;
    $_cv->{_count}    = 0;
 
@@ -132,7 +133,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.817
+This document describes MCE::Shared::Condvar version 1.818
 
 =head1 DESCRIPTION
 

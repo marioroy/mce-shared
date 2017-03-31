@@ -18,19 +18,20 @@
 
 package MCE::Shared::Ordhash;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use MCE::Shared::Base;
-use parent -norequire, 'MCE::Shared::Base::Common';
+use base 'MCE::Shared::Base::Common';
 use bytes;
 
 use constant {
@@ -47,10 +48,10 @@ use overload (
    q("")    => \&MCE::Shared::Base::_stringify,
    q(0+)    => \&MCE::Shared::Base::_numify,
    q(%{})   => sub {
-      $_[0]->[_HREF] //= do {
+      $_[0]->[_HREF] || do {
          # no circular reference to original, therefore no memory leaks
          tie my %h, __PACKAGE__.'::_href', bless([ @{ $_[0] } ], __PACKAGE__);
-         \%h;
+         $_[0]->[_HREF] = \%h;
       };
    },
    fallback => 1
@@ -796,7 +797,7 @@ MCE::Shared::Ordhash - An ordered hash class featuring tombstone deletion
 
 =head1 VERSION
 
-This document describes MCE::Shared::Ordhash version 1.817
+This document describes MCE::Shared::Ordhash version 1.818
 
 =head1 DESCRIPTION
 

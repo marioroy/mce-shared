@@ -1,6 +1,15 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.818 Fri Mar 31 11:00:00 EST 2017
+
+  * Check for EINTR during sysread and syswrite.
+  * Improved non-shared handles constructed with MCE::Shared::Handle.
+  * Reap MCE::Hobo's from script exiting during development process.
+  * Completed validation for using MCE::Shared with 200+ cores.
+
+  * Bumped MCE dependency to 1.822.
+
 1.817 Sun Mar 19 04:00:00 EST 2017
 
   * Fixed broken SIG{'PIPE'} handling: e.g. script.pl | head.

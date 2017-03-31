@@ -8,11 +8,12 @@ package MCE::Shared;
 
 use strict;
 use warnings;
+
 use 5.010001;
 
 no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -357,7 +358,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.817
+This document describes MCE::Shared version 1.818
 
 =head1 SYNOPSIS
 
@@ -443,6 +444,8 @@ This document describes MCE::Shared version 1.817
 This module provides data sharing capabilities for L<MCE> supporting threads
 and processes. L<MCE::Hobo> provides threads-like parallelization for running
 code asynchronously.
+
+=head1 EXTRA FUNCTIONALITY
 
 C<MCE::Shared> enables extra functionality on systems with L<IO::FDPass>
 installed. Without it, MCE::Shared is unable to send C<file descriptors> to

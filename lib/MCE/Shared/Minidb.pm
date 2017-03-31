@@ -6,16 +6,17 @@
 
 package MCE::Shared::Minidb;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 use MCE::Shared::Base;
-use parent -norequire, 'MCE::Shared::Base::Common';
+use base 'MCE::Shared::Base::Common';
 use bytes;
 
 use MCE::Shared::Ordhash;
@@ -1114,7 +1115,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.817
+This document describes MCE::Shared::Minidb version 1.818
 
 =head1 DESCRIPTION
 

@@ -6,18 +6,19 @@
 
 package MCE::Shared::Array;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use MCE::Shared::Base;
-use parent -norequire, 'MCE::Shared::Base::Common';
+use base 'MCE::Shared::Base::Common';
 use bytes;
 
 use overload (
@@ -395,7 +396,7 @@ MCE::Shared::Array - Array helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Array version 1.817
+This document describes MCE::Shared::Array version 1.818
 
 =head1 DESCRIPTION
 

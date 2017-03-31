@@ -8,11 +8,12 @@ package MCE::Hobo;
 
 use strict;
 use warnings;
+
 use 5.010001;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -234,8 +235,14 @@ sub finish {
 
          if ( $_LIST->{$pkg}->len ) {
             sleep 0.225;
+
             for my $hobo ( $_LIST->{$pkg}->vals ) {
-               $count++ if $hobo->is_running;
+               if ( $hobo->is_running ) {
+                  CORE::kill('KILL', $hobo->pid)
+                     if CORE::kill('ZERO', $hobo->pid);
+
+                  $count++;
+               }
             }
          }
 
@@ -601,7 +608,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.817
+This document describes MCE::Hobo version 1.818
 
 =head1 SYNOPSIS
 

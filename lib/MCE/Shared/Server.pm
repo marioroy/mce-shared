@@ -8,11 +8,12 @@ package MCE::Shared::Server;
 
 use strict;
 use warnings;
+
 use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -342,7 +343,7 @@ sub _start {
 
    MCE::Util::_sock_pair($_SVR, qw(_dat_r_sock _dat_w_sock), $_)
       for (0 .. $_data_channels);
-   $_SVR->{'_mutex_'.$_} = MCE::Mutex->new()
+   $_SVR->{'_mutex_'.$_} = MCE::Mutex->new( impl => 'Channel' )
       for (1 .. $_data_channels);
 
    setsockopt($_SVR->{_dat_r_sock}[0], SOL_SOCKET, SO_RCVBUF, 4096)
@@ -446,7 +447,7 @@ sub _exit {
    # Wait for the main thread to exit.
    sleep 3.0 if ( $_is_MSWin32 || ($_has_threads && $INC{'Tk.pm'}) );
 
-   threads->exit(0) unless $_spawn_child;
+   threads->exit(0) if ( !$_spawn_child || ($_has_threads && $_is_MSWin32) );
 
    CORE::kill('KILL', $$);
 }
@@ -842,8 +843,8 @@ sub _loop {
       SHR_M_DES.$LF => sub {                      # Destroy request
          chomp($_id = <$_DAU_R_SOCK>);
 
-         local $SIG{__DIE__}  = sub { };
-         local $SIG{__WARN__} = sub { };
+         local $SIG{__DIE__};
+         local $SIG{__WARN__};
 
          local $@; eval {
             $_ret = (exists $_all{ $_id }) ? '1' : '0';
@@ -948,9 +949,11 @@ sub _loop {
          chomp($_id = <$_DAU_R_SOCK>);
 
          $_CV = $_obj{ $_id };
-         my $_hndl = $_CV->{_cw_sock};
 
-         for my $_i (1 .. $_CV->{_count}) { syswrite $_hndl, $LF }
+         for my $_i (1 .. $_CV->{_count}) {
+            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
+         }
+
          $_CV->{_count} = 0;
 
          print {$_DAU_R_SOCK} $LF;
@@ -964,7 +967,7 @@ sub _loop {
          $_CV = $_obj{ $_id };
 
          if ( $_CV->{_count} >= 0 ) {
-            syswrite $_CV->{_cw_sock}, $LF;
+            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
             $_CV->{_count} -= 1;
          }
 
@@ -1145,9 +1148,23 @@ sub _loop {
          chomp($_len = <$_DAU_R_SOCK>);
 
          read $_DAU_R_SOCK, my($_buf), $_len;
-         $_ret = syswrite $_obj{ $_id }, $_buf;
 
-         print {$_DAU_R_SOCK} $_ret.$LF;
+         my $_wrote = 0;
+
+         WRITE: {
+            $_wrote += ( syswrite (
+               $_obj{ $_id }, length($_buf) - $_wrote, $_wrote
+            )) || do {
+               if ( $! ) {
+                  redo WRITE if $!{'EINTR'};
+                  print {$_DAU_R_SOCK} ''.$LF;
+
+                  return;
+               }
+            };
+         }
+
+         print {$_DAU_R_SOCK} $_wrote.$LF;
 
          return;
       },
@@ -1160,7 +1177,7 @@ sub _loop {
          $_Q->{_tsem} = $_t;
 
          if ($_Q->pending() <= $_t) {
-            syswrite $_Q->{_aw_sock}, $LF;
+            1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
          } else {
             $_Q->{_asem} += 1;
          }
@@ -1202,7 +1219,9 @@ sub _loop {
                $_pending = int($_pending / $_cnt) if ($_cnt);
                if ($_pending) {
                   $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
-                  for my $_i (1 .. $_pending) { syswrite $_Q->{_qw_sock}, $LF }
+                  for my $_i (1 .. $_pending) {
+                     1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+                  }
                }
                $_Q->{_dsem} = $_pending;
             }
@@ -1212,11 +1231,13 @@ sub _loop {
          }
          else {
             # Otherwise, never to exceed one byte in the channel
-            if ($_Q->_has_data()) { syswrite $_Q->{_qw_sock}, $LF }
+            if ($_Q->_has_data()) {
+               1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+            }
          }
 
          if ($_Q->{_ended} && !$_Q->_has_data()) {
-            syswrite $_Q->{_qw_sock}, $LF;
+            1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
          }
 
          if ($_cnt) {
@@ -1236,7 +1257,9 @@ sub _loop {
          }
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for my $_i (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
+            for my $_i (1 .. $_Q->{_asem}) {
+               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+            }
             $_Q->{_asem} = 0;
          }
 
@@ -1288,7 +1311,9 @@ sub _loop {
          }
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for my $_i (1 .. $_Q->{_asem}) { syswrite $_Q->{_aw_sock}, $LF }
+            for my $_i (1 .. $_Q->{_asem}) {
+               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+            }
             $_Q->{_asem} = 0;
          }
 
@@ -1445,6 +1470,7 @@ package MCE::Shared::Object;
 
 use strict;
 use warnings;
+
 use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
@@ -1548,8 +1574,13 @@ sub _server_init {
    $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
    $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
-   $_dat_ex = sub {  sysread ( $_DAT_LOCK->{_r_sock}, my $_b, 1 ) };
-   $_dat_un = sub { syswrite ( $_DAT_LOCK->{_w_sock}, '0' ) };
+   # inlined for performance
+   $_dat_ex = sub {
+      1 until sysread($_DAT_LOCK->{_r_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+   };
+   $_dat_un = sub {
+      1 until syswrite($_DAT_LOCK->{_w_sock}, '0') || ($! && !$!{'EINTR'});
+   };
 
    return;
 }
@@ -1994,7 +2025,7 @@ sub timedwait {
       die "alarm clock restart\n"
          if $_is_MSWin32 && $_rdy->($_CV->{_cr_sock}, $_timeout);
 
-      sysread $_CV->{_cr_sock}, my($_next), 1;  # block
+      1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
 
       alarm 0;
    };
@@ -2022,7 +2053,7 @@ sub wait {
    $_CV->{_mutex}->unlock();
 
    $_rdy->($_CV->{_cr_sock}) if $_is_MSWin32;
-   sysread $_CV->{_cr_sock}, my($_next), 1;  # block
+   1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
 
    return 1;
 }
@@ -2177,7 +2208,7 @@ sub WRITE {
    chomp(my $_ret = <$_DAU_W_SOCK>);
    $_dat_un->();
 
-   $_ret ? $_ret : undef;
+   (length $_ret) ? $_ret : undef;
 }
 
 ###############################################################################
@@ -2202,7 +2233,7 @@ sub await {
    _req1('O~QUA', $_id.$LF . $_t.$LF);
 
    $_rdy->($_Q->{_ar_sock}) if $_is_MSWin32;
-   sysread $_Q->{_ar_sock}, my($_next), 1;  # block
+   1 until sysread($_Q->{_ar_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
 
    return;
 }
@@ -2222,7 +2253,7 @@ sub dequeue {
    }
 
    $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
-   sysread $_Q->{_qr_sock}, my($_next), 1;  # block
+   1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
 
    _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt);
 }
@@ -2295,7 +2326,7 @@ sub STORE {
       _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
    }
    _auto('STORE', @_);
-   $_[-1];
+   1;
 }
 
 sub set {
@@ -2328,7 +2359,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.817
+This document describes MCE::Shared::Server version 1.818
 
 =head1 DESCRIPTION
 

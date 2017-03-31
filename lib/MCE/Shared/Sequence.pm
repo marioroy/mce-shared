@@ -6,13 +6,14 @@
 
 package MCE::Shared::Sequence;
 
-use 5.010001;
 use strict;
 use warnings;
 
+use 5.010001;
+
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.817';
+our $VERSION = '1.818';
 
 use Scalar::Util qw( looks_like_number );
 use MCE::Shared::Base;
@@ -214,7 +215,7 @@ MCE::Shared::Sequence - Sequence helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Sequence version 1.817
+This document describes MCE::Shared::Sequence version 1.818
 
 =head1 DESCRIPTION
 
