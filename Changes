@@ -1,6 +1,12 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.819 Fri Mar 31 19:30:00 EST 2017
+
+  * Calibrated the number of data-channels for IPC.
+
+  * Bumped MCE dependency to 1.823.
+
 1.818 Fri Mar 31 11:00:00 EST 2017
 
   * Check for EINTR during sysread and syswrite.
