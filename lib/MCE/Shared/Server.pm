@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.819';
+our $VERSION = '1.820';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -76,7 +76,7 @@ use MCE::Mutex;
 
 use constant {
    # Max data channels. This cannot be greater than 8 on MSWin32.
-   DATA_CHANNELS => ($^O =~ /mswin|mingw|msys|cygwin/i) ? 8 : 16,
+   DATA_CHANNELS => ($^O eq 'MSWin32') ? 8 : 12,
 
    MAX_DQ_DEPTH  => 192,  # Maximum dequeue notifications
    WA_ARRAY      =>   1,  # Wants list
@@ -2359,7 +2359,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.819
+This document describes MCE::Shared::Server version 1.820
 
 =head1 DESCRIPTION
 

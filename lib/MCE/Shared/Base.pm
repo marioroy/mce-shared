@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.819';
+our $VERSION = '1.820';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -327,7 +327,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.819
+This document describes MCE::Shared::Base version 1.820
 
 =head1 DESCRIPTION
 

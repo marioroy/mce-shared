@@ -1,6 +1,13 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.820 Sat Apr 01 01:00:00 EST 2017
+
+  * Completed validation for running MCE on a box having 100+ cores.
+  * Tuned the number of data-channels for IPC, similar to MCE.
+
+  * Bumped MCE dependency to 1.824.
+
 1.819 Fri Mar 31 19:30:00 EST 2017
 
   * Calibrated the number of data-channels for IPC.
