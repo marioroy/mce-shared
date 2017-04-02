@@ -13,16 +13,20 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.820';
+our $VERSION = '1.821';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
 use Scalar::Util qw( looks_like_number );
 use MCE::Shared::Base;
 use MCE::Util ();
+use MCE::Mutex;
 
 use constant {
    MAX_DQ_DEPTH => 192,  # Maximum dequeue notifications
+
+   MUTEX_LOCKS  => 6,    # Number of mutex locks for 1st level defense
+                         # against many workers waiting to dequeue
 };
 
 use overload (
@@ -62,8 +66,12 @@ sub DESTROY {
 
    undef $_Q->{_datp}, undef $_Q->{_datq}, undef $_Q->{_heap};
 
-   MCE::Util::_destroy_socks($_Q, qw(_aw_sock _ar_sock _qw_sock _qr_sock))
-      if $_Q->{_init_pid} eq $_pid;
+   if ($_Q->{_init_pid} eq $_pid) {
+      MCE::Util::_destroy_socks($_Q, qw(_aw_sock _ar_sock _qw_sock _qr_sock));
+      for my $_i (0 .. MUTEX_LOCKS - 1) {
+         delete $_Q->{'_mutex_'.$_i};
+      }
+   }
 
    return;
 }
@@ -123,6 +131,10 @@ sub new {
 
    $_Q->{_init_pid} = $_has_threads ? $$ .'.'. $_tid : $$;
    $_Q->{_dsem} = 0 if ($_Q->{_fast});
+
+   for my $_i (0 .. MUTEX_LOCKS - 1) {
+      $_Q->{'_mutex_'.$_i} = MCE::Mutex->new( impl => 'Channel' );
+   }
 
    MCE::Util::_sock_pair($_Q, qw(_qr_sock _qw_sock));
    MCE::Util::_sock_pair($_Q, qw(_ar_sock _aw_sock)) if $_Q->{_await};
@@ -671,7 +683,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.820
+This document describes MCE::Shared::Queue version 1.821
 
 =head1 DESCRIPTION
 

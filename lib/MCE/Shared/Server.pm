@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.820';
+our $VERSION = '1.821';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -79,7 +79,7 @@ use constant {
    DATA_CHANNELS => ($^O eq 'MSWin32') ? 8 : 12,
 
    MAX_DQ_DEPTH  => 192,  # Maximum dequeue notifications
-   WA_ARRAY      =>   1,  # Wants list
+   WA_ARRAY      => 1,    # Wants list
 
    SHR_M_NEW => 'M~NEW',  # New share
    SHR_M_CID => 'M~CID',  # ClientID request
@@ -202,6 +202,7 @@ sub _new {
       }
       for my $_k (qw(
          _qw_sock _qr_sock _aw_sock _ar_sock _cw_sock _cr_sock _mutex
+         _mutex_0 _mutex_1 _mutex_2 _mutex_3 _mutex_4 _mutex_5
       )) {
          if (defined $_[1]->{ $_k }) {
             $_hndls{ $_k } = delete $_[1]->{ $_k };
@@ -349,7 +350,7 @@ sub _start {
    setsockopt($_SVR->{_dat_r_sock}[0], SOL_SOCKET, SO_RCVBUF, 4096)
       if ($^O ne 'aix' && $^O ne 'linux');
 
-   MCE::Shared::Object::_server_init();
+   MCE::Shared::Object::_start();
 
    if ($_spawn_child) {
       $_svr_pid = fork();
@@ -390,6 +391,8 @@ sub _stop {
       for my $_i (1 .. $_SVR->{_data_channels}) {
          delete $_SVR->{'_mutex_'.$_i};
       }
+
+      MCE::Shared::Object::_stop();
 
       $_init_pid = $_svr_pid = undef;
    }
@@ -874,8 +877,8 @@ sub _loop {
             elsif ( $_all{ $_id } =~ /^MCE::Shared::(?:Condvar|Queue)$/ ) {
                my %_ret = %{ $_obj{ $_id } }; bless \%_ret, $_all{ $_id };
                delete @_ret{ qw(
-                  _qw_sock _qr_sock _aw_sock _ar_sock
-                  _cw_sock _cr_sock _mutex
+                  _qw_sock _qr_sock _aw_sock _ar_sock _cw_sock _cr_sock _mutex
+                  _mutex_0 _mutex_1 _mutex_2 _mutex_3 _mutex_4 _mutex_5
                ) };
                $_buf = $_freeze->(\%_ret);
             }
@@ -1483,6 +1486,9 @@ use bytes;
 use constant {
    _ID    => 0, _CLASS => 1, _DREF   => 2, _ITER => 3,  # shared object
    _UNDEF => 0, _ARRAY => 1, _SCALAR => 2,              # wantarray
+
+   MUTEX_LOCKS => 6,  # Number of mutex locks for 1st level defense
+                      # against many workers waiting to dequeue
 };
 
 my %_hash_deref_allow = (qw/
@@ -1530,6 +1536,15 @@ my ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_chn, $_dat_ex, $_dat_un);
 my $_blessed = \&Scalar::Util::blessed;
 my $_rdy     = \&MCE::Util::_sock_ready;
 
+BEGIN {
+   $_dat_ex = sub {
+      _croak(
+         "\nPlease start the shared-manager process manually when ready.\n",
+         "Or see section labeled \"Extra Functionality\" in MCE::Shared.\n\n"
+      );
+   };
+}
+
 # Hook for threads.
 
 sub CLONE {
@@ -1568,7 +1583,7 @@ sub TIEHANDLE { $_[1] }
 sub TIEHASH   { $_[1] }
 sub TIESCALAR { $_[1] }
 
-sub _server_init {
+sub _start {
    $_chn        = 1;
    $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
@@ -1580,6 +1595,19 @@ sub _server_init {
    };
    $_dat_un = sub {
       1 until syswrite($_DAT_LOCK->{_w_sock}, '0') || ($! && !$!{'EINTR'});
+   };
+
+   return;
+}
+
+sub _stop {
+   $_DAT_LOCK = $_DAT_W_SOCK = $_DAU_W_SOCK = $_chn = $_dat_un = undef;
+
+   $_dat_ex = sub {
+      _croak(
+         "\nPlease start the shared-manager process manually when ready.\n",
+         "Or see section labeled \"Extra Functionality\" in MCE::Shared.\n\n"
+      );
    };
 
    return;
@@ -1742,6 +1770,7 @@ sub _req4 {
    $_dat_ex->();
    print {$_DAT_W_SOCK} $_[0].$LF . $_chn.$LF;
    print {$_DAU_W_SOCK} $_[1];
+   $_[3]->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->unlock() if $_[3];
 
    chomp(my $_len = <$_DAU_W_SOCK>);
 
@@ -2252,10 +2281,11 @@ sub dequeue {
       $_cnt = 1;
    }
 
+   $_Q->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->lock();
    $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
    1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
 
-   _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt);
+   _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, $_Q);
 }
 
 sub dequeue_nb {
@@ -2276,7 +2306,7 @@ sub dequeue_nb {
       $_cnt = 1;
    }
 
-   _req4('O~QUN', $_id.$LF . $_cnt.$LF, $_cnt);
+   _req4('O~QUN', $_id.$LF . $_cnt.$LF, $_cnt, undef);
 }
 
 ###############################################################################
@@ -2359,7 +2389,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.820
+This document describes MCE::Shared::Server version 1.821
 
 =head1 DESCRIPTION
 
