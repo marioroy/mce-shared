@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.821';
+our $VERSION = '1.822';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -137,9 +137,10 @@ sub create {
    $func = $pkg.'::'.$func if ( !ref($func) && index($func,':') < 0 );
 
    if ( !exists $self->{posix_exit} ) {
-      $self->{posix_exit} = 1 if ( ($_has_threads && $_tid) ||
-         $INC{'CGI.pm'} || $INC{'FCGI.pm'} || $INC{'Mojo/IOLoop.pm'} ||
-         $INC{'Gearman/Util.pm'} || $INC{'Gearman/XS.pm'} || $INC{'Tk.pm'}
+      $self->{posix_exit} = 1 if (
+         ( $_has_threads && $_tid ) || $INC{'CGI.pm'} || $INC{'FCGI.pm'} ||
+         $INC{'Mojo/IOLoop.pm'} || $INC{'Tk.pm'} || $INC{'Wx.pm'} ||
+         $INC{'Gearman/Util.pm'} || $INC{'Gearman/XS.pm'}
       );
    }
 
@@ -608,7 +609,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.821
+This document describes MCE::Hobo version 1.822
 
 =head1 SYNOPSIS
 
@@ -763,7 +764,7 @@ due to a module with a C<DESTROY> or C<END> block not accounting for the process
 ID C<$$.$tid> the object was constructed under: e.g. C<Cache::BDB>.
 
 Constructing a Hobo inside a thread implies C<posix_exit => 1> or if present
-CGI.pm, FCGI.pm, Gearman::Util, Gearman::XS, Mojo::IOLoop, or Tk.
+CGI.pm, FCGI.pm, Gearman::Util, Gearman::XS, Mojo::IOLoop, Tk, or Wx.
 
    my $hobo1 = MCE::Hobo->create( { posix_exit => 1 }, sub {
       ...

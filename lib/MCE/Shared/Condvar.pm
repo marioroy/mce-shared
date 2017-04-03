@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.821';
+our $VERSION = '1.822';
 
 use MCE::Shared::Base;
 use MCE::Util ();
@@ -50,8 +50,10 @@ sub DESTROY {
    my ($_cv) = @_;
    my $_pid  = $_has_threads ? $$ .'.'. $_tid : $$;
 
-   MCE::Util::_destroy_socks($_cv, qw(_cw_sock _cr_sock))
-      if $_cv->{_init_pid} eq $_pid;
+   if ($_cv->{_init_pid} eq $_pid) {
+      MCE::Util::_destroy_socks($_cv, qw(_cw_sock _cr_sock));
+      delete $_cv->{'_mutex'};
+   }
 
    return;
 }
@@ -133,7 +135,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.821
+This document describes MCE::Shared::Condvar version 1.822
 
 =head1 DESCRIPTION
 

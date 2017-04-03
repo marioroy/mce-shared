@@ -1,6 +1,12 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.822 Sun Apr 02 23:00:00 EST 2017
+
+  * Added line for starting the shared-manager in previous change log.
+  * Is now safe running MCE::Hobo with the Wx GUI toolkit (wxWidgets).
+  * Bumped MCE dependency to 1.826.
+
 1.821 Sun Apr 02 07:00:00 EST 2017
 
   * Updated MCE::Shared::Queue. The following provides a comparison
@@ -12,8 +18,13 @@ Revision history for Perl module MCE::Shared.
 
        my $Q = MCE::Shared->queue();
 
+       # Must start the manager manually when IO::FDPass is missing.
+       # This caveat applies to Condvar, Handle, and Queue.
+
+       MCE::Shared->start() unless $INC{'IO/FDPass.pm'};
+
        $Q->enqueue( 1 .. 100000 );
-       $Q->end;
+       $Q->end();
 
        MCE->new(
            max_workers => 12, 96, or 192,
@@ -22,7 +33,7 @@ Revision history for Perl module MCE::Shared.
                    ;
                }
            }
-       )->run;
+       )->run();
 
     MCE::Shared 1.821:  12 ~ 1.325 secs  96 ~ 5.206 secs  192 ~ 8.158 secs
     MCE::Shared 1.825:     ~ 0.913 secs     ~ 1.068 secs      ~ 1.560 secs
