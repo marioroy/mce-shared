@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.822';
+our $VERSION = '1.823';
 
 use Scalar::Util qw( looks_like_number );
 use MCE::Shared::Base;
@@ -65,6 +65,15 @@ sub _reset {
    return;
 }
 
+sub _sprintf {
+   my ( $fmt, $arg ) = @_;
+
+   # remove tainted'ness
+   ($fmt) = $fmt =~ /(.*)/;
+
+   return sprintf("$fmt", $arg);
+}
+
 ###############################################################################
 ## ----------------------------------------------------------------------------
 ## Public methods.
@@ -110,7 +119,7 @@ sub next {
       $self->[_ITER] = $iter;
 
       if ( $chunk_size == 1 ) {
-         $seqn = sprintf( "%$fmt", $seqn ) if ( defined $fmt );
+         $seqn = _sprintf( "%$fmt", $seqn ) if ( defined $fmt );
          return ( $bounds_only ) ? ( $seqn, $seqn ) : $seqn;
       }
 
@@ -149,7 +158,7 @@ sub next {
          }
 
          return ( defined $fmt )
-            ? ( sprintf("%$fmt",$seqb), sprintf("%$fmt",$seqe) )
+            ? ( _sprintf("%$fmt",$seqb), _sprintf("%$fmt",$seqe) )
             : ( $seqb, $seqe );
       }
 
@@ -163,14 +172,14 @@ sub next {
          }
          for my $i ( 1 .. $chunk_size ) {
             last if ( $seqn > $endv );
-            push @n, defined $fmt ? sprintf( "%$fmt", $seqn ) : $seqn;
+            push @n, defined $fmt ? _sprintf( "%$fmt", $seqn ) : $seqn;
             $seqn = $step * $i + $begn;
          }
       }
       else {
          for my $i ( 1 .. $chunk_size ) {
             last if ( $seqn < $endv );
-            push @n, defined $fmt ? sprintf( "%$fmt", $seqn ) : $seqn;
+            push @n, defined $fmt ? _sprintf( "%$fmt", $seqn ) : $seqn;
             $seqn = $step * $i + $begn;
          }
       }
@@ -215,7 +224,7 @@ MCE::Shared::Sequence - Sequence helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Sequence version 1.822
+This document describes MCE::Shared::Sequence version 1.823
 
 =head1 DESCRIPTION
 

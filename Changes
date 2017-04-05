@@ -1,9 +1,20 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.823 Wed Apr 05 01:30:00 EST 2017
+
+  * Do not enable barrier mode in Queue if constructed inside a thread or
+    for the fast => 1 option.
+
+  * Fixed leaked handles during destruction; MCE::Shared::{ Condvar, Queue }.
+
+  * Updated MCE::Shared to not croak when running Perl in taint mode via
+    perl -T. Failing -T was MCE::Shared::{ Handle, Sequence, and Server }.
+
+  * Bumped MCE dependency to 1.827.
+
 1.822 Sun Apr 02 23:00:00 EST 2017
 
-  * Added line for starting the shared-manager in previous change log.
   * Is now safe running MCE::Hobo with the Wx GUI toolkit (wxWidgets).
   * Bumped MCE dependency to 1.826.
 

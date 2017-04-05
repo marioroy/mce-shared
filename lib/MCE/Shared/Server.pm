@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.822';
+our $VERSION = '1.823';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -448,9 +448,12 @@ sub _exit {
    $SIG{__WARN__} = sub { };
 
    # Wait for the main thread to exit.
-   sleep 3.0 if ( $_is_MSWin32 || ($_has_threads && $INC{'Tk.pm'}) );
-
-   threads->exit(0) if ( !$_spawn_child || ($_has_threads && $_is_MSWin32) );
+   if ( $_is_MSWin32 || ($_has_threads && ($INC{'Tk.pm'} || $INC{'Wx.pm'})) ) {
+      sleep 3.0;
+   }
+   if ( !$_spawn_child || ($_has_threads && $_is_MSWin32) ) {
+      threads->exit(0);
+   }
 
    CORE::kill('KILL', $$);
 }
@@ -603,6 +606,10 @@ sub _loop {
 
          if (!exists $INC{ join('/',split(/::/,$_class)).'.pm' }) {
             local $@; local $SIG{__DIE__};
+
+            # remove tainted'ness from $_class
+            ($_class) = $_class =~ /(.*)/;
+
             eval "use $_class ()";
          }
 
@@ -1025,17 +1032,26 @@ sub _loop {
                or _croak("cannot receive file handle: $!");
          }
 
-         my $_args = $_thaw->($_buf);
-
          close $_obj{ $_id } if defined fileno($_obj{ $_id });
 
+         my $_args = $_thaw->($_buf);
+         my $_fh;
+
          if (@{ $_args } == 2) {
-            open( $_obj{ $_id }, "$_args->[0]", $_args->[1] )
-               or do { $_err = 0+$! };
-         } else {
-            open( $_obj{ $_id }, $_args->[0] )
-               or do { $_err = 0+$! };
+            # remove tainted'ness from $_args
+            ($_args->[0]) = $_args->[0] =~ /(.*)/;
+            ($_args->[1]) = $_args->[1] =~ /(.*)/;
+
+            open($_fh, "$_args->[0]", $_args->[1]) or do { $_err = 0+$! };
          }
+         else {
+            # remove tainted'ness from $_args
+            ($_args->[0]) = $_args->[0] =~ /(.*)/;
+
+            open($_fh, $_args->[0]) or do { $_err = 0+$! };
+         }
+
+         *{ $_obj{ $_id } } = *{ $_fh };
 
          print {$_DAU_R_SOCK} $_err.$LF;
 
@@ -1566,7 +1582,11 @@ sub DESTROY {
          return if ($INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED);
          return if ($MCE::Shared::Server::KILLED);
 
-         delete($_new{ $_id }), _req2('M~DES', $_id.$LF, '');
+         delete($_all{ $_id }),
+         delete($_obj{ $_id }),
+         delete($_new{ $_id });
+
+         _req2('M~DES', $_id.$LF, '');
       }
    }
 
@@ -1882,6 +1902,10 @@ sub export {
 
    if (!exists $INC{ join('/',split(/::/,$_class)).'.pm' }) {
       local $@; local $SIG{__DIE__};
+
+      # remove tainted'ness from $_class
+      ($_class) = $_class =~ /(.*)/;
+
       eval "use $_class ()";
    }
 
@@ -2281,11 +2305,20 @@ sub dequeue {
       $_cnt = 1;
    }
 
-   $_Q->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->lock();
-   $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
-   1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+   if (exists $_Q->{'_mutex_0'}) {
+      $_Q->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->lock();
 
-   _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, $_Q);
+      $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
+      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+
+      _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, $_Q);
+   }
+   else {
+      $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
+      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+
+      _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, undef);
+   }
 }
 
 sub dequeue_nb {
@@ -2389,7 +2422,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.822
+This document describes MCE::Shared::Server version 1.823
 
 =head1 DESCRIPTION
 
