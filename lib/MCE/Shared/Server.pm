@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.823';
+our $VERSION = '1.824';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -1172,7 +1172,7 @@ sub _loop {
 
          WRITE: {
             $_wrote += ( syswrite (
-               $_obj{ $_id }, length($_buf) - $_wrote, $_wrote
+               $_obj{ $_id }, $_buf, length($_buf) - $_wrote, $_wrote
             )) || do {
                if ( $! ) {
                   redo WRITE if $!{'EINTR'};
@@ -2422,7 +2422,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.823
+This document describes MCE::Shared::Server version 1.824
 
 =head1 DESCRIPTION
 

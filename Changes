@@ -1,6 +1,10 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.824 Thu Apr 06 18:00:00 EST 2017
+
+  * Fixed bug introduced in 1.818, syswrite data to a shared file handle.
+
 1.823 Wed Apr 05 01:30:00 EST 2017
 
   * Do not enable barrier mode in Queue if constructed inside a thread or

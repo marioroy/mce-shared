@@ -29,6 +29,12 @@ for (1 .. 9) {
 
 close $fh;
 
+{
+   mce_open my $fh, ">>:raw", $tmp_file;
+   syswrite $fh, "foo";
+   close $fh;
+}
+
 ## --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
 # mce_open $fh, "<:raw", $tmp_file or die "open error: $!";
@@ -53,11 +59,13 @@ close $fh;
 
 like( $fno, qr/\A\d+\z/, 'shared file, OPEN, FILENO, CLOSE' );
 
-is( $buf, '1 12 23 34 45 56 67 78 89 9', 'shared file, PRINT, PRINTF, READLINE' );
+is( $buf, '1 12 23 34 45 56 67 78 89 9foo',
+    'shared file, PRINT, PRINTF, READLINE, WRITE'
+);
 
 is( $ret1, '',   'shared file, EOF (test 1)' );
 is( $ret2, '1',  'shared file, EOF (test 2)' );
-is( $ret3, '45', 'shared file, TELL' );
+is( $ret3, '48', 'shared file, TELL' );
 is( $ret4, ' 3', 'shared file, SEEK, READ' );
 is( $ret5, "\n", 'shared file, GETC' );
 
