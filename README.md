@@ -1,6 +1,6 @@
 ## MCE::Shared for Perl
 
-This document describes MCE::Shared version 1.824.
+This document describes MCE::Shared version 1.825.
 
 ### Description
 
@@ -103,9 +103,10 @@ MCE::Shared utilizes the following modules:
     constant
     overload
     Carp
-    IO::FDPass 1.2+ (optional, recommended on UNIX and Windows)
-    MCE::Mutex 1.827+
-    MCE::Util  1.827+
+    IO::FDPass  1.2+ (optional, recommended on UNIX and Windows)
+    MCE::Mutex  1.828+
+    MCE::Util   1.828+
+    MCE::Signal 1.828+
     Scalar::Util
     Sereal::Decoder 3.015+ (optional)
     Sereal::Encoder 3.015+ (optional)

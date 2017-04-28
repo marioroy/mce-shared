@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.824';
+our $VERSION = '1.825';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -216,46 +216,23 @@ sub _find_hash {
 sub _stringify { no overloading;    "$_[0]" }
 sub _numify    { no overloading; 0 + $_[0]  }
 
-# Croak and die handler.
+# Croak handler.
 
 sub _croak {
-   if (defined $MCE::VERSION) {
+   if ( $INC{'MCE.pm'} ) {
       goto &MCE::_croak;
+   }
+   elsif ( $INC{'MCE::Signal.pm'} ) {
+      $SIG{__DIE__}  = \&MCE::Signal::_die_handler;
+      $SIG{__WARN__} = \&MCE::Signal::_warn_handler;
+
+      $\ = undef; goto &Carp::croak;
    }
    else {
       require Carp unless $INC{'Carp.pm'};
-      $SIG{__DIE__} = \&_die;
-      goto &Carp::croak;
+
+      $\ = undef; goto &Carp::croak;
    }
-}
-
-sub _die {
-   if (!defined $^S || $^S) {
-      if ( ($INC{'threads.pm'} && threads->tid() != 0) ||
-            $ENV{'PERL_IPERL_RUNNING'}
-      ) {
-         # thread env or running inside IPerl, check stack trace
-         my $_t = Carp::longmess(); $_t =~ s/\teval [^\n]+\n$//;
-         if ( $_t =~ /^(?:[^\n]+\n){1,7}\teval / ||
-              $_t =~ /\n\teval [^\n]+\n\t(?:eval|Try)/ )
-         {
-            CORE::die(@_);
-         }
-      }
-      else {
-         # normal env, trust $^S
-         CORE::die(@_);
-      }
-   }
-
-   local $\ = undef;
-   print {*STDERR} $_[0] if defined $_[0];
-
-   ($^O eq 'MSWin32')
-      ? CORE::kill('KILL', -$$, $$)
-      : CORE::kill('INT', -getpgrp);
-
-   CORE::exit($?);
 }
 
 ###############################################################################
@@ -272,8 +249,6 @@ use warnings;
 use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
-
-use bytes;
 
 # pipeline ( [ func1, @args ], [ func2, @args ], ... )
 
@@ -327,7 +302,7 @@ MCE::Shared::Base - Base package for helper classes
 
 =head1 VERSION
 
-This document describes MCE::Shared::Base version 1.824
+This document describes MCE::Shared::Base version 1.825
 
 =head1 DESCRIPTION
 

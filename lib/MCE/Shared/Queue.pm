@@ -13,14 +13,14 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.824';
+our $VERSION = '1.825';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
 use Scalar::Util qw( looks_like_number );
-use MCE::Shared::Base;
+use MCE::Shared::Base ();
 use MCE::Util ();
-use MCE::Mutex;
+use MCE::Mutex ();
 
 use constant {
    MAX_DQ_DEPTH => 192,  # Maximum dequeue notifications
@@ -137,9 +137,11 @@ sub new {
 
    my $_caller = caller() eq 'MCE::Shared' ? caller(1) : caller();
 
-   if ($_caller !~ /^MCE::/ && $_tid == 0 && $_Q->{_fast} == 0) {
-      for my $_i (0 .. MUTEX_LOCKS - 1) {
-         $_Q->{'_mutex_'.$_i} = MCE::Mutex->new( impl => 'Channel' );
+   if ($^O ne 'MSWin32' && $_tid == 0 && $_Q->{_fast} == 0) {
+      if ($_caller !~ /^MCE::/) {
+         for my $_i (0 .. MUTEX_LOCKS - 1) {
+            $_Q->{'_mutex_'.$_i} = MCE::Mutex->new( impl => 'Channel' );
+         }
       }
    }
 
@@ -690,7 +692,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.824
+This document describes MCE::Shared::Queue version 1.825
 
 =head1 DESCRIPTION
 

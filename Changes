@@ -1,14 +1,30 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.825 Fri Apr 28 16:00:00 EST 2017
+
+  [BUG FIXES]
+
+  * Do not enable barrier mode for Queue on the Windows platform.
+  * Fixed MCE::Hobo on the Windows platform for older Perl < v5.16.
+
+  [ENHANCEMENTS]
+
+  * Added Curses and Prima to list for enabling the posix_exit option.
+  * Added module option for using a class implicitly when tie'ing a variable.
+  * Added unbless option when exporting a shared object. Thank you, Nick Tonkin.
+  * Improved support for running MCE::Hobo on the NetBSD platform.
+  * Enhanced IPC and signal handling. Reduced memory consumption.
+  * Bumped MCE dependency to 1.828.
+
 1.824 Thu Apr 06 18:00:00 EST 2017
 
   * Fixed bug introduced in 1.818, syswrite data to a shared file handle.
 
 1.823 Wed Apr 05 01:30:00 EST 2017
 
-  * Do not enable barrier mode in Queue if constructed inside a thread or
-    for the fast => 1 option.
+  * Do not enable barrier mode for Queue if constructed inside a thread
+    or for the fast => 1 option.
 
   * Fixed leaked handles during destruction; MCE::Shared::{ Condvar, Queue }.
 

@@ -15,7 +15,7 @@ MCE::Flow::init {
    max_workers => 1
 };
 
-tie my %h1, 'MCE::Shared', max_keys => 100;
+tie my %h1, 'MCE::Shared', { module => 'MCE::Shared::Cache' }, max_keys => 100;
 
 is( tied(%h1)->blessed, 'MCE::Shared::Cache', 'shared cache, tied ref' );
 

@@ -63,9 +63,9 @@ is( $s2, 21, 'shared array, check storesize' );
 is( $a5->[0], 20, 'shared array, check value' );
 
 MCE::Flow::run( sub {
-   $e1 = exists $a1[1] ? 1 : 0;
-   $d1 = delete $a1[1];
-   $e2 = exists $a1[1] ? 1 : 0;
+   $e1 = defined $a1[1] ? 1 : 0;
+   $d1 = delete  $a1[1];
+   $e2 = exists  $a1[1] ? 1 : 0;
    @a1 = (); $s1 = scalar @a1;
    $a1[2] = [ 'wind', 'air' ];
 });

@@ -15,7 +15,9 @@ MCE::Flow::init {
    max_workers => 1
 };
 
-tie my %h1, 'MCE::Shared', { ordered => 1 }, ( k1 => 10, k2 => '', k3 => '' );
+tie my %h1, 'MCE::Shared', { module => 'MCE::Shared::Ordhash' }, (
+   k1 => 10, k2 => '', k3 => ''
+);
 
 is( tied(%h1)->blessed(), 'MCE::Shared::Ordhash', 'shared ordhash, tied ref' );
 

@@ -13,10 +13,10 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.824';
+our $VERSION = '1.825';
 
 use Scalar::Util qw( looks_like_number );
-use MCE::Shared::Base;
+use MCE::Shared::Base ();
 
 use constant {
    _BEGV => 0,  # sequence begin value
@@ -224,7 +224,7 @@ MCE::Shared::Sequence - Sequence helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Sequence version 1.824
+This document describes MCE::Shared::Sequence version 1.825
 
 =head1 DESCRIPTION
 

@@ -13,14 +13,14 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.824';
+our $VERSION = '1.825';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
-use MCE::Shared::Base;
+use MCE::Shared::Base ();
 use bytes;
 
 sub import {
@@ -61,12 +61,12 @@ sub EOF     { eof($_[0]) }
 sub TELL    { tell($_[0]) }
 sub FILENO  { fileno($_[0]) }
 sub SEEK    { seek($_[0], $_[1], $_[2]) }
-sub CLOSE   { close($_[0]) }
+sub CLOSE   { close($_[0]) if defined fileno($_[0]) }
 sub BINMODE { binmode($_[0], $_[1] || ':raw') }
 sub GETC    { getc($_[0]) }
 
 sub OPEN {
-   $_[0]->CLOSE if defined ( $_[0]->FILENO );
+   close($_[0]) if defined fileno($_[0]);
 
    if ( @_ == 3 && ref $_[2] && defined( my $_fd = fileno($_[2]) ) ) {
       return CORE::open($_[0], $_[1]."&=$_fd");
@@ -238,7 +238,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.824
+This document describes MCE::Shared::Handle version 1.825
 
 =head1 DESCRIPTION
 

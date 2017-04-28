@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.824';
+our $VERSION = '1.825';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -25,7 +25,7 @@ use Carp ();
 my ($_has_threads, $_freeze, $_thaw);
 
 BEGIN {
-   local $@; local $SIG{__DIE__};
+   local $@;
 
    if ($^O eq 'MSWin32' && !$INC{'threads.pm'}) {
       eval 'use threads; use threads::shared';
@@ -66,8 +66,8 @@ use constant { _WNOHANG => $^O eq 'solaris' ? 64 : 1 };
 use Time::HiRes qw(sleep);
 use bytes;
 
-use MCE::Shared::Ordhash;
-use MCE::Shared::Hash;
+use MCE::Shared::Ordhash ();
+use MCE::Shared::Hash ();
 use MCE::Shared ();
 
 use overload (
@@ -77,6 +77,7 @@ use overload (
 );
 
 my $_tid = $_has_threads ? threads->tid() : 0;
+my $_lock : shared = 1;
 
 sub import {
    no strict 'refs'; no warnings 'redefine';
@@ -138,8 +139,9 @@ sub create {
 
    if ( !exists $self->{posix_exit} ) {
       $self->{posix_exit} = 1 if (
-         ( $_has_threads && $_tid ) || $INC{'CGI.pm'} || $INC{'FCGI.pm'} ||
-         $INC{'Mojo/IOLoop.pm'} || $INC{'Tk.pm'} || $INC{'Wx.pm'} ||
+         ( $_has_threads && $_tid ) || $INC{'Mojo/IOLoop.pm'} ||
+         $INC{'Curses.pm'} || $INC{'CGI.pm'} || $INC{'FCGI.pm'} ||
+         $INC{'Prima.pm'} || $INC{'Tk.pm'} || $INC{'Wx.pm'} ||
          $INC{'Gearman/Util.pm'} || $INC{'Gearman/XS.pm'}
       );
    }
@@ -167,6 +169,8 @@ sub create {
 
    my $seed = $_STAT->{$pkg}->get("$mgr_id:seed");
    my $id   = $_STAT->{$pkg}->incr("$mgr_id:id");
+
+   lock($_lock), sleep(0.01) if ($_tid && $^O eq 'netbsd');
 
    _dispatch( $self, $pkg, $seed, $id, $mgr_id, $func, @_ );
 }
@@ -197,16 +201,16 @@ sub exit {
 
    if ( $wrk_id == $$ ) {
       $_[0] ? die "Hobo exited ($_[0])\n" : die "Hobo exited (0)\n";
-      goto &_exit; # not reached
+      _exit(); # not reached
    }
    elsif ( $mgr_id eq "$$.$_tid" ) {
       return $self if ( exists $self->{JOINED} );
       sleep 0.015 until $_STAT->{ caller() }->get($mgr_id)->exists($wrk_id);
 
       if ($^O eq 'MSWin32') {
-         sleep(0.015), CORE::kill('KILL', $wrk_id) if CORE::kill('ZERO', $wrk_id);
+         CORE::kill('KILL', $wrk_id) if CORE::kill('ZERO', $wrk_id);
       } else {
-         sleep(0.015), CORE::kill('QUIT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
+         CORE::kill('QUIT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
       }
 
       $self;
@@ -226,8 +230,7 @@ sub finish {
       for my $k ( keys %{ $_LIST } ) { MCE::Hobo->finish($k); }
    }
    elsif ( exists $_LIST->{$pkg} ) {
-      return if ( $INC{'MCE/Signal.pm'} && $MCE::Signal::KILLED );
-      return if ( $MCE::Shared::Server::KILLED );
+      return if $MCE::Signal::KILLED;
 
       my $mgr_id = "$$.$_tid";
 
@@ -235,7 +238,7 @@ sub finish {
          my $count = 0;
 
          if ( $_LIST->{$pkg}->len ) {
-            sleep 0.225;
+            sleep 0.1;
 
             for my $hobo ( $_LIST->{$pkg}->vals ) {
                if ( $hobo->is_running ) {
@@ -247,7 +250,8 @@ sub finish {
             }
          }
 
-         warn "Finished with active Hobos ($count)\n" if $count;
+         warn "Finished with active Hobos ($count)\n"
+            if ($count && $^O ne 'MSWin32');
 
          $_DATA->{$pkg}->del( $mgr_id )->destroy;
          $_STAT->{$pkg}->del( $mgr_id )->destroy;
@@ -353,13 +357,10 @@ sub kill {
    elsif ( $mgr_id eq "$$.$_tid" ) {
       return $self if ( exists $self->{JOINED} );
       sleep 0.015 until $_STAT->{$pkg}->get($mgr_id)->exists($wrk_id);
-
-      sleep(0.015), CORE::kill($signal || 'INT', $wrk_id)
-         if CORE::kill('ZERO', $wrk_id);
+      CORE::kill($signal || 'INT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
    }
    else {
-      CORE::kill($signal || 'INT', $wrk_id)
-         if CORE::kill('ZERO', $wrk_id);
+      CORE::kill($signal || 'INT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
    }
 
    $self;
@@ -465,7 +466,7 @@ sub yield {
 ###############################################################################
 
 sub _croak {
-   if ( defined $MCE::VERSION ) {
+   if ( $INC{'MCE.pm'} ) {
       goto &MCE::_croak;
    }
    else {
@@ -487,6 +488,7 @@ sub _dispatch {
    }
    elsif ( $pid ) {                                 # parent
       $self->{WRK_ID} = $pid, $_LIST->{$pkg}->set($pid, $self);
+
       return $self;
    }
 
@@ -494,8 +496,11 @@ sub _dispatch {
 
    $ENV{PERL_MCE_IPC} = 'win32' if ($^O eq 'MSWin32');
    $SIG{TERM} = $SIG{INT} = $SIG{HUP} = \&_trap;
-   $SIG{QUIT} = \&_exit;
+   $SIG{QUIT} = \&_quit;
 
+   if (UNIVERSAL::can('Prima', 'cleanup')) {
+      no warnings 'redefine'; local $@; eval '*Prima::cleanup = sub {}';
+   }
    {
       local $!;
       # IO::Handle->autoflush not available in older Perl.
@@ -547,7 +552,7 @@ sub _dispatch {
 
    $_DATA->{$pkg}->get($mgr_id)->set($wrk_id, $_freeze->(\@res));
 
-   goto &_exit;
+   _exit();
 }
 
 sub _error {
@@ -563,13 +568,20 @@ sub _exit {
    ## Check nested Hobo workers not yet joined.
    MCE::Hobo->finish('MCE') if $INC{'MCE/Hobo.pm'};
 
+   lock $_lock if ($_tid && $^O eq 'netbsd');
+
    ## Exit child process.
    $SIG{__DIE__}  = sub { } unless $_tid;
    $SIG{__WARN__} = sub { };
 
-   threads->exit(0) if ($_has_threads && $^O eq 'MSWin32');
+   if ($_has_threads && $^O eq 'MSWin32') {
+      threads->exit(0);
+   }
+   elsif ($_SELF->{posix_exit} && $^O ne 'MSWin32') {
+      eval { MCE::Mutex::Channel::_destroy() };
+      CORE::kill('KILL', $$);
+   }
 
-   CORE::kill('KILL', $$) if $_SELF->{posix_exit};
    CORE::exit(0);
 }
 
@@ -586,11 +598,17 @@ sub _notify {
    $_DATA->{$pkg}->get($mgr_id)->set($wrk_id, $_freeze->([]));
 }
 
-sub _trap {
-   local $\; $SIG{ $_[0] } = sub { };
-   print {*STDERR} "Signal $_[0] received in process $$\n";
+sub _quit {
+   $SIG{ $_[0] } = sub { };
+   delete $_SELF->{_pkg};
 
-   goto &_exit;
+   _exit();
+}
+
+sub _trap {
+   $SIG{ $_[0] } = sub { };
+
+   _exit();
 }
 
 1;
@@ -609,7 +627,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.824
+This document describes MCE::Hobo version 1.825
 
 =head1 SYNOPSIS
 
@@ -695,9 +713,6 @@ release reverts back to spawning children on all supported platforms.
 C<MCE::Hobo> may be used as a standalone or together with C<MCE>
 including running alongside C<threads>.
 
-   use strict;
-   use warnings;
-
    use MCE::Hobo;
    use MCE::Shared;
 
@@ -764,7 +779,7 @@ due to a module with a C<DESTROY> or C<END> block not accounting for the process
 ID C<$$.$tid> the object was constructed under: e.g. C<Cache::BDB>.
 
 Constructing a Hobo inside a thread implies C<posix_exit => 1> or if present
-CGI.pm, FCGI.pm, Gearman::Util, Gearman::XS, Mojo::IOLoop, Tk, or Wx.
+CGI, FCGI, Curses, Gearman::Util, Gearman::XS, Mojo::IOLoop, Prima, Tk, or Wx.
 
    my $hobo1 = MCE::Hobo->create( { posix_exit => 1 }, sub {
       ...

@@ -13,14 +13,18 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.824';
+our $VERSION = '1.825';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
+use Carp;
+
+$Carp::Internal{ (__PACKAGE__) }++;
+
 use Scalar::Util qw( blessed refaddr );
-use MCE::Shared::Server;
+use MCE::Shared::Server ();
 
 our @CARP_NOT = qw(
    MCE::Shared::Array   MCE::Shared::Condvar  MCE::Shared::Handle
@@ -268,38 +272,22 @@ if ( $INC{'PDL.pm'} ) {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Private functions.
+## TIE support.
 ##
 ###############################################################################
 
-sub TIEARRAY  { shift; MCE::Shared->array(@_) }
-sub TIESCALAR { shift; MCE::Shared->scalar(@_) }
-
-sub TIEHASH {
+sub TIEARRAY {
    shift;
-   my ($_cache, $_ordered);
+   if (ref($_[0]) eq 'HASH' && exists $_[0]->{'module'}) {
+      local $@; my $_obj; _use( my $_module = shift->{'module'} );
 
-   if ( ref $_[0] eq 'HASH' ) {
-      if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} ) {
-         $_ordered = 1; shift();
-      } elsif ( exists $_[0]->{'max_age'} || exists $_[0]->{'max_keys'} ) {
-         $_cache   = 1;
-      }
+      eval { $_obj = $_module->TIEARRAY(@_) };
+      _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
+
+      MCE::Shared->share($_obj);
    }
    else {
-      if ( @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) ) {
-         $_ordered = $_[1]; splice(@_, 0, 2);
-      } elsif ( @_ < 5 && ( $_[0] eq 'max_age' || $_[0] eq 'max_keys' ) ) {
-         $_cache   = 1;
-      }
-   }
-
-   if ( $_cache ) {
-      MCE::Shared->cache(@_);
-   } elsif ( $_ordered ) {
-      MCE::Shared->ordhash(@_);
-   } else {
-      MCE::Shared->hash(@_);
+      MCE::Shared->array(@_);
    }
 }
 
@@ -307,12 +295,72 @@ sub TIEHANDLE {
    require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
    my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) ); shift;
    if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
+
    $_item;
 }
 
+sub TIEHASH {
+   shift;
+   if (ref($_[0]) eq 'HASH' && exists $_[0]->{'module'}) {
+      local $@; my $_obj; _use( my $_module = shift->{'module'} );
+
+      eval { $_obj = $_module->TIEHASH(@_) };
+      _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
+
+      MCE::Shared->share($_obj);
+   }
+   else {
+      my ($_cache, $_ordered);
+
+      if ( ref $_[0] eq 'HASH' ) {
+         if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} ) {
+            $_ordered = 1; shift();
+         } elsif ( exists $_[0]->{'max_age'} || exists $_[0]->{'max_keys'} ) {
+            $_cache   = 1;
+         }
+      }
+      else {
+         if ( @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) ) {
+            $_ordered = $_[1]; splice(@_, 0, 2);
+         } elsif ( @_ < 5 && ( $_[0] eq 'max_age' || $_[0] eq 'max_keys' ) ) {
+            $_cache   = 1;
+         }
+      }
+
+      if ( $_cache ) {
+         MCE::Shared->cache(@_);
+      } elsif ( $_ordered ) {
+         MCE::Shared->ordhash(@_);
+      } else {
+         MCE::Shared->hash(@_);
+      }
+   }
+}
+
+sub TIESCALAR {
+   shift;
+   if (ref($_[0]) eq 'HASH' && exists $_[0]->{'module'}) {
+      local $@; my $_obj; _use( my $_module = shift->{'module'} );
+
+      eval { $_obj = $_module->TIESCALAR(@_) };
+      _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
+
+      MCE::Shared->share($_obj);
+   }
+   else {
+      MCE::Shared->scalar(@_);
+   }
+}
+
+###############################################################################
+## ----------------------------------------------------------------------------
+## Private functions.
+##
+###############################################################################
+
 sub _croak {
    $_count = 0, %_lkup = ();
-   if ( defined $MCE::VERSION ) {
+   if ( $INC{'MCE.pm'} ) {
       goto &MCE::_croak;
    } else {
       require MCE::Shared::Base unless $INC{'MCE/Shared/Base.pm'};
@@ -342,6 +390,16 @@ sub _share {
    );
 }
 
+sub _use {
+   my $_class = $_[0];
+   local $@; return if eval q{
+      $_class->can('TIEARRAY')  || $_class->can('TIEHASH') ||
+      $_class->can('TIESCALAR') || $_class->can('new')
+   };
+   eval "use $_class ()";
+   _croak("Could not load module $_class: $@\n") if $@;
+}
+
 1;
 
 __END__
@@ -358,11 +416,11 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.824
+This document describes MCE::Shared version 1.825
 
 =head1 SYNOPSIS
 
-   # OO construction
+   # OO construction.
 
    use MCE::Shared;
 
@@ -378,28 +436,39 @@ This document describes MCE::Shared version 1.824
    my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
    my $ob = MCE::Shared->share( $blessed_object );
 
-   # open function in MCE::Shared 1.002 and later
+   # Open function available since 1.002.
 
    mce_open my $fh, ">", "/foo/bar.log" or die "open error: $!";
 
-   # Tie construction
+   # Tie construction. The module option, available since 1.825.
 
-   use feature 'say';
-
+   use v5.10;
    use MCE::Flow;
    use MCE::Shared;
 
-   tie my $var, 'MCE::Shared', 'initial value';
+   my %args  = ( max_keys => 500, max_age => 60 );
+   my @pairs = ( foo => 'bar', woo => 'baz' );
+   my @list  = ( 'a' .. 'z' );
+
+   tie my $va1, 'MCE::Shared', { module => 'MCE::Shared::Scalar' }, 'foo';
+   tie my @ar1, 'MCE::Shared', { module => 'MCE::Shared::Array' }, @list;
+   tie my %ca1, 'MCE::Shared', { module => 'MCE::Shared::Cache' }, %args;
+   tie my %ha1, 'MCE::Shared', { module => 'MCE::Shared::Hash' }, @pairs;
+   tie my %oh1, 'MCE::Shared', { module => 'MCE::Shared::Ordhash' }, @pairs;
+   tie my %oh2, 'MCE::Shared', { module => 'Hash::Ordered' }, @pairs;
+   tie my %oh3, 'MCE::Shared', { module => 'Tie::IxHash' }, @pairs;
+   tie my $cy1, 'MCE::Shared', { module => 'Tie::Cycle' }, [ 1 .. 8 ];
+
    tie my @ary, 'MCE::Shared', qw( a list of values );
-   tie my %ha,  'MCE::Shared', ( key1 => 'value', key2 => 'value' );
-   tie my %oh,  'MCE::Shared', { ordered => 1 }, ( key1 => 'value' );
    tie my %ca,  'MCE::Shared', { max_keys => 500, max_age => 60 };
+   tie my %ha,  'MCE::Shared', key1 => 'val1', key2 => 'val2';
+   tie my %oh,  'MCE::Shared', { ordered => 1 }, key1 => 'value';
 
    tie my $cnt, 'MCE::Shared', 0;
    tie my @foo, 'MCE::Shared';
    tie my %bar, 'MCE::Shared';
 
-   my $m1 = MCE::Mutex->new;
+   my $mutex = MCE::Mutex->new;
 
    mce_flow {
       max_workers => 4
@@ -411,7 +480,7 @@ This document describes MCE::Shared version 1.824
       ## Locking is required when multiple workers update the same element.
       ## This requires 2 trips to the manager process (fetch and store).
 
-      $m1->synchronize( sub {
+      $mutex->synchronize( sub {
          $cnt += 1;
       });
 
@@ -924,22 +993,26 @@ Returns the real C<blessed> name, provided by the shared-manager process.
    print $oh1->blessed(), "\n";  # MCE::Shared::Ordhash
    print $oh2->blessed(), "\n";  # Hash::Ordered
 
+=item destroy ( { unbless => 1 } )
+
 =item destroy
 
 Exports optionally, but destroys the shared object entirely from the
-shared-manager process.
+shared-manager process. The unbless option is passed to export.
 
    my $exported_ob = $shared_ob->destroy();
 
-   $shared_ob; # becomes undef
+   $shared_ob;     # becomes undef
 
-=item export ( keys )
+=item export ( { unbless => 1 }, keys )
 
 =item export
 
-Exports the shared object as a non-shared object. One must export when passing
-the object into any dump routine. Otherwise, the C<shared_id value> and
-C<blessed name> is all one will see.
+Exports the shared object as a non-shared object. One must export the shared
+object when passing into any dump routine. Otherwise, the C<shared_id value>
+and C<blessed name> is all one will see. The unbless option unblesses any
+shared Array, Hash, and Scalar object to a non-blessed array, hash, and
+scalar respectively.
 
    use MCE::Shared;
    use MCE::Shared::Ordhash;
@@ -990,6 +1063,29 @@ This applies to shared array, hash, and ordhash.
      'I' => 'Heard',
      'The' => 'Bluebirds'
    }, 'MCE::Shared::Hash' );
+
+Specifying the unbless option exports a non-blessed data structure instead.
+Unbless applies to shared MCE::Shared::{ Array, Hash, and Scalar } objects.
+
+   my $h2 = $h1->export( { unbless => 1 }, qw/ I The / );
+   my $h3 = $h1->export( { unbless => 1 } );
+
+   _dump($h2);
+   _dump($h3);
+
+   # Output
+
+   $VAR1 = {
+     'The' => 'Bluebirds',
+     'I' => 'Heard'
+   };
+
+   $VAR1 = {
+     'Marty' => 'Robbins',
+     'Sing' => 'by',
+     'The' => 'Bluebirds',
+     'I' => 'Heard'
+   };
 
 =item next
 
@@ -1199,9 +1295,6 @@ called by the C<END> block automatically when the script terminates.
 
 Application-level advisory locking is possible with L<MCE::Mutex>.
 
-   use strict;
-   use warnings;
-
    use MCE::Hobo;
    use MCE::Mutex;
    use MCE::Shared;
@@ -1233,9 +1326,6 @@ as MCE::Shared is implemented using a single-point of entry for commands sent
 to the shared-manager process. Furthermore, the shared classes include sugar
 methods for combining set and get in a single operation.
 
-   use strict;
-   use warnings;
-
    use MCE::Hobo;
    use MCE::Shared;
 
@@ -1256,9 +1346,6 @@ methods for combining set and get in a single operation.
    print $cntr->get, "\n"; # 8000
 
 Another possibility when running threads is locking via L<threads::shared>.
-
-   use strict;
-   use warnings;
 
    use threads;
    use threads::shared;

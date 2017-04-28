@@ -16,7 +16,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.824';
+our $VERSION = '1.825';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -24,7 +24,7 @@ our $VERSION = '1.824';
 use Scalar::Util qw( dualvar );
 use Time::HiRes qw( time );
 
-use MCE::Shared::Base;
+use MCE::Shared::Base ();
 use base 'MCE::Shared::Base::Common';
 use bytes;
 
@@ -318,7 +318,7 @@ sub STORABLE_thaw {
    @{ $self } = @{ $ret };
 
    if ( defined ${ $self->[_EXPI] } ) {
-      my ( $i, $keys, $time ) = ( 0, $self->[_KEYS] );
+      my ( $i, $keys ) = ( 0, $self->[_KEYS] );
 
       for my $time ( @{ $TIME } ) {
          $keys->[$i] = dualvar( $time, $keys->[$i] ) if defined ( $time );
@@ -332,7 +332,7 @@ sub STORABLE_thaw {
 ## Sereal freeze-thaw
 
 sub FREEZE {
-   my ( $self, $serializer ) = @_;
+   my ( $self ) = @_;
    my @TIME;
 
    if ( defined ${ $self->[_EXPI] } ) {
@@ -352,7 +352,7 @@ sub THAW {
    @{ $self } = @{ $data };
 
    if ( defined ${ $self->[_EXPI] } ) {
-      my ( $i, $keys, $time ) = ( 0, $self->[_KEYS] );
+      my ( $i, $keys ) = ( 0, $self->[_KEYS] );
 
       for my $time ( @{ $TIME } ) {
          $keys->[$i] = dualvar( $time, $keys->[$i] ) if defined ( $time );
@@ -926,7 +926,7 @@ MCE::Shared::Cache - A hybrid LRU-plain cache helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Cache version 1.824
+This document describes MCE::Shared::Cache version 1.825
 
 =head1 DESCRIPTION
 
