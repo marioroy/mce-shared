@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
-our $VERSION = '1.825';
+our $VERSION = '1.826';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -80,9 +80,6 @@ use constant {
    # Max data channels. This cannot be greater than 8 on MSWin32.
    DATA_CHANNELS => ($^O eq 'MSWin32') ? 8 : 12,
 
-   MAX_DQ_DEPTH  => 192,  # Maximum dequeue notifications
-   WA_ARRAY      => 1,    # Wants list
-
    SHR_M_NEW => 'M~NEW',  # New share
    SHR_M_CID => 'M~CID',  # ClientID request
    SHR_M_DEE => 'M~DEE',  # Deeply shared
@@ -98,22 +95,11 @@ use constant {
    SHR_M_IRW => 'M~IRW',  # Iterator rewind
    SHR_M_STP => 'M~STP',  # Stop server
 
-   SHR_O_CVB => 'O~CVB',  # Condvar broadcast
-   SHR_O_CVS => 'O~CVS',  # Condvar signal
-   SHR_O_CVT => 'O~CVT',  # Condvar timedwait
-   SHR_O_CVW => 'O~CVW',  # Condvar wait
-   SHR_O_CLO => 'O~CLO',  # Handle CLOSE
-   SHR_O_OPN => 'O~OPN',  # Handle OPEN
-   SHR_O_REA => 'O~REA',  # Handle READ
-   SHR_O_RLN => 'O~RLN',  # Handle READLINE
-   SHR_O_PRI => 'O~PRI',  # Handle PRINT
-   SHR_O_WRI => 'O~WRI',  # Handle WRITE
-   SHR_O_QUA => 'O~QUA',  # Queue await
-   SHR_O_QUD => 'O~QUD',  # Queue dequeue
-   SHR_O_QUN => 'O~QUN',  # Queue dequeue non-blocking
    SHR_O_PDL => 'O~PDL',  # PDL::ins inplace(this),what,coords
    SHR_O_FCH => 'O~FCH',  # A,H,OH,S FETCH
    SHR_O_CLR => 'O~CLR',  # A,H,OH CLEAR
+
+   WA_ARRAY  => 1,        # Wants list
 };
 
 ###############################################################################
@@ -363,7 +349,6 @@ sub _stop {
       }
 
       MCE::Shared::Object::_stop();
-
       $_init_pid = $_svr_pid = undef;
    }
 
@@ -445,12 +430,12 @@ sub _loop {
       no warnings 'redefine'; local $@; eval '*Prima::cleanup = sub {}';
    }
 
-   my ($_id, $_fn, $_wa, $_key, $_len, $_le2, $_le3, $_ret, $_func);
-   my ($_DAU_R_SOCK, $_CV, $_Q, $_cnt, $_pending, $_t, $_frozen);
+   my ($_id, $_fn, $_wa, $_key, $_len, $_le2, $_le3, $_func);
    my ($_client_id, $_done) = (0, 0);
 
-   my $_DAT_R_SOCK = $_SVR->{_dat_r_sock}[0];
    my $_channels   = $_SVR->{_dat_r_sock};
+   my $_DAT_R_SOCK = $_SVR->{_dat_r_sock}[0];
+   my $_DAU_R_SOCK;
 
    my $_warn0 = sub {
       if ( $_wa ) {
@@ -458,7 +443,6 @@ sub _loop {
          print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
       }
    };
-
    my $_warn1 = sub {
       warn "Can't locate object method \"$_[0]\" via package \"$_[1]\"\n";
       if ( $_wa ) {
@@ -466,7 +450,6 @@ sub _loop {
          print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
       }
    };
-
    my $_warn2 = sub {
       warn "Can't locate object method \"$_[0]\" via package \"$_[1]\"\n";
    };
@@ -522,7 +505,7 @@ sub _loop {
 
    # --------------------------------------------------------------------------
 
-   my %_output_function = (
+   my %_output_function; %_output_function = (
 
       SHR_M_NEW.$LF => sub {                      # New share
          my ($_buf, $_params, $_class, $_args, $_fd, $_item);
@@ -567,6 +550,22 @@ sub _loop {
 
          print {$_DAU_R_SOCK} $_item->SHARED_ID().$LF .
             length($_buf).$LF, $_buf;
+
+         if ($_class eq 'MCE::Shared::Queue') {
+            MCE::Shared::Queue::_init_mgr(
+               \$_DAU_R_SOCK, \%_obj, \%_output_function, $_freeze, $_thaw
+            );
+         }
+         elsif ($_class eq 'MCE::Shared::Handle') {
+            MCE::Shared::Handle::_init_mgr(
+               \$_DAU_R_SOCK, \%_obj, \%_output_function, $_thaw
+            );
+         }
+         elsif ($_class eq 'MCE::Shared::Condvar') {
+            MCE::Shared::Condvar::_init_mgr(
+               \$_DAU_R_SOCK, \%_obj, \%_output_function
+            );
+         }
 
          return;
       },
@@ -784,7 +783,7 @@ sub _loop {
          local $SIG{__WARN__};
 
          local $@; eval {
-            $_ret = (exists $_all{ $_id }) ? '1' : '0';
+            my $_ret = (exists $_all{ $_id }) ? '1' : '0';
             _destroy({}, $_obj{ $_id }, $_id) if $_ret;
          };
 
@@ -880,403 +879,6 @@ sub _loop {
          return;
       },
 
-      # -----------------------------------------------------------------------
-
-      SHR_O_CVB.$LF => sub {                      # Condvar broadcast
-         chomp($_id = <$_DAU_R_SOCK>);
-
-         $_CV = $_obj{ $_id };
-
-         for my $_i (1 .. $_CV->{_count}) {
-            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
-         }
-
-         $_CV->{_count} = 0;
-
-         print {$_DAU_R_SOCK} $LF;
-
-         return;
-      },
-
-      SHR_O_CVS.$LF => sub {                      # Condvar signal
-         chomp($_id = <$_DAU_R_SOCK>);
-
-         $_CV = $_obj{ $_id };
-
-         if ( $_CV->{_count} >= 0 ) {
-            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
-            $_CV->{_count} -= 1;
-         }
-
-         print {$_DAU_R_SOCK} $LF;
-
-         return;
-      },
-
-      SHR_O_CVT.$LF => sub {                      # Condvar timedwait
-         chomp($_id = <$_DAU_R_SOCK>);
-
-         $_CV = $_obj{ $_id };
-         $_CV->{_count} -= 1;
-
-         print {$_DAU_R_SOCK} $LF;
-
-         return;
-      },
-
-      SHR_O_CVW.$LF => sub {                      # Condvar wait
-         chomp($_id = <$_DAU_R_SOCK>);
-
-         $_CV = $_obj{ $_id };
-         $_CV->{_count} += 1;
-
-         print {$_DAU_R_SOCK} $LF;
-
-         return;
-      },
-
-      SHR_O_CLO.$LF => sub {                      # Handle CLOSE
-         chomp($_id = <$_DAU_R_SOCK>);
-
-         close $_obj{ $_id } if defined fileno($_obj{ $_id });
-         print {$_DAU_R_SOCK} '1'.$LF;
-
-         return;
-      },
-
-      SHR_O_OPN.$LF => sub {                      # Handle OPEN
-         my ($_fd, $_buf, $_err); local $!;
-
-         chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_fd  = <$_DAU_R_SOCK>),
-         chomp($_len = <$_DAU_R_SOCK>),
-
-         read($_DAU_R_SOCK, $_buf, $_len);
-         print {$_DAU_R_SOCK} $LF;
-
-         if ($_fd > 2) {
-            $_fd = IO::FDPass::recv(fileno $_DAU_R_SOCK); $_fd >= 0
-               or _croak("cannot receive file handle: $!");
-         }
-
-         close $_obj{ $_id } if defined fileno($_obj{ $_id });
-
-         my $_args = $_thaw->($_buf);
-         my $_fh;
-
-         if (@{ $_args } == 2) {
-            # remove tainted'ness from $_args
-            ($_args->[0]) = $_args->[0] =~ /(.*)/;
-            ($_args->[1]) = $_args->[1] =~ /(.*)/;
-
-            open($_fh, "$_args->[0]", $_args->[1]) or do { $_err = 0+$! };
-         }
-         else {
-            # remove tainted'ness from $_args
-            ($_args->[0]) = $_args->[0] =~ /(.*)/;
-
-            open($_fh, $_args->[0]) or do { $_err = 0+$! };
-         }
-
-         # flush IO immediately
-         select(( select($_fh), $| = 1 )[0]) unless $_err;
-
-         *{ $_obj{ $_id } } = *{ $_fh };
-
-         print {$_DAU_R_SOCK} $_err.$LF;
-
-         return;
-      },
-
-      SHR_O_REA.$LF => sub {                      # Handle READ
-         my ($_a3, $_auto);
-
-         chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_a3  = <$_DAU_R_SOCK>),
-         chomp($_len = <$_DAU_R_SOCK>);
-
-         if (lc(substr $_a3, -1, 1) eq 'm') {
-            $_auto = 1, chop $_a3; $_a3 *= 1024 * 1024;
-         } elsif (lc(substr $_a3, -1, 1) eq 'k') {
-            $_auto = 1, chop $_a3; $_a3 *= 1024;
-         }
-
-         local $/; read($_DAU_R_SOCK, $/, $_len) if $_len;
-         my ($_fh, $_buf) = ($_obj{ $_id }); local ($!, $.);
-
-         # support special case; e.g. $/ = "\n>" for bioinformatics
-         # anchoring ">" at the start of line
-
-         if (!$_auto) {
-            $. = 0, $_ret = read($_fh, $_buf, $_a3);
-         }
-         elsif (!eof($_fh)) {
-            if (length $/ > 1 && substr($/, 0, 1) eq "\n") {
-               $_len = length($/) - 1;
-
-               if (tell $_fh) {
-                  $_buf = substr($/, 1);
-                  $_ret = read($_fh, $_buf, $_a3, length($_buf));
-               } else {
-                  $_ret = read($_fh, $_buf, $_a3);
-               }
-
-               if (defined $_ret) {
-                  $.    += 1 if eof($_fh);
-                  $_buf .= readline($_fh);
-
-                  substr($_buf, -$_len, $_len, '')
-                     if (substr($_buf, -$_len) eq substr($/, 1));
-               }
-            }
-            elsif (defined ($_ret = read($_fh, $_buf, $_a3))) {
-               $.    += 1 if eof($_fh);
-               $_buf .= readline($_fh);
-            }
-         }
-         else {
-            $_buf = '', $_ret = 0;
-         }
-
-         if (defined $_ret) {
-            print {$_DAU_R_SOCK} "$.$LF" . length($_buf).$LF, $_buf;
-         } else {
-            print {$_DAU_R_SOCK} "$.$LF" . ( (0+$!) * -1 ).$LF;
-         }
-
-         return;
-      },
-
-      SHR_O_RLN.$LF => sub {                      # Handle READLINE
-         chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_len = <$_DAU_R_SOCK>);
-
-         local $/; read($_DAU_R_SOCK, $/, $_len) if $_len;
-         my ($_fh, $_buf) = ($_obj{ $_id }); local ($!, $.);
-
-         # support special case; e.g. $/ = "\n>" for bioinformatics
-         # anchoring ">" at the start of line
-
-         if (length $/ > 1 && substr($/, 0, 1) eq "\n" && !eof($_fh)) {
-            $_len = length($/) - 1;
-
-            if (tell $_fh) {
-               $_buf = substr($/, 1), $_buf .= readline($_fh);
-            } else {
-               $_buf = readline($_fh);
-            }
-
-            substr($_buf, -$_len, $_len, '')
-               if (substr($_buf, -$_len) eq substr($/, 1));
-         }
-         else {
-            $_buf = readline($_fh);
-         }
-
-         if (defined $_buf) {
-            print {$_DAU_R_SOCK} "$.$LF" . length($_buf).$LF, $_buf;
-         } else {
-            print {$_DAU_R_SOCK} "$.$LF" . ( (0+$!) * -1 ).$LF;
-         }
-
-         return;
-      },
-
-      SHR_O_PRI.$LF => sub {                      # Handle PRINT
-         chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_len = <$_DAU_R_SOCK>),
-
-         read($_DAU_R_SOCK, my($_buf), $_len);
-         print {$_obj{ $_id }} $_buf;
-
-         return;
-      },
-
-      SHR_O_WRI.$LF => sub {                      # Handle WRITE
-         chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_len = <$_DAU_R_SOCK>),
-
-         read($_DAU_R_SOCK, my($_buf), $_len);
-
-         my $_wrote = 0;
-
-         WRITE: {
-            $_wrote += ( syswrite (
-               $_obj{ $_id }, $_buf, length($_buf) - $_wrote, $_wrote
-            )) || do {
-               if ( $! ) {
-                  redo WRITE if $!{'EINTR'};
-                  print {$_DAU_R_SOCK} ''.$LF;
-
-                  return;
-               }
-            };
-         }
-
-         print {$_DAU_R_SOCK} $_wrote.$LF;
-
-         return;
-      },
-
-      SHR_O_QUA.$LF => sub {                      # Queue await
-         chomp($_id = <$_DAU_R_SOCK>),
-         chomp($_t  = <$_DAU_R_SOCK>);
-
-         $_Q = $_obj{ $_id };
-         $_Q->{_tsem} = $_t;
-
-         if ($_Q->pending() <= $_t) {
-            1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
-         } else {
-            $_Q->{_asem} += 1;
-         }
-
-         print {$_DAU_R_SOCK} $LF;
-
-         return;
-      },
-
-      SHR_O_QUD.$LF => sub {                      # Queue dequeue
-         chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_cnt = <$_DAU_R_SOCK>);
-
-         $_cnt = 0 if ($_cnt == 1);
-         $_Q = $_obj{ $_id } || do {
-            print {$_DAU_R_SOCK} '-1'.$LF;
-            return;
-         };
-
-         my (@_items, $_buf);
-
-         if ($_cnt) {
-            my $_pending = @{ $_Q->{_datq} };
-
-            if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
-               for my $_h (@{ $_Q->{_heap} }) {
-                  $_pending += @{ $_Q->{_datp}->{$_h} };
-               }
-            }
-            $_cnt = $_pending if $_pending < $_cnt;
-
-            for my $_i (1 .. $_cnt) { push @_items, $_Q->_dequeue() }
-         }
-         else {
-            $_buf = $_Q->_dequeue();
-         }
-
-         if ($_Q->{_fast}) {
-            # The 'fast' option may reduce wait time, thus run faster
-            if ($_Q->{_dsem} <= 1) {
-               $_pending = $_Q->pending();
-               $_pending = int($_pending / $_cnt) if ($_cnt);
-               if ($_pending) {
-                  $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
-                  for my $_i (1 .. $_pending) {
-                     1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
-                  }
-               }
-               $_Q->{_dsem} = $_pending;
-            }
-            else {
-               $_Q->{_dsem} -= 1;
-            }
-         }
-         else {
-            # Otherwise, never to exceed one byte in the channel
-            if ($_Q->_has_data()) {
-               1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
-            }
-         }
-
-         if ($_Q->{_ended} && !$_Q->_has_data()) {
-            1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
-         }
-
-         if ($_cnt) {
-            $_buf = $_freeze->(\@_items);
-            print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
-         }
-         elsif (defined $_buf) {
-            if (!ref($_buf)) {
-               print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
-            } else {
-               $_buf = $_freeze->([ $_buf ]);
-               print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
-            }
-         }
-         else {
-            print {$_DAU_R_SOCK} '-1'.$LF;
-         }
-
-         if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for my $_i (1 .. $_Q->{_asem}) {
-               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
-            }
-            $_Q->{_asem} = 0;
-         }
-
-         $_Q->{_nb_flag} = 0;
-
-         return;
-      },
-
-      SHR_O_QUN.$LF => sub {                      # Queue dequeue non-blocking
-         chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_cnt = <$_DAU_R_SOCK>);
-
-         $_Q = $_obj{ $_id } || do {
-            print {$_DAU_R_SOCK} '-1'.$LF;
-            return;
-         };
-
-         if ($_cnt == 1) {
-            my $_buf = $_Q->_dequeue();
-
-            if (defined $_buf) {
-               if (!ref($_buf)) {
-                  print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
-               } else {
-                  $_buf = $_freeze->([ $_buf ]);
-                  print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
-               }
-            }
-            else {
-               print {$_DAU_R_SOCK} '-1'.$LF;
-            }
-         }
-         else {
-            my @_items;
-            my $_pending = @{ $_Q->{_datq} };
-
-            if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
-               for my $_h (@{ $_Q->{_heap} }) {
-                  $_pending += @{ $_Q->{_datp}->{$_h} };
-               }
-            }
-            $_cnt = $_pending if $_pending < $_cnt;
-
-            for my $_i (1 .. $_cnt) { push @_items, $_Q->_dequeue() }
-
-            if ($_cnt) {
-               my $_buf = $_freeze->(\@_items);
-               print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
-            } else {
-               print {$_DAU_R_SOCK} '-1'.$LF;
-            }
-         }
-
-         if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
-            for my $_i (1 .. $_Q->{_asem}) {
-               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
-            }
-            $_Q->{_asem} = 0;
-         }
-
-         $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
-
-         return;
-      },
-
       SHR_O_PDL.$LF => sub {                      # PDL::ins inplace(this),...
          chomp($_id  = <$_DAU_R_SOCK>),
          chomp($_len = <$_DAU_R_SOCK>),
@@ -1353,6 +955,22 @@ sub _loop {
 
    );
 
+   if ($INC{'MCE/Shared/Queue.pm'}) {
+      MCE::Shared::Queue::_init_mgr(
+         \$_DAU_R_SOCK, \%_obj, \%_output_function, $_freeze, $_thaw
+      );
+   }
+   if ($INC{'MCE/Shared/Handle.pm'}) {
+      MCE::Shared::Handle::_init_mgr(
+         \$_DAU_R_SOCK, \%_obj, \%_output_function, $_thaw
+      );
+   }
+   if ($INC{'MCE/Shared/Condvar.pm'}) {
+      MCE::Shared::Condvar::_init_mgr(
+         \$_DAU_R_SOCK, \%_obj, \%_output_function
+      );
+   }
+
    # --------------------------------------------------------------------------
 
    # Call on hash function.
@@ -1393,7 +1011,6 @@ sub _loop {
          } while (($_nbytes -= 8) >= 8);
       }
    }
-
    else {
       while (!$_done) {
          $_func = <$_DAT_R_SOCK>;
@@ -1430,9 +1047,6 @@ use bytes;
 use constant {
    _ID    => 0, _CLASS => 1, _DREF   => 2, _ITER => 3,  # shared object
    _UNDEF => 0, _ARRAY => 1, _SCALAR => 2,              # wantarray
-
-   MUTEX_LOCKS => 6,  # Number of mutex locks for 1st level defense
-                      # against many workers waiting to dequeue
 };
 
 ## Below, no circular reference to original, therefore no memory leaks.
@@ -1475,7 +1089,6 @@ no overloading;
 my ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_chn, $_dat_ex, $_dat_un);
 
 my $_blessed = \&Scalar::Util::blessed;
-my $_rdy     = \&MCE::Util::_sock_ready;
 
 BEGIN {
    $_dat_ex = sub {
@@ -1517,15 +1130,35 @@ sub DESTROY {
    return;
 }
 
-sub _croak {
-   goto &MCE::Shared::Base::_croak;
-}
+sub _croak    { goto &MCE::Shared::Base::_croak }
+
 sub SHARED_ID { $_[0]->[_ID] }
 
 sub TIEARRAY  { $_[1] }
 sub TIEHANDLE { $_[1] }
 sub TIEHASH   { $_[1] }
 sub TIESCALAR { $_[1] }
+
+sub _reset {
+   if ($INC{'MCE/Shared/Condvar.pm'}) {
+      MCE::Shared::Object::_init_condvar(
+         $_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, \%_obj,
+         $_freeze, $_thaw
+      );
+   }
+   if ($INC{'MCE/Shared/Handle.pm'}) {
+      MCE::Shared::Object::_init_handle(
+         $_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, \%_obj,
+         $_freeze, $_thaw
+      );
+   }
+   if ($INC{'MCE/Shared/Queue.pm'}) {
+      MCE::Shared::Object::_init_queue(
+         $_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, \%_obj,
+         $_freeze, $_thaw
+      );
+   }
+}
 
 sub _start {
    $_chn        = 1;
@@ -1544,6 +1177,8 @@ sub _start {
       syswrite($_DAT_LOCK->{_w_sock}, '0'), $_DAT_LOCK->{ $_pid } = 0
          if $_DAT_LOCK->{ $_pid };
    };
+
+   _reset();
 
    return;
 }
@@ -1585,7 +1220,7 @@ sub _init {
    $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
-   %_new = ();
+   %_new = (); _reset();
 
    return $_id;
 }
@@ -1684,54 +1319,9 @@ sub _req2 {
    1;
 }
 
-# Called by export.
-
-sub _req3 {
-   local $\ = undef if (defined $\);
-   local $/ = $LF if ($/ ne $LF);
-
-   $_dat_ex->();
-   print({$_DAT_W_SOCK} $_[0].$LF . $_chn.$LF),
-   print({$_DAU_W_SOCK} $_[1], $_[2]);
-
-   chomp(my $_len = <$_DAU_W_SOCK>);
-   $_dat_un->(), return undef if ($_len < 0);
-
-   read $_DAU_W_SOCK, my($_buf), $_len;
-   $_dat_un->();
-
-   my $_obj = $_thaw->($_buf);
-   undef $_buf;
-
-   $_obj;
-}
-
-# Called by dequeue and dequeue_nb.
-
-sub _req4 {
-   local $\ = undef if (defined $\);
-   local $/ = $LF if ($/ ne $LF);
-
-   $_dat_ex->();
-   print({$_DAT_W_SOCK} $_[0].$LF . $_chn.$LF),
-   print({$_DAU_W_SOCK} $_[1]);
-   $_[3]->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->unlock() if $_[3];
-
-   chomp(my $_len = <$_DAU_W_SOCK>);
-   $_dat_un->(), return if ($_len < 0);
-
-   my $_frozen = chop($_len);
-   read $_DAU_W_SOCK, my($_buf), $_len;
-   $_dat_un->();
-
-   ($_[2] == 1)
-      ? ($_frozen) ? $_thaw->($_buf)[0] : $_buf
-      : @{ $_thaw->($_buf) };
-}
-
 # Called by CLEAR and clear.
 
-sub _req5 {
+sub _req3 {
    my ( $_fn, $self ) = @_;
    local $\ = undef if (defined $\);
    local $/ = $LF if ($/ ne $LF);
@@ -1748,7 +1338,7 @@ sub _req5 {
 
 # Called by FETCH and get.
 
-sub _req6 {
+sub _req4 {
    local $\ = undef if (defined $\);
    local $/ = $LF if ($/ ne $LF);
 
@@ -1825,6 +1415,7 @@ sub export {
    my $_tmp   = @_ ? $_freeze->([ @_ ]) : '';
    my $_buf   = $_id.$LF . length($_tmp).$LF;
    my $_class = $_ob->[_CLASS];
+   my $_item;
 
    if (!exists $INC{ join('/',split(/::/,$_class)).'.pm' }) {
       local $@; local $SIG{__DIE__};
@@ -1835,7 +1426,24 @@ sub export {
       eval "use $_class ()";
    }
 
-   my $_item = $_lkup->{ $_id } = _req3('M~EXP', $_buf, $_tmp);
+   {
+      local $\ = undef if (defined $\);
+      local $/ = $LF if ($/ ne $LF);
+
+      $_dat_ex->();
+      print({$_DAT_W_SOCK} 'M~EXP'.$LF . $_chn.$LF),
+      print({$_DAU_W_SOCK} $_buf, $_tmp); undef $_buf;
+
+      chomp(my $_len = <$_DAU_W_SOCK>);
+      $_dat_un->(), return undef if ($_len < 0);
+
+      read $_DAU_W_SOCK, $_buf, $_len;
+      $_dat_un->();
+
+      $_item = $_lkup->{ $_id } = $_thaw->($_buf);
+      undef $_buf;
+   }
+
    my $_data; local $_;
 
    ## no critic
@@ -1941,349 +1549,6 @@ sub next {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Methods optimized for Condvar.
-##
-###############################################################################
-
-# lock ( )
-
-sub lock {
-   return unless ( my $_CV = $_obj{ $_[0]->[_ID] } );
-   return unless ( exists $_CV->{_mutex} );
-
-   $_CV->{_mutex}->lock;
-}
-
-# unlock ( )
-
-sub unlock {
-   return unless ( my $_CV = $_obj{ $_[0]->[_ID] } );
-   return unless ( exists $_CV->{_mutex} );
-
-   $_CV->{_mutex}->unlock;
-}
-
-# broadcast ( floating_seconds )
-# broadcast ( )
-
-sub broadcast {
-   my $_id = $_[0]->[_ID];
-   return unless ( my $_CV = $_obj{ $_id } );
-   return unless ( exists $_CV->{_cr_sock} );
-
-   sleep($_[1]) if defined $_[1];
-
-   _req1('O~CVB', $_id.$LF);
-   $_CV->{_mutex}->unlock();
-
-   sleep(0);
-}
-
-# signal ( floating_seconds )
-# signal ( )
-
-sub signal {
-   my $_id = $_[0]->[_ID];
-   return unless ( my $_CV = $_obj{ $_id } );
-   return unless ( exists $_CV->{_cr_sock} );
-
-   sleep($_[1]) if defined $_[1];
-
-   _req1('O~CVS', $_id.$LF);
-   $_CV->{_mutex}->unlock();
-
-   sleep(0);
-}
-
-# timedwait ( floating_seconds )
-
-sub timedwait {
-   my $_id = $_[0]->[_ID];
-   my $_timeout = $_[1];
-
-   return unless ( my $_CV = $_obj{ $_id } );
-   return unless ( exists $_CV->{_cr_sock} );
-   return $_[0]->wait() unless $_timeout;
-
-   _croak('Condvar: timedwait (timeout) is not an integer')
-      if (!looks_like_number($_timeout) || int($_timeout) != $_timeout);
-
-   _req1('O~CVW', $_id.$LF);
-   $_CV->{_mutex}->unlock();
-
-   local $@; eval {
-      local $SIG{ALRM} = sub { die "alarm clock restart\n" };
-      alarm $_timeout unless $_is_MSWin32;
-
-      die "alarm clock restart\n"
-         if $_is_MSWin32 && $_rdy->($_CV->{_cr_sock}, $_timeout);
-
-      1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
-
-      alarm 0;
-   };
-
-   alarm 0;
-
-   if ($@) {
-      chomp($@), _croak($@) unless $@ eq "alarm clock restart\n";
-      _req1('O~CVT', $_id.$LF);
-
-      return '';
-   }
-
-   return 1;
-}
-
-# wait ( )
-
-sub wait {
-   my $_id = $_[0]->[_ID];
-   return unless ( my $_CV = $_obj{ $_id } );
-   return unless ( exists $_CV->{_cr_sock} );
-
-   _req1('O~CVW', $_id.$LF);
-   $_CV->{_mutex}->unlock();
-
-   $_rdy->($_CV->{_cr_sock}) if $_is_MSWin32;
-   1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
-
-   return 1;
-}
-
-###############################################################################
-## ----------------------------------------------------------------------------
-## Methods optimized for Handle.
-##
-###############################################################################
-
-sub CLOSE {
-   _req1('O~CLO', $_[0]->[_ID].$LF);
-}
-
-sub OPEN {
-   my ($_id, $_fd, $_buf) = (shift()->[_ID]);
-   return unless defined $_[0];
-
-   if (ref $_[-1] && reftype($_[-1]) ne 'GLOB') {
-      _croak("open error: not a GLOB reference");
-   }
-   elsif (@_ == 2 && ref $_[1] && defined($_fd = fileno($_[1]))) {
-      $_buf = $_freeze->([ $_[0]."&=$_fd" ]);
-   }
-   elsif (!ref $_[-1]) {
-      $_fd  = ($_[-1] =~ /&=(\d+)$/) ? $1 : -1;
-      $_buf = $_freeze->([ @_ ]);
-   }
-   else {
-      _croak("open error: unsupported use-case");
-   }
-
-   if ($_fd > 2 && !$INC{'IO/FDPass.pm'}) {
-      _croak(
-         "\nSharing a handle object while the server is running\n",
-         "requires the IO::FDPass module.\n\n"
-      );
-   }
-
-   local $\ = undef if (defined $\);
-   local $/ = $LF if ($/ ne $LF);
-
-   $_dat_ex->();
-   print({$_DAT_W_SOCK} 'O~OPN'.$LF . $_chn.$LF),
-   print({$_DAU_W_SOCK} $_id.$LF . $_fd.$LF . length($_buf).$LF . $_buf);
-   <$_DAU_W_SOCK>;
-
-   IO::FDPass::send( fileno $_DAU_W_SOCK, fileno $_fd ) if ($_fd > 2);
-   chomp(my $_err = <$_DAU_W_SOCK>);
-   $_dat_un->();
-
-   if ($_err) {
-      $! = $_err; '';
-   } else {
-      $! = 0; 1;
-   }
-}
-
-sub READ {
-   local $\ = undef if (defined $\);
-
-   $_dat_ex->();
-   print({$_DAT_W_SOCK} 'O~REA'.$LF . $_chn.$LF),
-   print({$_DAU_W_SOCK} $_[0]->[_ID].$LF . $_[2].$LF . length($/).$LF . $/);
-
-   local $/ = $LF if ($/ ne $LF);
-   chomp(my $_ret = <$_DAU_W_SOCK>);
-   chomp(my $_len = <$_DAU_W_SOCK>);
-
-   if ($_len) {
-      if ($_len < 0) {
-         $_dat_un->(); $. = 0, $! = $_len * -1;
-         return undef;
-      }
-      (defined $_[3])
-         ? read($_DAU_W_SOCK, $_[1], $_len, $_[3])
-         : read($_DAU_W_SOCK, $_[1], $_len);
-   }
-   else {
-      my $_ref = \$_[1];
-      if (defined $_[3]) {
-         substr($$_ref, $_[3], length($$_ref) - $_[3], '');
-      } else {
-         $$_ref = '';
-      }
-   }
-
-   $_dat_un->(); $. = $_ret, $! = 0;
-   $_len;
-}
-
-sub READLINE {
-   local $\ = undef if (defined $\);
-
-   $_dat_ex->();
-   print({$_DAT_W_SOCK} 'O~RLN'.$LF . $_chn.$LF),
-   print({$_DAU_W_SOCK} $_[0]->[_ID].$LF . length($/).$LF . $/);
-
-   local $/ = $LF if ($/ ne $LF); my $_buf;
-   chomp(my $_ret = <$_DAU_W_SOCK>);
-   chomp(my $_len = <$_DAU_W_SOCK>);
-
-   if ($_len) {
-      if ($_len < 0) {
-         $_dat_un->(); $. = 0, $! = $_len * -1;
-         return undef;
-      }
-      read($_DAU_W_SOCK, $_buf, $_len);
-   }
-
-   $_dat_un->(); $. = $_ret, $! = 0;
-   $_buf;
-}
-
-sub PRINT {
-   my $_id  = shift()->[_ID];
-   my $_buf = join(defined $, ? $, : "", @_);
-
-   $_buf .= $\ if defined $\;
-
-   (length $_buf)
-      ? _req2('O~PRI', $_id.$LF . length($_buf).$LF, $_buf)
-      : 1;
-}
-
-sub PRINTF {
-   my $_id  = shift()->[_ID];
-   my $_buf = sprintf(shift, @_);
-
-   (length $_buf)
-      ? _req2('O~PRI', $_id.$LF . length($_buf).$LF, $_buf)
-      : 1;
-}
-
-sub WRITE {
-   my $_id  = shift()->[_ID];
-   local $\ = undef if (defined $\);
-   local $/ = $LF if ($/ ne $LF);
-
-   if (@_ == 1 || (@_ == 2 && $_[1] == length($_[0]))) {
-      $_dat_ex->();
-      print({$_DAT_W_SOCK} 'O~WRI'.$LF . $_chn.$LF),
-      print({$_DAU_W_SOCK} $_id.$LF . length($_[0]).$LF, $_[0]);
-   }
-   else {
-      my $_buf = substr($_[0], ($_[2] || 0), $_[1]);
-      $_dat_ex->();
-      print({$_DAT_W_SOCK} 'O~WRI'.$LF . $_chn.$LF),
-      print({$_DAU_W_SOCK} $_id.$LF . length($_buf).$LF, $_buf);
-   }
-
-   chomp(my $_ret = <$_DAU_W_SOCK>);
-   $_dat_un->();
-
-   (length $_ret) ? $_ret : undef;
-}
-
-###############################################################################
-## ----------------------------------------------------------------------------
-## Methods optimized for Queue.
-##
-###############################################################################
-
-sub await {
-   my $_id = shift()->[_ID];
-   return unless ( my $_Q = $_obj{ $_id } );
-   return unless ( exists $_Q->{_qr_sock} );
-
-   my $_t = shift || 0;
-
-   _croak('Queue: (await) is not enabled for this queue')
-      unless (exists $_Q->{_ar_sock});
-   _croak('Queue: (await threshold) is not an integer')
-      if (!looks_like_number($_t) || int($_t) != $_t);
-
-   $_t = 0 if ($_t < 0);
-   _req1('O~QUA', $_id.$LF . $_t.$LF);
-
-   $_rdy->($_Q->{_ar_sock}) if $_is_MSWin32;
-   1 until sysread($_Q->{_ar_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
-
-   return;
-}
-
-sub dequeue {
-   my $_id = shift()->[_ID];
-   return unless ( my $_Q = $_obj{ $_id } );
-   return unless ( exists $_Q->{_qr_sock} );
-
-   my $_cnt = shift;
-
-   if (defined $_cnt && $_cnt ne '1') {
-      _croak('Queue: (dequeue count argument) is not valid')
-         if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
-   } else {
-      $_cnt = 1;
-   }
-
-   if (exists $_Q->{'_mutex_0'}) {
-      $_Q->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->lock();
-
-      $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
-      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
-
-      _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, $_Q);
-   }
-   else {
-      $_rdy->($_Q->{_qr_sock}) if $_is_MSWin32;
-      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
-
-      _req4('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, undef);
-   }
-}
-
-sub dequeue_nb {
-   my $_id = shift()->[_ID];
-   return unless ( my $_Q = $_obj{ $_id } );
-   return unless ( exists $_Q->{_qr_sock} );
-
-   my $_cnt = shift;
-
-   if ($_Q->{_fast}) {
-      warn "Queue: (dequeue_nb) is not allowed for fast => 1\n";
-      return;
-   }
-   if (defined $_cnt && $_cnt ne '1') {
-      _croak('Queue: (dequeue_nb count argument) is not valid')
-         if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
-   } else {
-      $_cnt = 1;
-   }
-
-   _req4('O~QUN', $_id.$LF . $_cnt.$LF, $_cnt, undef);
-}
-
-###############################################################################
-## ----------------------------------------------------------------------------
 ## Methods optimized for:
 ##  MCE::Shared::{ Array, Hash, Ordhash, Scalar } and similar.
 ##
@@ -2303,10 +1568,10 @@ if ($INC{'PDL.pm'}) {
    };
 }
 
-sub CLEAR { _req5('CLEAR', @_) }
-sub clear { _req5('clear', @_) }
-sub FETCH { _req6('FETCH', @_) }
-sub get   { _req6('get'  , @_) }
+sub CLEAR { _req3('CLEAR', @_) }
+sub clear { _req3('clear', @_) }
+sub FETCH { _req4('FETCH', @_) }
+sub get   { _req4('get'  , @_) }
 
 sub FIRSTKEY {
    my ( $self ) = @_;
@@ -2370,7 +1635,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.825
+This document describes MCE::Shared::Server version 1.826
 
 =head1 DESCRIPTION
 

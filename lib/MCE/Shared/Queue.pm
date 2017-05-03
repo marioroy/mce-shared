@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.825';
+our $VERSION = '1.826';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -55,6 +55,7 @@ my %_valid_fields_new = map { $_ => 1 } qw( await fast porder queue type );
 my $LF = "\012"; Internals::SvREADONLY($LF, 1);
 my $_has_threads = $INC{'threads.pm'} ? 1 : 0;
 my $_tid = $_has_threads ? threads->tid() : 0;
+my $_reset_flg = 1;
 
 sub CLONE {
    $_tid = threads->tid() if $_has_threads;
@@ -151,6 +152,9 @@ sub new {
    if (exists $_argv{queue} && scalar @{ $_argv{queue} }) {
       1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
+
+   MCE::Shared::Object::_reset(), $_reset_flg = ''
+      if $_reset_flg && $INC{'MCE/Shared/Server.pm'};
 
    return $_Q;
 }
@@ -676,6 +680,338 @@ sub _heap_insert_high {
    return;
 }
 
+###############################################################################
+## ----------------------------------------------------------------------------
+## Server functions.
+##
+###############################################################################
+
+{
+   use constant {
+      SHR_O_QUA => 'O~QUA',  # Queue await
+      SHR_O_QUD => 'O~QUD',  # Queue dequeue
+      SHR_O_QUN => 'O~QUN',  # Queue dequeue non-blocking
+   };
+
+   my (
+      $_DAU_R_SOCK_REF, $_DAU_R_SOCK, $_obj, $_freeze, $_thaw,
+      $_Q, $_cnt, $_id, $_pending, $_t
+   );
+
+   my %_output_function = (
+
+      SHR_O_QUA.$LF => sub {                      # Queue await
+         $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
+
+         chomp($_id = <$_DAU_R_SOCK>),
+         chomp($_t  = <$_DAU_R_SOCK>);
+
+         $_Q = $_obj->{ $_id } || do {
+            print {$_DAU_R_SOCK} $LF;
+         };
+         $_Q->{_tsem} = $_t;
+
+         if ($_Q->pending() <= $_t) {
+            1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+         } else {
+            $_Q->{_asem} += 1;
+         }
+
+         print {$_DAU_R_SOCK} $LF;
+
+         return;
+      },
+
+      SHR_O_QUD.$LF => sub {                      # Queue dequeue
+         $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
+
+         chomp($_id  = <$_DAU_R_SOCK>),
+         chomp($_cnt = <$_DAU_R_SOCK>);
+
+         $_cnt = 0 if ($_cnt == 1);
+         $_Q = $_obj->{ $_id } || do {
+            print {$_DAU_R_SOCK} '-1'.$LF;
+            return;
+         };
+
+         my (@_items, $_buf);
+
+         if ($_cnt) {
+            $_pending = @{ $_Q->{_datq} };
+
+            if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
+               for my $_h (@{ $_Q->{_heap} }) {
+                  $_pending += @{ $_Q->{_datp}->{$_h} };
+               }
+            }
+            $_cnt = $_pending if $_pending < $_cnt;
+
+            for my $_i (1 .. $_cnt) { push @_items, $_Q->_dequeue() }
+         }
+         else {
+            $_buf = $_Q->_dequeue();
+         }
+
+         if ($_Q->{_fast}) {
+            # The 'fast' option may reduce wait time, thus run faster
+            if ($_Q->{_dsem} <= 1) {
+               $_pending = $_Q->pending();
+               $_pending = int($_pending / $_cnt) if ($_cnt);
+               if ($_pending) {
+                  $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
+                  for my $_i (1 .. $_pending) {
+                     1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+                  }
+               }
+               $_Q->{_dsem} = $_pending;
+            }
+            else {
+               $_Q->{_dsem} -= 1;
+            }
+         }
+         else {
+            # Otherwise, never to exceed one byte in the channel
+            if ($_Q->_has_data()) {
+               1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+            }
+         }
+
+         if ($_Q->{_ended} && !$_Q->_has_data()) {
+            1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+         }
+
+         if ($_cnt) {
+            $_buf = $_freeze->(\@_items);
+            print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
+         }
+         elsif (defined $_buf) {
+            if (!ref($_buf)) {
+               print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
+            } else {
+               $_buf = $_freeze->([ $_buf ]);
+               print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
+            }
+         }
+         else {
+            print {$_DAU_R_SOCK} '-1'.$LF;
+         }
+
+         if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
+            for my $_i (1 .. $_Q->{_asem}) {
+               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+            }
+            $_Q->{_asem} = 0;
+         }
+
+         $_Q->{_nb_flag} = 0;
+
+         return;
+      },
+
+      SHR_O_QUN.$LF => sub {                      # Queue dequeue non-blocking
+         $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
+
+         chomp($_id  = <$_DAU_R_SOCK>),
+         chomp($_cnt = <$_DAU_R_SOCK>);
+
+         $_Q = $_obj->{ $_id } || do {
+            print {$_DAU_R_SOCK} '-1'.$LF;
+            return;
+         };
+
+         if ($_cnt == 1) {
+            my $_buf = $_Q->_dequeue();
+
+            if (defined $_buf) {
+               if (!ref($_buf)) {
+                  print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
+               } else {
+                  $_buf = $_freeze->([ $_buf ]);
+                  print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
+               }
+            }
+            else {
+               print {$_DAU_R_SOCK} '-1'.$LF;
+            }
+         }
+         else {
+            my @_items;
+            my $_pending = @{ $_Q->{_datq} };
+
+            if ($_pending < $_cnt && scalar @{ $_Q->{_heap} }) {
+               for my $_h (@{ $_Q->{_heap} }) {
+                  $_pending += @{ $_Q->{_datp}->{$_h} };
+               }
+            }
+            $_cnt = $_pending if $_pending < $_cnt;
+
+            for my $_i (1 .. $_cnt) { push @_items, $_Q->_dequeue() }
+
+            if ($_cnt) {
+               my $_buf = $_freeze->(\@_items);
+               print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
+            } else {
+               print {$_DAU_R_SOCK} '-1'.$LF;
+            }
+         }
+
+         if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
+            for my $_i (1 .. $_Q->{_asem}) {
+               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+            }
+            $_Q->{_asem} = 0;
+         }
+
+         $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
+
+         return;
+      },
+
+   );
+
+   sub _init_mgr {
+      my $_function;
+      ( $_DAU_R_SOCK_REF, $_obj, $_function, $_freeze, $_thaw ) = @_;
+
+      for my $key ( keys %_output_function ) {
+         last if exists($_function->{$key});
+         $_function->{$key} = $_output_function{$key};
+      }
+
+      return;
+   }
+}
+
+###############################################################################
+## ----------------------------------------------------------------------------
+## Object package.
+##
+###############################################################################
+
+## Items below are folded into MCE::Shared::Object.
+
+package # hide from rpm
+   MCE::Shared::Object;
+
+use strict;
+use warnings;
+
+no warnings qw( threads recursion uninitialized numeric once );
+
+use constant {
+   MUTEX_LOCKS => 6,  # Number of mutex locks for 1st level defense
+                      # against many workers waiting to dequeue
+};
+
+use bytes;
+
+no overloading;
+
+my $_is_MSWin32 = ($^O eq 'MSWin32') ? 1 : 0;
+
+my ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
+    $_freeze, $_thaw);
+
+sub _init_queue {
+   ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
+    $_freeze, $_thaw) = @_;
+
+   return;
+}
+
+sub _req_queue {
+   local $\ = undef if (defined $\);
+   local $/ = $LF if ($/ ne $LF);
+
+   $_dat_ex->();
+   print({$_DAT_W_SOCK} $_[0].$LF . $_chn.$LF),
+   print({$_DAU_W_SOCK} $_[1]);
+   $_[3]->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->unlock() if $_[3];
+
+   chomp(my $_len = <$_DAU_W_SOCK>);
+   $_dat_un->(), return if ($_len < 0);
+
+   my $_frozen = chop($_len);
+   read $_DAU_W_SOCK, my($_buf), $_len;
+   $_dat_un->();
+
+   ($_[2] == 1)
+      ? ($_frozen) ? $_thaw->($_buf)[0] : $_buf
+      : @{ $_thaw->($_buf) };
+}
+
+sub await {
+   my $_id = shift()->[0];
+   return unless ( my $_Q = $_obj->{ $_id } );
+   return unless ( exists $_Q->{_qr_sock} );
+
+   my $_t = shift || 0;
+
+   _croak('Queue: (await) is not enabled for this queue')
+      unless (exists $_Q->{_ar_sock});
+   _croak('Queue: (await threshold) is not an integer')
+      if (!looks_like_number($_t) || int($_t) != $_t);
+
+   $_t = 0 if ($_t < 0);
+   _req1('O~QUA', $_id.$LF . $_t.$LF);
+
+   MCE::Util::_sock_ready($_Q->{_ar_sock}) if $_is_MSWin32;
+   1 until sysread($_Q->{_ar_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+
+   return;
+}
+
+sub dequeue {
+   my $_id = shift()->[0];
+   return unless ( my $_Q = $_obj->{ $_id } );
+   return unless ( exists $_Q->{_qr_sock} );
+
+   my $_cnt = shift;
+
+   if (defined $_cnt && $_cnt ne '1') {
+      _croak('Queue: (dequeue count argument) is not valid')
+         if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
+   } else {
+      $_cnt = 1;
+   }
+
+   if (exists $_Q->{'_mutex_0'}) {
+      $_Q->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->lock();
+
+      MCE::Util::_sock_ready($_Q->{_qr_sock}) if $_is_MSWin32;
+      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+
+      _req_queue('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, $_Q);
+   }
+   else {
+      MCE::Util::_sock_ready($_Q->{_qr_sock}) if $_is_MSWin32;
+      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+
+      _req_queue('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, undef);
+   }
+}
+
+sub dequeue_nb {
+   my $_id = shift()->[0];
+   return unless ( my $_Q = $_obj->{ $_id } );
+   return unless ( exists $_Q->{_qr_sock} );
+
+   my $_cnt = shift;
+
+   if ($_Q->{_fast}) {
+      warn "Queue: (dequeue_nb) is not allowed for fast => 1\n";
+      return;
+   }
+   if (defined $_cnt && $_cnt ne '1') {
+      _croak('Queue: (dequeue_nb count argument) is not valid')
+         if (!looks_like_number($_cnt) || int($_cnt) != $_cnt || $_cnt < 1);
+   } else {
+      $_cnt = 1;
+   }
+
+   _req_queue('O~QUN', $_id.$LF . $_cnt.$LF, $_cnt, undef);
+}
+
 1;
 
 __END__
@@ -692,7 +1028,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.825
+This document describes MCE::Shared::Queue version 1.826
 
 =head1 DESCRIPTION
 
@@ -1053,35 +1389,38 @@ queues simultaneously; e.g.
 
 =head1 LIMITATIONS
 
-Perl must have L<IO::FDPass> for constructing a shared C<condvar>, C<handle>,
-and C<queue>, while the shared-manager process is running. For platforms where
-L<IO::FDPass> is not possible, construct C<condvar>, C<handle>, and C<queue>
-first, before other classes. On systems without C<IO::FDPass>, the manager
-process is delayed until sharing other classes or started explicitly.
+Perl must have L<IO::FDPass> for constructing a shared C<condvar> or C<queue>
+while the shared-manager process is running. For platforms where L<IO::FDPass>
+isn't possible, construct C<condvar> and C<queue> before other classes.
+On systems without C<IO::FDPass>, the manager process is delayed until sharing
+other classes or started explicitly.
 
    use MCE::Shared;
 
    my $has_IO_FDPass = $INC{'IO/FDPass.pm'} ? 1 : 0;
 
    my $cv  = MCE::Shared->condvar();
-   my $que = MCE::Shared->queue();              # <-- this module
-
-   mce_open my $fh, ">", "/path/to/file.log";
+   my $que = MCE::Shared->queue();
 
    MCE::Shared->start() unless $has_IO_FDPass;
 
-Passing a file handle by reference to C<mce_open> also has the same limitation.
-The file handle, associated with the reference, must be constructed before the
-manager process is started.
+Regarding mce_open, C<IO::FDPass> is needed for constructing a shared-handle
+from a non-shared handle not yet available inside the shared-manager process.
+The workaround is to have the non-shared handle made before the shared-manager
+is started. Passing a file by reference is fine for the three STD* handles.
 
-   open NON_SHARED_FH, ">", "/path/to/output.txt";
+   # The shared-manager knows of \*STDIN, \*STDOUT, \*STDERR.
 
-   MCE::Shared->start() unless $has_IO_FDPass;
+   mce_open my $shared_in,  "<",  \*STDIN;   # ok
+   mce_open my $shared_out, ">>", \*STDOUT;  # ok
+   mce_open my $shared_err, ">>", \*STDERR;  # ok
+   mce_open my $shared_fh1, "<",  "/path/to/sequence.fasta";  # ok
+   mce_open my $shared_fh2, ">>", "/path/to/results.log";     # ok
 
-   mce_open my $shared_fh, ">", \*NON_SHARED_FH;
+   mce_open my $shared_fh, ">>", \*NON_SHARED_FH;  # requires IO::FDPass
 
 The L<IO::FDPass> module is known to work reliably on most platforms.
-Install 1.1 or later to rid of limitations.
+Install 1.1 or later to rid of limitations described above.
 
    perl -MIO::FDPass -le "print 'Cheers! Perl has IO::FDPass.'"
 

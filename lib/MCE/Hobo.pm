@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
-our $VERSION = '1.825';
+our $VERSION = '1.826';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -66,8 +66,6 @@ use constant { _WNOHANG => $^O eq 'solaris' ? 64 : 1 };
 use Time::HiRes qw(sleep);
 use bytes;
 
-use MCE::Shared::Ordhash ();
-use MCE::Shared::Hash ();
 use MCE::Shared ();
 
 use overload (
@@ -147,17 +145,17 @@ sub create {
    }
 
    if ( !exists $_LIST->{$pkg} ) {
-      $_LIST->{$pkg} = MCE::Shared::Ordhash->new();         # non-shared
+      $_LIST->{$pkg} = MCE::Hobo::_ordhash->new;            # non-shared
    }
 
    if ( !exists $_DATA->{$pkg} ) {
-      $_DATA->{$pkg} = MCE::Shared::Hash->new();            # non-shared
-      $_STAT->{$pkg} = MCE::Shared::Hash->new();
+      $_DATA->{$pkg} = MCE::Hobo::_hash->new;               # non-shared
+      $_STAT->{$pkg} = MCE::Hobo::_hash->new;
    }
 
    if ( !$_DATA->{$pkg}->exists($mgr_id) ) {
-      $_DATA->{$pkg}->set( $mgr_id, MCE::Shared->hash() );  # shared
-      $_STAT->{$pkg}->set( $mgr_id, MCE::Shared->hash() );
+      $_DATA->{$pkg}->set( $mgr_id, MCE::Shared->share(MCE::Hobo::_hash->new) );
+      $_STAT->{$pkg}->set( $mgr_id, MCE::Shared->share(MCE::Hobo::_hash->new) );
 
       $_STAT->{$pkg}->set("$mgr_id:seed", int(rand() * 1e9) );
       $_STAT->{$pkg}->set("$mgr_id:id", 0 );
@@ -447,7 +445,7 @@ sub waitone {
    $self->{ERROR}  = $_STAT->{$pkg}->get($mgr_id)->del($wrk_id);
    $self->{JOINED} = 1;
 
-   return $self;
+   $self;
 }
 
 sub yield {
@@ -611,6 +609,78 @@ sub _trap {
    _exit();
 }
 
+###############################################################################
+## ----------------------------------------------------------------------------
+## Optimized, hash and ordhash implementations suited for MCE::Hobo.
+##
+###############################################################################
+
+package MCE::Hobo::_hash;
+
+use strict;
+use warnings;
+
+sub new    { bless {}, shift }
+sub set    { $_[0]->{ $_[1] } = $_[2] }
+sub get    { $_[0]->{ $_[1] } }
+sub del    { delete $_[0]->{ $_[1] } }
+sub exists { exists $_[0]->{ $_[1] } }
+sub incr   { ++$_[0]->{ $_[1] } }
+
+package MCE::Hobo::_ordhash;
+
+use strict;
+use warnings;
+
+sub new {
+   my $gcnt = 0; bless [ {}, [], {}, \$gcnt ], shift;
+}
+
+sub set {
+   my ( $key, $data, $keys, $indx ) = ( $_[1], @{ $_[0] } );
+
+   $data->{ $key } = $_[2], $indx->{ $key } = @{ $keys };
+   push @{ $keys }, "$key";
+
+   return;
+}
+
+sub del {
+   my ( $data, $keys, $indx, $gcnt ) = @{ $_[0] };
+   my $off = delete $indx->{ $_[1] };
+
+   $keys->[ $off ] = undef;
+
+   if ( ++${ $gcnt } > @{ $keys } * 0.667 ) {
+      my $i; $i = ${ $gcnt } = 0;
+      for my $k ( @{ $keys } ) {
+         $keys->[ $i ] = $k, $indx->{ $k } = $i++ if ( defined $k );
+      }
+      splice @{ $keys }, $i;
+   }
+
+   delete $data->{ $_[1] };
+}
+
+sub clear {
+   %{ $_[0]->[0] } = @{ $_[0]->[1] } = %{ $_[0]->[2] } = ();
+   ${ $_[0]->[3] } = 0;
+
+   return;
+}
+
+sub len {
+   scalar keys %{ $_[0]->[0] };
+}
+
+sub vals {
+   local $_; my ( $self ) = @_;
+
+   ${ $self->[3] }
+      ? @{ $self->[0] }{ grep defined($_), @{ $self->[1] } }
+      : @{ $self->[0] }{ @{ $self->[1] } };
+}
+
 1;
 
 __END__
@@ -627,7 +697,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.825
+This document describes MCE::Hobo version 1.826
 
 =head1 SYNOPSIS
 

@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.825';
+our $VERSION = '1.826';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -112,137 +112,6 @@ sub share {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Public functions.
-##
-###############################################################################
-
-sub start { MCE::Shared::Server::_start() }
-sub stop  { MCE::Shared::Server::_stop()  }
-
-sub init {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   MCE::Shared::Object::_init(@_);
-}
-
-sub cache {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Cache unless $INC{'MCE/Shared/Cache.pm'};
-   &share({}, MCE::Shared::Cache->new(_shared => 1, @_));
-}
-sub condvar {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Condvar unless $INC{'MCE/Shared/Condvar.pm'};
-   &share({}, MCE::Shared::Condvar->new(@_));
-}
-sub minidb {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Minidb unless $INC{'MCE/Shared/Minidb.pm'};
-   &share({}, MCE::Shared::Minidb->new(@_));
-}
-sub queue {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Queue unless $INC{'MCE/Shared/Queue.pm'};
-   &share({}, MCE::Shared::Queue->new(@_));
-}
-sub scalar {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Scalar unless $INC{'MCE/Shared/Scalar.pm'};
-   &share({}, MCE::Shared::Scalar->new(@_));
-}
-sub sequence {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Sequence unless $INC{'MCE/Shared/Sequence.pm'};
-   &share({}, MCE::Shared::Sequence->new(@_));
-}
-
-## 'num_sequence' is an alias for 'sequence'
-*num_sequence = \&sequence;
-
-sub array {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Array unless $INC{'MCE/Shared/Array.pm'};
-
-   my $_params = ref $_[0] eq 'HASH' ? shift : {};
-   my $_item   = &share($_params, MCE::Shared::Array->new());
-
-   if ( scalar @_ ) {
-      $_params->{_DEEPLY_} = 1;
-      for ( my $i = 0; $i <= $#_; $i += 1 ) {
-         &_share($_params, $_item, $_[$i]) if ref($_[$i]);
-      }
-      $_item->assign(@_);
-   }
-
-   $_item;
-}
-
-sub handle {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
-
-   my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
-   my $_fh   = \do { no warnings 'once'; local *FH };
-
-   tie *{ $_fh }, 'MCE::Shared::Object', $_item;
-   if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
-
-   $_fh;
-}
-
-sub hash {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Hash unless $INC{'MCE/Shared/Hash.pm'};
-
-   my $_params = ref $_[0] eq 'HASH' ? shift : {};
-   my $_item   = &share($_params, MCE::Shared::Hash->new());
-
-   &_deeply_share_h($_params, $_item, @_) if @_;
-
-   $_item;
-}
-
-sub open (@) {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
-
-   my $_item;
-
-   if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } &&
-        ref tied(*{ $_[0] }) eq 'MCE::Shared::Object' ) {
-      $_item = tied *{ $_[0] };
-   }
-   elsif ( @_ ) {
-      if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } ) {
-         close $_[0] if defined ( fileno $_[0] );
-      }
-      $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
-      $_[0]  = \do { no warnings 'once'; local *FH };
-      tie *{ $_[0] }, 'MCE::Shared::Object', $_item;
-   }
-
-   shift; _croak("Not enough arguments for open") unless @_;
-
-   if ( !defined wantarray ) {
-      $_item->OPEN(@_) or _croak("open error: $!");
-   } else {
-      $_item->OPEN(@_);
-   }
-}
-
-sub ordhash {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-   require MCE::Shared::Ordhash unless $INC{'MCE/Shared/Ordhash.pm'};
-
-   my $_params = ref $_[0] eq 'HASH' ? shift : {};
-   my $_item   = &share($_params, MCE::Shared::Ordhash->new());
-
-   &_deeply_share_h($_params, $_item, @_) if @_;
-
-   $_item;
-}
-
-###############################################################################
-## ----------------------------------------------------------------------------
 ## PDL sharing -- construction takes place under the shared server-process.
 ##
 ###############################################################################
@@ -272,84 +141,175 @@ if ( $INC{'PDL.pm'} ) {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## TIE support.
+## Public functions.
 ##
 ###############################################################################
 
-sub TIEARRAY {
-   shift;
-   if (ref($_[0]) eq 'HASH' && exists $_[0]->{'module'}) {
-      local $@; my $_obj; _use( my $_module = shift->{'module'} );
+sub open (@) {
 
-      eval { $_obj = $_module->TIEARRAY(@_) };
-      _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
-
-      MCE::Shared->share($_obj);
-   }
-   else {
-      MCE::Shared->array(@_);
-   }
-}
-
-sub TIEHANDLE {
+   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
-   my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) ); shift;
-   if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
 
-   $_item;
+   my $_item;
+
+   if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } &&
+        ref tied(*{ $_[0] }) eq 'MCE::Shared::Object' ) {
+      $_item = tied *{ $_[0] };
+   }
+   elsif ( @_ ) {
+      if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } ) {
+         close $_[0] if defined ( fileno $_[0] );
+      }
+      $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
+      $_[0]  = \do { no warnings 'once'; local *FH };
+      tie *{ $_[0] }, 'MCE::Shared::Object', $_item;
+   }
+
+   shift; _croak("Not enough arguments for open") unless @_;
+
+   if ( !defined wantarray ) {
+      $_item->OPEN(@_) or _croak("open error: $!");
+   } else {
+      $_item->OPEN(@_);
+   }
 }
 
-sub TIEHASH {
-   shift;
-   if (ref($_[0]) eq 'HASH' && exists $_[0]->{'module'}) {
-      local $@; my $_obj; _use( my $_module = shift->{'module'} );
+sub AUTOLOAD {
 
-      eval { $_obj = $_module->TIEHASH(@_) };
-      _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
+   # $AUTOLOAD = MCE::Shared::<method_name>
+   my $_fn = substr($MCE::Shared::AUTOLOAD, 13);
 
-      MCE::Shared->share($_obj);
+   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
+
+   return MCE::Shared::Object::_init(@_) if $_fn eq 'init';
+   return MCE::Shared::Server::_start() if $_fn eq 'start';
+   return MCE::Shared::Server::_stop() if $_fn eq 'stop';
+
+   # tie support
+
+   if ( $_fn eq 'TIEARRAY' ) {
+      if ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} ) {
+         my $_obj; _use( my $_module = shift->{'module'} );
+         local $@; eval { $_obj = $_module->TIEARRAY(@_) };
+         _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
+
+         return MCE::Shared->share($_obj);
+      }
+
+      return MCE::Shared->array(@_);
    }
-   else {
+   elsif ( $_fn eq 'TIEHANDLE' ) {
+      require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
+      my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) ); shift;
+      if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
+
+      return $_item;
+   }
+   elsif ( $_fn eq 'TIEHASH' ) {
+      if ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} ) {
+         my $_obj; _use( my $_module = shift->{'module'} );
+         local $@; eval { $_obj = $_module->TIEHASH(@_) };
+         _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
+
+         return MCE::Shared->share($_obj);
+      }
       my ($_cache, $_ordered);
 
       if ( ref $_[0] eq 'HASH' ) {
          if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} ) {
-            $_ordered = 1; shift();
+            $_ordered = 1; shift;
          } elsif ( exists $_[0]->{'max_age'} || exists $_[0]->{'max_keys'} ) {
-            $_cache   = 1;
+            $_cache = 1;
          }
       }
       else {
          if ( @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) ) {
             $_ordered = $_[1]; splice(@_, 0, 2);
          } elsif ( @_ < 5 && ( $_[0] eq 'max_age' || $_[0] eq 'max_keys' ) ) {
-            $_cache   = 1;
+            $_cache = 1;
          }
       }
 
-      if ( $_cache ) {
-         MCE::Shared->cache(@_);
-      } elsif ( $_ordered ) {
-         MCE::Shared->ordhash(@_);
-      } else {
-         MCE::Shared->hash(@_);
+      return MCE::Shared->cache(@_)   if $_cache;
+      return MCE::Shared->ordhash(@_) if $_ordered;
+      return MCE::Shared->hash(@_);
+   }
+   elsif ( $_fn eq 'TIESCALAR' ) {
+      if ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} ) {
+         my $_obj; _use( my $_module = shift->{'module'} );
+         local $@; eval { $_obj = $_module->TIESCALAR(@_) };
+         _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
+
+         return MCE::Shared->share($_obj);
       }
-   }
-}
 
-sub TIESCALAR {
-   shift;
-   if (ref($_[0]) eq 'HASH' && exists $_[0]->{'module'}) {
-      local $@; my $_obj; _use( my $_module = shift->{'module'} );
-
-      eval { $_obj = $_module->TIESCALAR(@_) };
-      _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
-
-      MCE::Shared->share($_obj);
+      return MCE::Shared->scalar(@_);
    }
-   else {
-      MCE::Shared->scalar(@_);
+
+   # array, handle, hash, ordhash
+
+   if ( $_fn eq 'array' ) {
+      require MCE::Shared::Array unless $INC{'MCE/Shared/Array.pm'};
+
+      my $_params = ref $_[0] eq 'HASH' ? shift : {};
+      my $_item   = &share($_params, MCE::Shared::Array->new());
+
+      if ( scalar @_ ) {
+         $_params->{_DEEPLY_} = 1;
+         for ( my $i = 0; $i <= $#_; $i += 1 ) {
+            &_share($_params, $_item, $_[$i]) if ref($_[$i]);
+         }
+         $_item->assign(@_);
+      }
+
+      return $_item;
    }
+   elsif ( $_fn eq 'handle' ) {
+      require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
+
+      my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
+      my $_fh   = \do { no warnings 'once'; local *FH };
+
+      tie *{ $_fh }, 'MCE::Shared::Object', $_item;
+      if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
+
+      return $_fh;
+   }
+   elsif ( $_fn eq 'hash' || $_fn eq 'ordhash' ) {
+      if ( $_fn eq 'hash' ) {
+         require MCE::Shared::Hash unless $INC{'MCE/Shared/Hash.pm'};
+      } else {
+         require MCE::Shared::Ordhash unless $INC{'MCE/Shared/Ordhash.pm'};
+      }
+      my $_params = ref $_[0] eq 'HASH' ? shift : {};
+      my $_item   = ( $_fn eq 'hash' )
+         ? &share($_params, MCE::Shared::Hash->new())
+         : &share($_params, MCE::Shared::Ordhash->new());
+
+      if ( scalar @_ ) {
+         $_params->{_DEEPLY_} = 1;
+         for ( my $i = 1; $i <= $#_; $i += 2 ) {
+            &_share($_params, $_item, $_[$i]) if ref($_[$i]);
+         }
+         $_item->assign(@_);
+      }
+
+      return $_item;
+   }
+
+   # cache, condvar, minidb, queue, scalar, sequence, etc.
+
+   $_fn = 'sequence' if $_fn eq 'num_sequence';
+
+   my $_pkg = ucfirst( lc $_fn ); local $@;
+
+   if ( $INC{"MCE/Shared/$_pkg.pm"} || eval "use MCE::Shared::$_pkg (); 1" ) {
+      $_pkg = "MCE::Shared::$_pkg";
+      return &share({}, $_pkg->new(_shared => 1, @_)) if $_fn eq 'cache';
+      return &share({}, $_pkg->new(@_));
+   }
+
+   _croak("Can't locate object method \"$_fn\" via package \"MCE::Shared\"");
 }
 
 ###############################################################################
@@ -366,16 +326,6 @@ sub _croak {
       require MCE::Shared::Base unless $INC{'MCE/Shared/Base.pm'};
       goto &MCE::Shared::Base::_croak;
    }
-}
-
-sub _deeply_share_h {
-   my ( $_params, $_item ) = ( shift, shift );
-   $_params->{_DEEPLY_} = 1;
-   for ( my $i = 1; $i <= $#_; $i += 2 ) {
-      &_share($_params, $_item, $_[$i]) if ref($_[$i]);
-   }
-   $_item->assign(@_);
-   return;
 }
 
 sub _incr_count {
@@ -416,7 +366,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.825
+This document describes MCE::Shared version 1.826
 
 =head1 SYNOPSIS
 
@@ -516,48 +466,69 @@ code asynchronously.
 
 =head1 EXTRA FUNCTIONALITY
 
-C<MCE::Shared> enables extra functionality on systems with L<IO::FDPass>
+MCE::Shared enables extra functionality on systems with L<IO::FDPass>
 installed. Without it, MCE::Shared is unable to send C<file descriptors> to
-the shared-manager process. The following is a suggestion for systems without
-C<IO::FDPass>. This limitation applies to sharing L<MCE::Shared::Condvar>,
-L<MCE::Shared::Handle>, and L<MCE::Shared::Queue> only.
+the shared-manager process. The use of IO::FDPass applies to Condvar, Queue
+and Handle (mce_open). IO::FDpass isn't used for anything else.
+
+   use MCE::Shared;
+
+   # One may want to start the shared-manager early.
+
+   MCE::Shared->start();
+
+   # Typically, the shared-manager is started automatically when
+   # constructing a shared object.
+
+   my $ca = MCE::Shared->cache( max_keys => 500 );
+
+   # IO::FDPass is necessary for constructing a shared condvar or queue
+   # while the manager is running in order to send file descriptors
+   # associated with the object.
+
+   # Workers block using a socket handle for ->wait and ->timedwait.
+
+   my $cv = MCE::Shared->condvar();
+
+   # Workers block using a socket handle for ->dequeue and ->await.
+
+   my $q1 = MCE::Shared->queue();
+   my $q2 = MCE::Shared->queue( await => 1 );
+
+For platforms where L<IO::FDPass> isn't possible, construct C<condvar> and
+C<queue> before other classes. The manager process is delayed until sharing
+other classes or started explicitly.
 
    use MCE::Shared;
 
    my $has_IO_FDPass = $INC{'IO/FDPass.pm'} ? 1 : 0;
 
-   # Construct any shared Condvar(s), Handle(s), and Queue(s) first.
-   # These contain GLOB handles where freezing is not allowed.
-
-   my $cv1 = MCE::Shared->condvar();
-   my $cv2 = MCE::Shared->condvar();
-
-   my $q1  = MCE::Shared->queue();
-   my $q2  = MCE::Shared->queue();
-
-   # The shared-manager process knows of ( \*STDOUT, \*STDERR, \*STDIN ).
-   # Therefore, okay to construct these after the manager is running.
-
-   mce_open my $fh1, ">>", \*STDOUT;                  # ok
-   mce_open my $fh2, "<", "/path/to/sequence.fasta";  # ok
-
-   # Afterwards, start the shared-manager manually.
+   my $cv  = MCE::Shared->condvar( 0 );
+   my $que = MCE::Shared->queue( fast => 1 );
 
    MCE::Shared->start() unless $has_IO_FDPass;
 
-Note that the shared-manager will start automatically for other classes,
-shipped with C<MCE::Shared>. The following will fail if Perl lacks the
-C<IO::FDPass> module.
+   my $ha = MCE::Shared->hash();  # started implicitly
 
-   use MCE::Shared;
+Note: MCE starts the shared-manager if not yet started. Ditto for MCE::Hobo.
 
-   my $h1 = MCE::Shared->hash();    # the shared-manager is started here
-   my $q1 = MCE::Shared->queue();   # must have IO::FDPass to pass fd's
-   my $cv = MCE::Shared->condvar(); # ditto
-   my $h2 = MCE::Shared->ordhash();
+Regarding mce_open, C<IO::FDPass> is needed for constructing a shared-handle
+from a non-shared handle not yet available inside the shared-manager process.
+The workaround is to have the non-shared handle made before the shared-manager
+is started. Passing a file by reference is fine for the three STD* handles.
+
+   # The shared-manager knows of \*STDIN, \*STDOUT, \*STDERR.
+
+   mce_open my $shared_in,  "<",  \*STDIN;   # ok
+   mce_open my $shared_out, ">>", \*STDOUT;  # ok
+   mce_open my $shared_err, ">>", \*STDERR;  # ok
+   mce_open my $shared_fh1, "<",  "/path/to/sequence.fasta";  # ok
+   mce_open my $shared_fh2, ">>", "/path/to/results.log";     # ok
+
+   mce_open my $shared_fh, ">>", \*NON_SHARED_FH;  # requires IO::FDPass
 
 The L<IO::FDPass> module is known to work reliably on most platforms.
-Install 1.1 or later to rid of limitations.
+Install 1.1 or later to rid of limitations described above.
 
    perl -MIO::FDPass -le "print 'Cheers! Perl has IO::FDPass.'"
 

@@ -1,6 +1,16 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.826 Wed May 03 03:00:00 EST 2017
+
+  * Reduced memory consumption.
+
+  * Clarified "limitations" section in MCE::Share::{ Condvar, Handle, Queue }.
+    Clarified "extra functionality" section in MCE::Shared.
+    Thank you, http://www.perlmonks.org/?node=zentara.
+
+  * Bumped MCE dependency to 1.829.
+
 1.825 Fri Apr 28 16:00:00 EST 2017
 
   [BUG FIXES]
@@ -10,11 +20,14 @@ Revision history for Perl module MCE::Shared.
 
   [ENHANCEMENTS]
 
+  * Added unbless option when exporting a shared object.
+    Thank you, Nick Tonkin: https://metacpan.org/author/TONKIN
+
   * Added Curses and Prima to list for enabling the posix_exit option.
-  * Added module option for using a class implicitly when tie'ing a variable.
-  * Added unbless option when exporting a shared object. Thank you, Nick Tonkin.
+  * Added module option for using a class explicitly when tie'ing a variable.
   * Improved support for running MCE::Hobo on the NetBSD platform.
   * Enhanced IPC and signal handling. Reduced memory consumption.
+
   * Bumped MCE dependency to 1.828.
 
 1.824 Thu Apr 06 18:00:00 EST 2017

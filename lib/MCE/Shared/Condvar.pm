@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.825';
+our $VERSION = '1.826';
 
 use MCE::Shared::Base ();
 use MCE::Util ();
@@ -26,8 +26,10 @@ use overload (
    fallback => 1
 );
 
+my $LF = "\012"; Internals::SvREADONLY($LF, 1);
 my $_has_threads = $INC{'threads.pm'} ? 1 : 0;
 my $_tid = $_has_threads ? threads->tid() : 0;
+my $_reset_flg = 1;
 
 sub new {
    my ($_class, $_cv) = (shift, {});
@@ -38,6 +40,9 @@ sub new {
    $_cv->{_count}    = 0;
 
    MCE::Util::_sock_pair($_cv, qw(_cr_sock _cw_sock));
+
+   MCE::Shared::Object::_reset(), $_reset_flg = ''
+      if $_reset_flg && $INC{'MCE/Shared/Server.pm'};
 
    bless $_cv, $_class;
 }
@@ -119,6 +124,237 @@ sub len {
    length $_[0]->{_value};
 }
 
+###############################################################################
+## ----------------------------------------------------------------------------
+## Server functions.
+##
+###############################################################################
+
+{
+   use constant {
+      SHR_O_CVB => 'O~CVB',  # Condvar broadcast
+      SHR_O_CVS => 'O~CVS',  # Condvar signal
+      SHR_O_CVT => 'O~CVT',  # Condvar timedwait
+      SHR_O_CVW => 'O~CVW',  # Condvar wait
+   };
+
+   my ( $_DAU_R_SOCK_REF, $_DAU_R_SOCK, $_obj, $_CV, $_id );
+
+   my %_output_function = (
+
+      SHR_O_CVB.$LF => sub {                      # Condvar broadcast
+         $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
+         chomp($_id = <$_DAU_R_SOCK>);
+
+         $_CV = $_obj->{ $_id } || do {
+            print {$_DAU_R_SOCK} $LF;
+         };
+         for my $_i (1 .. $_CV->{_count}) {
+            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
+         }
+
+         $_CV->{_count} = 0;
+         print {$_DAU_R_SOCK} $LF;
+
+         return;
+      },
+
+      SHR_O_CVS.$LF => sub {                      # Condvar signal
+         $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
+         chomp($_id = <$_DAU_R_SOCK>);
+
+         $_CV = $_obj->{ $_id } || do {
+            print {$_DAU_R_SOCK} $LF;
+         };
+         if ( $_CV->{_count} >= 0 ) {
+            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
+            $_CV->{_count} -= 1;
+         }
+
+         print {$_DAU_R_SOCK} $LF;
+
+         return;
+      },
+
+      SHR_O_CVT.$LF => sub {                      # Condvar timedwait
+         $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
+         chomp($_id = <$_DAU_R_SOCK>);
+
+         $_CV = $_obj->{ $_id } || do {
+            print {$_DAU_R_SOCK} $LF;
+         };
+
+         $_CV->{_count} -= 1;
+         print {$_DAU_R_SOCK} $LF;
+
+         return;
+      },
+
+      SHR_O_CVW.$LF => sub {                      # Condvar wait
+         $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
+         chomp($_id = <$_DAU_R_SOCK>);
+
+         $_CV = $_obj->{ $_id } || do {
+            print {$_DAU_R_SOCK} $LF;
+         };
+
+         $_CV->{_count} += 1;
+         print {$_DAU_R_SOCK} $LF;
+
+         return;
+      },
+
+   );
+
+   sub _init_mgr {
+      my $_function;
+      ( $_DAU_R_SOCK_REF, $_obj, $_function ) = @_;
+
+      for my $key ( keys %_output_function ) {
+         last if exists($_function->{$key});
+         $_function->{$key} = $_output_function{$key};
+      }
+
+      return;
+   }
+}
+
+###############################################################################
+## ----------------------------------------------------------------------------
+## Object package.
+##
+###############################################################################
+
+## Items below are folded into MCE::Shared::Object.
+
+package # hide from rpm
+   MCE::Shared::Object;
+
+use strict;
+use warnings;
+
+no warnings qw( threads recursion uninitialized numeric once );
+
+use bytes;
+
+no overloading;
+
+my $_is_MSWin32 = ($^O eq 'MSWin32') ? 1 : 0;
+
+my ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj);
+
+sub _init_condvar {
+   ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj) = @_;
+
+   return;
+}
+
+# lock ( )
+
+sub lock {
+   return unless ( my $_CV = $_obj->{ $_[0]->[0] } );
+   return unless ( exists $_CV->{_mutex} );
+
+   $_CV->{_mutex}->lock;
+}
+
+# unlock ( )
+
+sub unlock {
+   return unless ( my $_CV = $_obj->{ $_[0]->[0] } );
+   return unless ( exists $_CV->{_mutex} );
+
+   $_CV->{_mutex}->unlock;
+}
+
+# broadcast ( floating_seconds )
+# broadcast ( )
+
+sub broadcast {
+   my $_id = $_[0]->[0];
+   return unless ( my $_CV = $_obj->{ $_id } );
+   return unless ( exists $_CV->{_cr_sock} );
+
+   sleep($_[1]) if defined $_[1];
+
+   _req1('O~CVB', $_id.$LF);
+   $_CV->{_mutex}->unlock();
+
+   sleep(0);
+}
+
+# signal ( floating_seconds )
+# signal ( )
+
+sub signal {
+   my $_id = $_[0]->[0];
+   return unless ( my $_CV = $_obj->{ $_id } );
+   return unless ( exists $_CV->{_cr_sock} );
+
+   sleep($_[1]) if defined $_[1];
+
+   _req1('O~CVS', $_id.$LF);
+   $_CV->{_mutex}->unlock();
+
+   sleep(0);
+}
+
+# timedwait ( floating_seconds )
+
+sub timedwait {
+   my $_id = $_[0]->[0];
+   my $_timeout = $_[1];
+
+   return unless ( my $_CV = $_obj->{ $_id } );
+   return unless ( exists $_CV->{_cr_sock} );
+   return $_[0]->wait() unless $_timeout;
+
+   _croak('Condvar: timedwait (timeout) is not an integer')
+      if (!looks_like_number($_timeout) || int($_timeout) != $_timeout);
+
+   _req1('O~CVW', $_id.$LF);
+   $_CV->{_mutex}->unlock();
+
+   local $@; eval {
+      local $SIG{ALRM} = sub { die "alarm clock restart\n" };
+      alarm $_timeout unless $_is_MSWin32;
+
+      die "alarm clock restart\n"
+         if $_is_MSWin32 && MCE::Util::_sock_ready($_CV->{_cr_sock}, $_timeout);
+
+      1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+
+      alarm 0;
+   };
+
+   alarm 0;
+
+   if ($@) {
+      chomp($@), _croak($@) unless $@ eq "alarm clock restart\n";
+      _req1('O~CVT', $_id.$LF);
+
+      return '';
+   }
+
+   return 1;
+}
+
+# wait ( )
+
+sub wait {
+   my $_id = $_[0]->[0];
+   return unless ( my $_CV = $_obj->{ $_id } );
+   return unless ( exists $_CV->{_cr_sock} );
+
+   _req1('O~CVW', $_id.$LF);
+   $_CV->{_mutex}->unlock();
+
+   MCE::Util::_sock_ready($_CV->{_cr_sock}) if $_is_MSWin32;
+   1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+
+   return 1;
+}
+
 1;
 
 __END__
@@ -135,7 +371,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.825
+This document describes MCE::Shared::Condvar version 1.826
 
 =head1 DESCRIPTION
 
@@ -393,35 +629,38 @@ The conditional locking aspect is inspired by L<threads::shared>.
 
 =head1 LIMITATIONS
 
-Perl must have L<IO::FDPass> for constructing a shared C<condvar>, C<handle>,
-and C<queue>, while the shared-manager process is running. For platforms where
-L<IO::FDPass> is not possible, construct C<condvar>, C<handle>, and C<queue>
-first, before other classes. On systems without C<IO::FDPass>, the manager
-process is delayed until sharing other classes or started explicitly.
+Perl must have L<IO::FDPass> for constructing a shared C<condvar> or C<queue>
+while the shared-manager process is running. For platforms where L<IO::FDPass>
+isn't possible, construct C<condvar> and C<queue> before other classes.
+On systems without C<IO::FDPass>, the manager process is delayed until sharing
+other classes or started explicitly.
 
    use MCE::Shared;
 
    my $has_IO_FDPass = $INC{'IO/FDPass.pm'} ? 1 : 0;
 
-   my $cv  = MCE::Shared->condvar();            # <-- this module
+   my $cv  = MCE::Shared->condvar();
    my $que = MCE::Shared->queue();
 
-   mce_open my $fh, ">", "/path/to/file.log";
-
    MCE::Shared->start() unless $has_IO_FDPass;
 
-Passing a file handle by reference to C<mce_open> also has the same limitation.
-The file handle, associated with the reference, must be constructed before the
-manager process is started.
+Regarding mce_open, C<IO::FDPass> is needed for constructing a shared-handle
+from a non-shared handle not yet available inside the shared-manager process.
+The workaround is to have the non-shared handle made before the shared-manager
+is started. Passing a file by reference is fine for the three STD* handles.
 
-   open NON_SHARED_FH, ">", "/path/to/output.txt";
+   # The shared-manager knows of \*STDIN, \*STDOUT, \*STDERR.
 
-   MCE::Shared->start() unless $has_IO_FDPass;
+   mce_open my $shared_in,  "<",  \*STDIN;   # ok
+   mce_open my $shared_out, ">>", \*STDOUT;  # ok
+   mce_open my $shared_err, ">>", \*STDERR;  # ok
+   mce_open my $shared_fh1, "<",  "/path/to/sequence.fasta";  # ok
+   mce_open my $shared_fh2, ">>", "/path/to/results.log";     # ok
 
-   mce_open my $shared_fh, ">", \*NON_SHARED_FH;
+   mce_open my $shared_fh, ">>", \*NON_SHARED_FH;  # requires IO::FDPass
 
 The L<IO::FDPass> module is known to work reliably on most platforms.
-Install 1.1 or later to rid of limitations.
+Install 1.1 or later to rid of limitations described above.
 
    perl -MIO::FDPass -le "print 'Cheers! Perl has IO::FDPass.'"
 
