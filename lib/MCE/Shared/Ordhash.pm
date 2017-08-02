@@ -48,6 +48,7 @@ use overload (
    q("")    => \&MCE::Shared::Base::_stringify,
    q(0+)    => \&MCE::Shared::Base::_numify,
    q(%{})   => sub {
+      no overloading;
       $_[0]->[_HREF] || do {
          # no circular reference to original, therefore no memory leaks
          tie my %h, __PACKAGE__.'::_href', bless([ @{ $_[0] } ], __PACKAGE__);
@@ -56,6 +57,8 @@ use overload (
    },
    fallback => 1
 );
+
+no overloading;
 
 ###############################################################################
 ## ----------------------------------------------------------------------------

@@ -104,16 +104,17 @@ MCE::Shared utilizes the following modules:
     overload
     Carp
     IO::FDPass  1.2+ (optional, recommended on UNIX and Windows)
-    MCE::Mutex  1.829+
-    MCE::Util   1.829+
-    MCE::Signal 1.829+
+    MCE::Mutex  1.830+
+    MCE::Util   1.830+
+    MCE::Signal 1.830+
+    POSIX
     Scalar::Util
     Sereal::Decoder 3.015+ (optional)
     Sereal::Encoder 3.015+ (optional)
     Socket
-    Storable 2.04+ (default when Sereal 3.015+ isn't available)
+    Storable    2.04+ (default when Sereal isn't available)
     Symbol
-    Test::More 0.45+ (for make test only)
+    Test::More  0.45+ (for make test only)
     Time::HiRes
 
 The IO::FDPass module applies to MCE::Shared::{ Condvar, Handle, and Queue }.

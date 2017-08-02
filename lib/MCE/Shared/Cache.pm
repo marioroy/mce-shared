@@ -44,6 +44,7 @@ use overload (
    q("")    => \&MCE::Shared::Base::_stringify,
    q(0+)    => \&MCE::Shared::Base::_numify,
    q(%{})   => sub {
+      no overloading;
       $_[0]->[_HREF] || do {
          # no circular reference to original, therefore no memory leaks
          tie my %h, __PACKAGE__.'::_href', bless([ @{ $_[0] } ], __PACKAGE__);
@@ -52,6 +53,8 @@ use overload (
    },
    fallback => 1
 );
+
+no overloading;
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
@@ -282,7 +285,7 @@ sub CLEAR {
 # SCALAR ( )
 
 sub SCALAR {
-   defined ${ $_[0]->[_EXPI] } && $_[0]->_prune_head;
+   $_[0]->_prune_head() if defined ${ $_[0]->[_EXPI] };
 
    scalar keys %{ $_[0]->[_DATA] };
 }
@@ -479,6 +482,8 @@ sub _prealloc {
 # prune start of list
 
 sub _prune_head {
+   return unless defined ${ $_[0]->[_EXPI] };
+
    my ( $data, $keys, $indx, $begi, $gcnt ) = @{ $_[0] };
    my ( $i, $time ) = ( 0, time );
 
@@ -539,7 +544,7 @@ sub _size {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## _find, keys, pairs, values
+## _find, iterator, keys, pairs, values
 ##
 ###############################################################################
 
@@ -555,6 +560,31 @@ sub _find {
    MCE::Shared::Base::_find_hash( $self->[_DATA], $params, $query, $self );
 }
 
+# iterator ( key [, key, ... ] )
+# iterator ( "query string" )
+# iterator ( )
+
+sub iterator {
+   my ( $self, @keys ) = @_;
+   my $data = $self->[_DATA];
+
+   if ( ! @keys ) {
+      @keys = $self->keys;
+   }
+   elsif ( @keys == 1 && $keys[0] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
+      @keys = $self->keys($keys[0]);
+   }
+   elsif ( defined ${ $self->[_EXPI] } ) {
+      $self->_prune_head();
+   }
+
+   return sub {
+      return unless @keys;
+      my $key = shift @keys;
+      return ( $key => $data->{ $key } );
+   };
+}
+
 # keys ( key [, key, ... ] )
 # keys ( "query string" )
 # keys ( )
@@ -562,7 +592,7 @@ sub _find {
 sub keys {
    my $self = shift;
 
-   defined ${ $self->[_EXPI] } && $self->_prune_head;
+   $self->_prune_head() if defined ${ $self->[_EXPI] };
 
    if ( @_ == 1 && $_[0] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
       $self->_find( { getkeys => 1 }, @_ );
@@ -603,7 +633,7 @@ sub _keys {
 sub pairs {
    my $self = shift;
 
-   defined ${ $self->[_EXPI] } && $self->_prune_head;
+   $self->_prune_head() if defined ${ $self->[_EXPI] };
 
    if ( @_ == 1 && $_[0] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
       $self->_find( @_ );
@@ -627,7 +657,7 @@ sub pairs {
 sub values {
    my $self = shift;
 
-   defined ${ $self->[_EXPI] } && $self->_prune_head;
+   $self->_prune_head() if defined ${ $self->[_EXPI] };
 
    if ( @_ == 1 && $_[0] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
       $self->_find( { getvals => 1 }, @_ );
@@ -773,13 +803,6 @@ sub mset {
 # peek ( key )
 
 sub peek {
-   return undef if !defined ( my $off = $_[0]->[_INDX]{ $_[1] } );
-
-   $_[0]->del( $_[1] ), return undef if (
-      defined ${ $_[0]->[_EXPI] } &&
-      $_[0]->[_KEYS]->[ $off -= ${ $_[0]->[_BEGI] } ] < time
-   );
-
    $_[0]->[_DATA]{ $_[1] };
 }
 
@@ -883,7 +906,7 @@ sub getset {
 # len ( )
 
 sub len {
-   defined ${ $_[0]->[_EXPI] } && $_[0]->_prune_head;
+   $_[0]->_prune_head() if defined ${ $_[0]->[_EXPI] };
 
    ( defined $_[1] )
       ? length $_[0]->get( $_[1] )
@@ -1015,6 +1038,7 @@ fetches only.
    $len   = $ca->len();                       # scalar keys %{ $ca }
    $len   = $ca->len( $key );                 # length $ca->{ $key }
 
+   $iter  = $ca->iterator( @keys );           # ($key, $val) = $iter->()
    @keys  = $ca->keys( @keys );               # @keys is optional
    %pairs = $ca->pairs( @keys );
    @vals  = $ca->values( @keys );             # vals is an alias for values
@@ -1256,6 +1280,47 @@ cache. See C<peek> to not promote the key internally to the top of the list.
    $val = $ca->{ "some_key" };
 
 Reorder: Yes
+
+=item iterator ( key [, key, ... ] )
+
+When C<max_age> is set, prunes any expired keys at the head of the list.
+
+Returns a code reference for iterating a list of key-value pairs stored in
+the cache when no arguments are given. Otherwise, returns a code reference for
+iterating the given keys in the same order. Keys that do not exist will have
+the C<undef> value.
+
+The list of keys to return is set when the closure is constructed. Later keys
+added to the hash are not included. Subsequently, the C<undef> value is
+returned for deleted keys.
+
+   $iter = $ca->iterator;
+   $iter = $ca->iterator( "key1", "key2" );
+
+   while ( my ( $key, $val ) = $iter->() ) {
+      ...
+   }
+
+Reorder: No
+
+=item iterator ( "query string" )
+
+When C<max_age> is set, prunes any expired keys at the head of the list.
+
+Returns a code reference for iterating a list of key-value pairs that match
+the given criteria. It returns an empty list if the search found nothing.
+The syntax for the C<query string> is described above.
+
+   $iter = $ca->iterator( "val eq some_value" );
+   $iter = $ca->iterator( "key eq some_key :AND val =~ /sun|moon|air|wind/" );
+   $iter = $ca->iterator( "val eq sun :OR val eq moon :OR val eq foo" );
+   $iter = $ca->iterator( "key =~ /$pattern/" );
+
+   while ( my ( $key, $val ) = $iter->() ) {
+      ...
+   }
+
+Reorder: No
 
 =item keys ( key [, key, ... ] )
 

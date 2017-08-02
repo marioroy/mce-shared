@@ -138,7 +138,7 @@ sub len {
       SHR_O_CVW => 'O~CVW',  # Condvar wait
    };
 
-   my ( $_DAU_R_SOCK_REF, $_DAU_R_SOCK, $_obj, $_CV, $_id );
+   my ( $_DAU_R_SOCK_REF, $_DAU_R_SOCK, $_obj, $_id );
 
    my %_output_function = (
 
@@ -146,14 +146,14 @@ sub len {
          $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
          chomp($_id = <$_DAU_R_SOCK>);
 
-         $_CV = $_obj->{ $_id } || do {
+         my $_var = $_obj->{ $_id } || do {
             print {$_DAU_R_SOCK} $LF;
          };
-         for my $_i (1 .. $_CV->{_count}) {
-            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
+         for my $_i (1 .. $_var->{_count}) {
+            1 until syswrite($_var->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
          }
 
-         $_CV->{_count} = 0;
+         $_var->{_count} = 0;
          print {$_DAU_R_SOCK} $LF;
 
          return;
@@ -163,12 +163,12 @@ sub len {
          $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
          chomp($_id = <$_DAU_R_SOCK>);
 
-         $_CV = $_obj->{ $_id } || do {
+         my $_var = $_obj->{ $_id } || do {
             print {$_DAU_R_SOCK} $LF;
          };
-         if ( $_CV->{_count} >= 0 ) {
-            1 until syswrite($_CV->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
-            $_CV->{_count} -= 1;
+         if ( $_var->{_count} >= 0 ) {
+            1 until syswrite($_var->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
+            $_var->{_count} -= 1;
          }
 
          print {$_DAU_R_SOCK} $LF;
@@ -180,11 +180,11 @@ sub len {
          $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
          chomp($_id = <$_DAU_R_SOCK>);
 
-         $_CV = $_obj->{ $_id } || do {
+         my $_var = $_obj->{ $_id } || do {
             print {$_DAU_R_SOCK} $LF;
          };
 
-         $_CV->{_count} -= 1;
+         $_var->{_count} -= 1;
          print {$_DAU_R_SOCK} $LF;
 
          return;
@@ -194,11 +194,11 @@ sub len {
          $_DAU_R_SOCK = ${ $_DAU_R_SOCK_REF };
          chomp($_id = <$_DAU_R_SOCK>);
 
-         $_CV = $_obj->{ $_id } || do {
+         my $_var = $_obj->{ $_id } || do {
             print {$_DAU_R_SOCK} $LF;
          };
 
-         $_CV->{_count} += 1;
+         $_var->{_count} += 1;
          print {$_DAU_R_SOCK} $LF;
 
          return;
@@ -235,6 +235,7 @@ use warnings;
 
 no warnings qw( threads recursion uninitialized numeric once );
 
+use Time::HiRes qw( sleep );
 use bytes;
 
 no overloading;

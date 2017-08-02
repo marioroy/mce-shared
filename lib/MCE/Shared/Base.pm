@@ -4,14 +4,14 @@
 ##
 ###############################################################################
 
-package MCE::Shared::Base;
-
 use strict;
 use warnings;
 
 use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
+
+package MCE::Shared::Base;
 
 our $VERSION = '1.826';
 
@@ -242,13 +242,6 @@ sub _croak {
 ###############################################################################
 
 package MCE::Shared::Base::Common;
-
-use strict;
-use warnings;
-
-use 5.010001;
-
-no warnings qw( threads recursion uninitialized numeric );
 
 # pipeline ( [ func1, @args ], [ func2, @args ], ... )
 

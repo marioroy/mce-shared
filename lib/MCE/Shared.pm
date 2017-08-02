@@ -23,14 +23,16 @@ use Carp;
 
 $Carp::Internal{ (__PACKAGE__) }++;
 
-use Scalar::Util qw( blessed refaddr );
+no overloading;
+
 use MCE::Shared::Server ();
+use Scalar::Util qw( blessed refaddr );
 
 our @CARP_NOT = qw(
-   MCE::Shared::Array   MCE::Shared::Condvar  MCE::Shared::Handle
-   MCE::Shared::Hash    MCE::Shared::Minidb   MCE::Shared::Ordhash
-   MCE::Shared::Queue   MCE::Shared::Scalar   MCE::Shared::Sequence
-   MCE::Shared::Server  MCE::Shared::Object   MCE::Shared::Cache
+   MCE::Shared::Array    MCE::Shared::Hash     MCE::Shared::Queue
+   MCE::Shared::Cache    MCE::Shared::Minidb   MCE::Shared::Scalar
+   MCE::Shared::Condvar  MCE::Shared::Object   MCE::Shared::Sequence
+   MCE::Shared::Handle   MCE::Shared::Ordhash  MCE::Shared::Server
 );
 
 sub import {
@@ -54,13 +56,16 @@ sub share {
    my $_params = ref $_[0] eq 'HASH' && ref $_[1] ? shift : {};
    my ($_class, $_ra, $_item) = (blessed($_[0]), refaddr($_[0]));
 
+   # class construction failed: e.g. share( class->new(...) )
+   return '' if @_ && !$_[0] && $!;
+
    # safety for circular references to not loop endlessly
    return $_lkup{ $_ra } if defined $_ra && exists $_lkup{ $_ra };
 
    $_count++;
 
    # blessed object, \@array, \%hash, or \$scalar
-   if ( $_class && Scalar::Util::reftype($_[0]) ne 'GLOB' ) {
+   if ( $_class ) {
       _incr_count($_[0]), return $_[0] if $_[0]->can('SHARED_ID');
 
       _croak("Running MCE::Queue via MCE::Shared is not supported.\n",
@@ -112,11 +117,12 @@ sub share {
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## PDL sharing -- construction takes place under the shared server-process.
+## Public functions.
 ##
 ###############################################################################
 
 if ( $INC{'PDL.pm'} ) {
+   # PDL sharing -- construction takes place under the shared server-process
    local $@; eval q{
 
       sub pdl_byte     { push @_, 'byte';     goto &_pdl_share }
@@ -139,28 +145,21 @@ if ( $INC{'PDL.pm'} ) {
    };
 }
 
-###############################################################################
-## ----------------------------------------------------------------------------
-## Public functions.
-##
-###############################################################################
-
 sub open (@) {
-
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
 
    my $_item;
-
    if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } &&
         ref tied(*{ $_[0] }) eq 'MCE::Shared::Object' ) {
+
       $_item = tied *{ $_[0] };
    }
    elsif ( @_ ) {
       if ( ref $_[0] eq 'GLOB' && tied *{ $_[0] } ) {
          close $_[0] if defined ( fileno $_[0] );
       }
-      $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
+      $_item = &share( MCE::Shared::Handle->new([]) );
       $_[0]  = \do { no warnings 'once'; local *FH };
       tie *{ $_[0] }, 'MCE::Shared::Object', $_item;
    }
@@ -175,7 +174,6 @@ sub open (@) {
 }
 
 sub AUTOLOAD {
-
    # $AUTOLOAD = MCE::Shared::<method_name>
    my $_fn = substr($MCE::Shared::AUTOLOAD, 13);
 
@@ -185,69 +183,7 @@ sub AUTOLOAD {
    return MCE::Shared::Server::_start() if $_fn eq 'start';
    return MCE::Shared::Server::_stop() if $_fn eq 'stop';
 
-   # tie support
-
-   if ( $_fn eq 'TIEARRAY' ) {
-      if ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} ) {
-         my $_obj; _use( my $_module = shift->{'module'} );
-         local $@; eval { $_obj = $_module->TIEARRAY(@_) };
-         _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
-
-         return MCE::Shared->share($_obj);
-      }
-
-      return MCE::Shared->array(@_);
-   }
-   elsif ( $_fn eq 'TIEHANDLE' ) {
-      require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
-      my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) ); shift;
-      if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
-
-      return $_item;
-   }
-   elsif ( $_fn eq 'TIEHASH' ) {
-      if ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} ) {
-         my $_obj; _use( my $_module = shift->{'module'} );
-         local $@; eval { $_obj = $_module->TIEHASH(@_) };
-         _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
-
-         return MCE::Shared->share($_obj);
-      }
-      my ($_cache, $_ordered);
-
-      if ( ref $_[0] eq 'HASH' ) {
-         if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} ) {
-            $_ordered = 1; shift;
-         } elsif ( exists $_[0]->{'max_age'} || exists $_[0]->{'max_keys'} ) {
-            $_cache = 1;
-         }
-      }
-      else {
-         if ( @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) ) {
-            $_ordered = $_[1]; splice(@_, 0, 2);
-         } elsif ( @_ < 5 && ( $_[0] eq 'max_age' || $_[0] eq 'max_keys' ) ) {
-            $_cache = 1;
-         }
-      }
-
-      return MCE::Shared->cache(@_)   if $_cache;
-      return MCE::Shared->ordhash(@_) if $_ordered;
-      return MCE::Shared->hash(@_);
-   }
-   elsif ( $_fn eq 'TIESCALAR' ) {
-      if ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} ) {
-         my $_obj; _use( my $_module = shift->{'module'} );
-         local $@; eval { $_obj = $_module->TIESCALAR(@_) };
-         _croak("Could not construct object $_module: $@\n") if $@ || !$_obj;
-
-         return MCE::Shared->share($_obj);
-      }
-
-      return MCE::Shared->scalar(@_);
-   }
-
    # array, handle, hash, ordhash
-
    if ( $_fn eq 'array' ) {
       require MCE::Shared::Array unless $INC{'MCE/Shared/Array.pm'};
 
@@ -267,11 +203,11 @@ sub AUTOLOAD {
    elsif ( $_fn eq 'handle' ) {
       require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
 
-      my $_item = &share( MCE::Shared::Handle->TIEHANDLE([]) );
+      my $_item = &share( MCE::Shared::Handle->new([]) );
       my $_fh   = \do { no warnings 'once'; local *FH };
 
       tie *{ $_fh }, 'MCE::Shared::Object', $_item;
-      if ( @_ ) { $_item->OPEN(@_) or _croak("open error: $!"); }
+      if ( @_ ) { $_item->OPEN(@_) or return ''; }
 
       return $_fh;
    }
@@ -281,6 +217,7 @@ sub AUTOLOAD {
       } else {
          require MCE::Shared::Ordhash unless $INC{'MCE/Shared/Ordhash.pm'};
       }
+
       my $_params = ref $_[0] eq 'HASH' ? shift : {};
       my $_item   = ( $_fn eq 'hash' )
          ? &share($_params, MCE::Shared::Hash->new())
@@ -297,19 +234,89 @@ sub AUTOLOAD {
       return $_item;
    }
 
-   # cache, condvar, minidb, queue, scalar, sequence, etc.
-
+   # cache, condvar, minidb, queue, scalar, sequence, et cetera
    $_fn = 'sequence' if $_fn eq 'num_sequence';
 
    my $_pkg = ucfirst( lc $_fn ); local $@;
 
    if ( $INC{"MCE/Shared/$_pkg.pm"} || eval "use MCE::Shared::$_pkg (); 1" ) {
       $_pkg = "MCE::Shared::$_pkg";
+
       return &share({}, $_pkg->new(_shared => 1, @_)) if $_fn eq 'cache';
       return &share({}, $_pkg->new(@_));
    }
 
    _croak("Can't locate object method \"$_fn\" via package \"MCE::Shared\"");
+}
+
+###############################################################################
+## ----------------------------------------------------------------------------
+## TIE support.
+##
+###############################################################################
+
+sub TIEARRAY {
+   shift; ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} )
+
+      ? _tie('TIEARRAY', @_) : MCE::Shared->array(@_);
+}
+
+sub TIEHANDLE {
+   shift; require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
+
+   # Tie *FH, 'MCE::Shared', { module => 'MCE::Shared::Handle' }, '>>', \*STDOUT
+   # doesn't work on the Windows platform. We'd let OPEN handle the ref instead.
+
+   shift if ref($_[0]) eq 'HASH' && $_[0]->{'module'} eq 'MCE::Shared::Handle';
+
+   if ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} ) {
+      if ( @_ == 3 && ref $_[2] && defined( my $_fd = fileno($_[2]) ) ) {
+         _tie('TIEHANDLE', $_[0], $_[1]."&=$_fd");
+      } else {
+         _tie('TIEHANDLE', @_);
+      }
+   }
+   else {
+      my $_item = &share( MCE::Shared::Handle->new([]) );
+      if ( @_ ) { $_item->OPEN(@_) or return ''; }
+
+      $_item;
+   }
+}
+
+sub TIEHASH {
+   shift;
+
+   return _tie('TIEHASH', @_) if (
+      ref($_[0]) eq 'HASH' && exists $_[0]->{'module'}
+   );
+
+   my ($_cache, $_ordered);
+
+   if ( ref $_[0] eq 'HASH' ) {
+      if ( $_[0]->{'ordered'} || $_[0]->{'ordhash'} ) {
+         $_ordered = 1; shift;
+      } elsif ( exists $_[0]->{'max_age'} || exists $_[0]->{'max_keys'} ) {
+         $_cache = 1;
+      }
+   }
+   else {
+      if ( @_ < 3 && ( $_[0] eq 'ordered' || $_[0] eq 'ordhash' ) ) {
+         $_ordered = $_[1]; splice(@_, 0, 2);
+      } elsif ( @_ < 5 && ( $_[0] eq 'max_age' || $_[0] eq 'max_keys' ) ) {
+         $_cache = 1;
+      }
+   }
+
+   return MCE::Shared->cache(@_)   if $_cache;
+   return MCE::Shared->ordhash(@_) if $_ordered;
+   return MCE::Shared->hash(@_);
+}
+
+sub TIESCALAR {
+   shift; ( ref($_[0]) eq 'HASH' && exists $_[0]->{'module'} )
+
+      ? _tie('TIESCALAR', @_) : MCE::Shared->scalar(@_);
 }
 
 ###############################################################################
@@ -320,6 +327,7 @@ sub AUTOLOAD {
 
 sub _croak {
    $_count = 0, %_lkup = ();
+
    if ( $INC{'MCE.pm'} ) {
       goto &MCE::_croak;
    } else {
@@ -335,19 +343,56 @@ sub _incr_count {
 
 sub _share {
    $_[2] = &share($_[0], $_[2]);
+
    MCE::Shared::Object::_req2(
       'M~DEE', $_[1]->SHARED_ID()."\n", $_[2]->SHARED_ID()."\n"
    );
 }
 
+sub _tie {
+   local $@; my ($_fn, $_params) = (shift, shift);
+   _use( my $_module = $_params->{'module'} ) or _croak("$@\n");
+
+   _croak("Can't locate object method \"$_fn\" via package \"$_module\"")
+      unless eval qq{ $_module->can('$_fn') };
+
+   my $_obj = $_module->$_fn(@_) or return '';
+
+   return '' if (@_ && $_fn eq 'TIEHANDLE' && !defined(fileno $_obj));
+
+   MCE::Shared->share($_params, $_obj);
+}
+
 sub _use {
    my $_class = $_[0];
-   local $@; return if eval q{
-      $_class->can('TIEARRAY')  || $_class->can('TIEHASH') ||
-      $_class->can('TIESCALAR') || $_class->can('new')
+
+   if ($_class =~ /(.*)::_/ && !exists $INC{ join('/',split(/::/,$1)).'.pm' }) {
+      eval "require $1";  # e.g. MCE::Hobo::_hash
+   }
+   elsif ($_class eq 'Tie::StdArray' && !$INC{'Tie/Array.pm'}) {
+      eval 'require Tie::Array';
+   }
+   elsif ($_class =~ /^Tie::(?:Std|Extra)Hash$/ && !$INC{'Tie/Hash.pm'}) {
+      eval 'require Tie::Hash';
+   }
+   elsif ($_class eq 'Tie::StdScalar' && !$INC{'Tie/Scalar.pm'}) {
+      eval 'require Tie::Scalar';
+   }
+
+   return 1 if eval q{
+      $_class->can('TIEARRAY') || $_class->can('TIEHANDLE') ||
+      $_class->can('TIEHASH')  || $_class->can('TIESCALAR') ||
+      $_class->can('new')
    };
-   eval "use $_class ()";
-   _croak("Could not load module $_class: $@\n") if $@;
+
+   if (!exists $INC{ join('/',split(/::/,$_class)).'.pm' }) {
+      # remove tainted'ness from $_class
+      ($_class) = $_class =~ /(.*)/;
+
+      eval "use $_class (); 1" or return '';
+   }
+
+   return 1;
 }
 
 1;
@@ -377,7 +422,7 @@ This document describes MCE::Shared version 1.826
    my $ar = MCE::Shared->array( @list );
    my $ca = MCE::Shared->cache( max_keys => 500, max_age => 60 );
    my $cv = MCE::Shared->condvar( 0 );
-   my $fh = MCE::Shared->handle( '>>', \*STDOUT );
+   my $fh = MCE::Shared->handle( '>>', \*STDOUT ) or die "$!";
    my $ha = MCE::Shared->hash( @pairs );
    my $oh = MCE::Shared->ordhash( @pairs );
    my $db = MCE::Shared->minidb();
@@ -386,11 +431,11 @@ This document describes MCE::Shared version 1.826
    my $se = MCE::Shared->sequence( $begin, $end, $step, $fmt );
    my $ob = MCE::Shared->share( $blessed_object );
 
-   # Open function available since 1.002.
+   # The Perl-like mce_open function is available since 1.002.
 
-   mce_open my $fh, ">", "/foo/bar.log" or die "open error: $!";
+   mce_open my $fh, ">>", "/foo/bar.log" or die "open error: $!";
 
-   # Tie construction. The module option, available since 1.825.
+   # Tie construction. The module API option is available since 1.825.
 
    use v5.10;
    use MCE::Flow;
@@ -408,6 +453,10 @@ This document describes MCE::Shared version 1.826
    tie my %oh2, 'MCE::Shared', { module => 'Hash::Ordered' }, @pairs;
    tie my %oh3, 'MCE::Shared', { module => 'Tie::IxHash' }, @pairs;
    tie my $cy1, 'MCE::Shared', { module => 'Tie::Cycle' }, [ 1 .. 8 ];
+   tie my $va2, 'MCE::Shared', { module => 'Tie::StdScalar' }, 'hello';
+   tie my @ar3, 'MCE::Shared', { module => 'Tie::StdArray' }, @list;
+   tie my %ha2, 'MCE::Shared', { module => 'Tie::StdHash' }, @pairs;
+   tie my %ha3, 'MCE::Shared', { module => 'Tie::ExtraHash' }, @pairs;
 
    tie my @ary, 'MCE::Shared', qw( a list of values );
    tie my %ca,  'MCE::Shared', { max_keys => 500, max_age => 60 };
@@ -427,14 +476,13 @@ This document describes MCE::Shared version 1.826
       my ( $mce ) = @_;
       my ( $pid, $wid ) = ( MCE->pid, MCE->wid );
 
-      ## Locking is required when multiple workers update the same element.
-      ## This requires 2 trips to the manager process (fetch and store).
+      # Locking is necessary when multiple workers update the same
+      # element. The reason is that it may involve 2 trips to the
+      # shared-manager process: fetch and store in this case.
 
-      $mutex->synchronize( sub {
-         $cnt += 1;
-      });
+      $mutex->enter( sub { $cnt += 1 } );
 
-      ## Locking is not necessary when updating unique elements.
+      # Otherwise, locking is optional for unique elements.
 
       $foo[ $wid - 1 ] = $pid;
       $bar{ $pid }     = $wid;
@@ -445,6 +493,8 @@ This document describes MCE::Shared version 1.826
    say "scalar : $cnt";
    say " array : $_" for (@foo);
    say "  hash : $_ => $bar{$_}" for (sort keys %bar);
+
+   __END__
 
    # Output
 

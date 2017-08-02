@@ -26,16 +26,16 @@ use bytes;
 my $LF = "\012"; Internals::SvREADONLY($LF, 1);
 my $_reset_flg = 1;
 
+sub _croak {
+   goto &MCE::Shared::Base::_croak;
+}
+
 sub import {
    if (!exists $INC{'MCE/Shared.pm'}) {
       no strict 'refs'; no warnings 'redefine';
       *{ caller().'::mce_open' } = \&open;
    }
    return;
-}
-
-sub _croak {
-   goto &MCE::Shared::Base::_croak;
 }
 
 sub TIEHANDLE {
@@ -52,7 +52,14 @@ sub TIEHANDLE {
    }
 
    bless my $fh = \do { no warnings 'once'; local *FH }, $class;
-   $fh->OPEN(@_) or _croak("open error: $!") if @_;
+
+   if (@_) {
+      if ( !defined wantarray ) {
+         $fh->OPEN(@_) or _croak("open error: $!");
+      } else {
+         $fh->OPEN(@_) or return '';
+      }
+   }
 
    $fh;
 }
@@ -67,20 +74,28 @@ sub EOF     { eof($_[0]) }
 sub TELL    { tell($_[0]) }
 sub FILENO  { fileno($_[0]) }
 sub SEEK    { seek($_[0], $_[1], $_[2]) }
-sub CLOSE   { close($_[0]) if defined fileno($_[0]) }
-sub BINMODE { binmode($_[0], $_[1] || ':raw') }
+sub CLOSE   { close($_[0]) if defined(fileno $_[0]) }
+sub BINMODE { binmode($_[0], $_[1] // ':raw') ? 1 : '' }
 sub GETC    { getc($_[0]) }
 
 sub OPEN {
+   my $ret;
+
    close($_[0]) if defined fileno($_[0]);
 
    if ( @_ == 3 && ref $_[2] && defined( my $_fd = fileno($_[2]) ) ) {
-      return CORE::open($_[0], $_[1]."&=$_fd");
+      $ret = CORE::open($_[0], $_[1]."&=$_fd");
+   }
+   else {
+      $ret = ( @_ == 2 )
+         ? CORE::open($_[0], $_[1])
+         : CORE::open($_[0], $_[1], $_[2]);
    }
 
-   ( @_ == 2 )
-      ? CORE::open($_[0], $_[1])
-      : CORE::open($_[0], $_[1], $_[2]);
+   # enable autoflush
+   select(( select($_[0]), $| = 1 )[0]) if $ret;
+
+   $ret;
 }
 
 sub open (@) {
@@ -228,6 +243,10 @@ sub WRITE {
    $wrote;
 }
 
+{
+   no strict 'refs'; *{ __PACKAGE__.'::new' } = \&TIEHANDLE;
+}
+
 ###############################################################################
 ## ----------------------------------------------------------------------------
 ## Server functions.
@@ -296,11 +315,10 @@ sub WRITE {
             CORE::open($_fh, $_args->[0]) or do { $_err = 0+$! };
          }
 
-         # flush IO immediately
+         # enable autoflush
          select(( select($_fh), $| = 1 )[0]) unless $_err;
 
          *{ $_obj->{ $_id } } = *{ $_fh };
-
          print {$_DAU_R_SOCK} $_err.$LF;
 
          return;
@@ -661,8 +679,10 @@ A handle helper class for use as a standalone or managed by L<MCE::Shared>.
 
    use MCE::Shared::Handle;
 
-   MCE::Shared::Handle->open( my $fh, "<", "bio.fasta" );
-   MCE::Shared::Handle::open  my $fh, "<", "bio.fasta";
+   MCE::Shared::Handle->open( my $fh, "<", "bio.fasta" )
+      or die "open error: $!";
+   MCE::Shared::Handle::open  my $fh, "<", "bio.fasta"
+      or die "open error: $!";
 
    mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
@@ -670,8 +690,10 @@ A handle helper class for use as a standalone or managed by L<MCE::Shared>.
 
    use MCE::Shared;
 
-   MCE::Shared->open( my $fh, "<", "bio.fasta" );
-   MCE::Shared::open  my $fh, "<", "bio.fasta";
+   MCE::Shared->open( my $fh, "<", "bio.fasta" )
+      or die "open error: $!";
+   MCE::Shared::open  my $fh, "<", "bio.fasta"
+      or die "open error: $!";
 
    mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 

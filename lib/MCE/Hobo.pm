@@ -1,10 +1,8 @@
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## A threads-like parallelization module.
+## A threads-like parallelization module with managed capabilities.
 ##
 ###############################################################################
-
-package MCE::Hobo;
 
 use strict;
 use warnings;
@@ -13,6 +11,8 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once redefine );
 
+package MCE::Hobo;
+
 our $VERSION = '1.826';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
@@ -20,53 +20,10 @@ our $VERSION = '1.826';
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
-use Carp ();
-
-my ($_has_threads, $_freeze, $_thaw);
-
-BEGIN {
-   local $@;
-
-   if ($^O eq 'MSWin32' && !$INC{'threads.pm'}) {
-      eval 'use threads; use threads::shared';
-   }
-   elsif ($INC{'threads.pm'} && !$INC{'threads/shared.pm'}) {
-      eval 'use threads::shared';
-   }
-
-   $_has_threads = $INC{'threads.pm'} ? 1 : 0;
-
-   if (!exists $INC{'PDL.pm'}) {
-      eval '
-         use Sereal::Encoder 3.015 qw( encode_sereal );
-         use Sereal::Decoder 3.015 qw( decode_sereal );
-      ';
-      if ( !$@ ) {
-         my $_encoder_ver = int( Sereal::Encoder->VERSION() );
-         my $_decoder_ver = int( Sereal::Decoder->VERSION() );
-         if ( $_encoder_ver - $_decoder_ver == 0 ) {
-            $_freeze = sub { encode_sereal( @_, { freeze_callbacks => 1 } ) };
-            $_thaw   = \&decode_sereal;
-         }
-      }
-   }
-
-   if (!defined $_freeze) {
-      require Storable;
-      $_freeze = \&Storable::freeze;
-      $_thaw   = \&Storable::thaw;
-   }
-
-   return;
-}
-
-## POSIX.pm is a big module. The following constant covers most platforms.
-use constant { _WNOHANG => $^O eq 'solaris' ? 64 : 1 };
-
-use Time::HiRes qw(sleep);
-use bytes;
-
+use if $^O ne 'MSWin32', 'POSIX', 'WNOHANG';
+use Time::HiRes 'sleep';
 use MCE::Shared ();
+use bytes;
 
 use overload (
    q(==)    => \&equal,
@@ -74,18 +31,96 @@ use overload (
    fallback => 1
 );
 
-my $_tid = $_has_threads ? threads->tid() : 0;
-my $_lock : shared = 1;
+no overloading;
 
 sub import {
    no strict 'refs'; no warnings 'redefine';
    *{ caller().'::mce_async' } = \&async;
-
    return;
 }
 
+use constant {
+   _WNOHANG => $INC{'POSIX.pm'} ? &WNOHANG : 1
+};
+
+my ( $_MNGD, $_DATA, $_DELY, $_LIST ) = ( {}, {}, {}, {} );
+
+my $_freeze = MCE::Shared::Server::_get_freeze();
+my $_thaw   = MCE::Shared::Server::_get_thaw();
+
+my $_has_threads = $INC{'threads.pm'} ? 1 : 0;
+my $_tid = $_has_threads ? threads->tid() : 0;
+my $_uid = 0;
+
 sub CLONE {
-   $_tid = threads->tid() if $_has_threads;
+   $_tid = threads->tid(), &_clear() if $_has_threads;
+}
+
+sub _clear {
+   %{ $_LIST } = ();
+}
+
+sub _uid {
+   $_uid = 1000 if ( ++$_uid > 2e9 );
+   $_uid;
+}
+
+###############################################################################
+## ----------------------------------------------------------------------------
+## Init routine.
+##
+###############################################################################
+
+bless my $_SELF = { MGR_ID => "$$.$_tid", WRK_ID => $$ }, __PACKAGE__;
+
+sub init {
+   _croak('Usage: MCE::Hobo->init()') if ref($_[0]);
+   shift if ( defined $_[0] && $_[0] eq __PACKAGE__ );
+
+   my $pkg  = "$$.$_tid.".( caller eq __PACKAGE__ ? caller(1) : caller );
+      $pkg .= '.'.&_uid() if defined wantarray;
+
+   # -- options --------------------------------------------------------
+   # max_workers on_start on_finish hobo_timeout posix_exit spawn_delay
+   # -------------------------------------------------------------------
+
+   my $mngd = $_MNGD->{$pkg} = { @_ };  @_ = ();
+
+   $mngd->{MGR_ID} = "$$.$_tid", $mngd->{PKG} = $pkg,
+   $mngd->{WRK_ID} =  $$;
+
+   $mngd->{max_workers} = delete $mngd->{max_procs}
+      if ( exists $mngd->{max_procs} );
+
+   &_force_reap($pkg), $_DATA->{$pkg}->clear() if exists $_LIST->{$pkg};
+
+   if ( !exists $_LIST->{$pkg} ) {
+      $_LIST->{ $pkg } = MCE::Hobo::_ordhash->new();
+      $_DELY->{ $pkg } = MCE::Shared->share( MCE::Hobo::_delay->new() );
+      $_DATA->{ $pkg } = MCE::Shared->share( MCE::Hobo::_hash->new() );
+      $_DATA->{"$pkg:seed"} = int(rand() * 1e9);
+      $_DATA->{"$pkg:id"  } = 0;
+   }
+   if ( !exists $mngd->{posix_exit} ) {
+      $mngd->{posix_exit} = 1 if (
+         ( $_has_threads && $_tid ) || $INC{'Mojo/IOLoop.pm'} ||
+         $INC{'Curses.pm'} || $INC{'CGI.pm'} || $INC{'FCGI.pm'} ||
+         $INC{'Prima.pm'} || $INC{'Tk.pm'} || $INC{'Wx.pm'} ||
+         $INC{'Gearman/Util.pm'} || $INC{'Gearman/XS.pm'} ||
+         $INC{'Coro.pm'} || $INC{'Win32/GUI.pm'}
+      );
+   }
+   if ( exists $mngd->{max_workers} ) {
+      _max_workers($mngd, $mngd->{max_workers});
+   }
+
+   if ( defined wantarray ) {
+      bless $mngd, 'MCE::Hobo::Manager';
+      Scalar::Util::weaken($_MNGD->{$pkg});
+      $mngd->{MNGD} = 1;
+   }
+
+   $mngd;
 }
 
 ###############################################################################
@@ -93,10 +128,6 @@ sub CLONE {
 ## 'new', 'async (mce_async)', and 'create' for threads-like similarity.
 ##
 ###############################################################################
-
-my ( $_LIST, $_STAT, $_DATA ) = ( {}, {}, {} );
-
-bless my $_SELF = { MGR_ID => "$$.$_tid", WRK_ID => $$ }, __PACKAGE__;
 
 ## 'new' and 'tid' are aliases for 'create' and 'pid' respectively.
 
@@ -106,71 +137,100 @@ bless my $_SELF = { MGR_ID => "$$.$_tid", WRK_ID => $$ }, __PACKAGE__;
 ## Tip found in threads::async.
 
 sub async (&;@) {
-   unless ( defined $_[0] && $_[0] eq 'MCE::Hobo' ) {
-      unshift @_, 'MCE::Hobo';
+   unless ( $_[0] eq __PACKAGE__ || Scalar::Util::blessed($_[0]) ) {
+      unshift @_, __PACKAGE__;
    }
    goto &create;
 }
 
 sub create {
-   my $mgr_id = "$$.$_tid";
-   my $pkg    = caller() eq 'MCE::Hobo' ? caller(1) : caller();
-   my ( $class, $self, $func );
+   my $mngd = ref $_[0] ? $_[0] : $_MNGD->{ "$$.$_tid.".caller() } // do {
+      # Unless defined, construct $mngd internally on first use.
+      init(); $_MNGD->{ "$$.$_tid.".caller() };
+   };
+   _croak("Nested spawning is possible, but requires the child process\n".
+          "to construct it's own by calling ->init, then spawn workers")
+      if ( $mngd->{MNGD} && $mngd->{MGR_ID} ne "$$.$_tid" );
 
-   if ( ref($_[1]) eq 'HASH' ) {
-      ( $class, $self, $func ) = ( shift, shift, shift );
-   } else {
-      $self = {}, ( $class, $func ) = ( shift, shift );
+   shift;
+
+   # ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+
+   my $self = bless ref $_[0] eq 'HASH' ? { %{ shift() } } : { }, __PACKAGE__;
+
+   $self->{MGR_ID} = $mngd->{MGR_ID}, $self->{PKG} = $mngd->{PKG};
+
+   my $func = shift; $func = caller().'::'.$func
+      if ( !ref $func && length $func && index($func,':') < 0 );
+
+   if ( !defined $func && !exists $self->{no_fcn} ) {
+      local $\; print {*STDERR} "code function is not specified or valid\n";
+      return undef;
    }
 
-   $self->{MGR_ID} = $mgr_id;
+   my ( $list, $max_workers, $pkg ) = (
+      $_LIST->{ $mngd->{PKG} }, $mngd->{max_workers}, $mngd->{PKG}
+   );
 
-   bless $self, $class;
+   $_DATA->{"$pkg:id"} = 0
+      if ( ( my $id = ++$_DATA->{"$pkg:id"} ) > 2e9 );
 
-   ## error checking and setup
-
-   if ( ref($func) ne 'CODE' && !length($func) ) {
-      return $self->_error("code function is not specified or valid\n");
+   # Reap completed hobos.
+   if ( $max_workers || defined wantarray || $mngd->{on_finish} ) {
+      local $!;
+      for my $wrk_id ( keys %{ $list->[0] } ) {
+         waitpid($wrk_id, _WNOHANG) or next;
+         _reap_hobo($list->del($wrk_id));
+      }
    }
 
-   $func = $pkg.'::'.$func if ( !ref($func) && index($func,':') < 0 );
+   # Wait for a slot if saturated.
+   $self->wait_one()
+      if ( $max_workers && keys %{ $list->[0] } >= $max_workers );
 
-   if ( !exists $self->{posix_exit} ) {
-      $self->{posix_exit} = 1 if (
-         ( $_has_threads && $_tid ) || $INC{'Mojo/IOLoop.pm'} ||
-         $INC{'Curses.pm'} || $INC{'CGI.pm'} || $INC{'FCGI.pm'} ||
-         $INC{'Prima.pm'} || $INC{'Tk.pm'} || $INC{'Wx.pm'} ||
-         $INC{'Gearman/Util.pm'} || $INC{'Gearman/XS.pm'}
-      );
+   # ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+
+   my @args = @_; @_ = ();  # To avoid (Scalars leaked: N) messages
+   my $pid  = fork();
+
+   if ( !defined $pid ) {                                # error
+      local $\; print {*STDERR} "fork error: $!\n";
+
+      return undef;
+   }
+   elsif ( $pid ) {                                      # parent
+      $self->{WRK_ID} = $pid, $list->set($pid, $self);
+      $mngd->{on_start}->($pid, $self->{ident}) if $mngd->{on_start};
+      sleep $mngd->{spawn_delay} if $mngd->{spawn_delay};
+
+      return $self;
    }
 
-   if ( !exists $_LIST->{$pkg} ) {
-      $_LIST->{$pkg} = MCE::Hobo::_ordhash->new;            # non-shared
+   %{ $_LIST } = (), $_SELF = $self;                     # child
+
+   if ( UNIVERSAL::can('Prima', 'cleanup') ) {
+      no warnings 'redefine'; local $@; eval '*Prima::cleanup = sub {}';
    }
 
-   if ( !exists $_DATA->{$pkg} ) {
-      $_DATA->{$pkg} = MCE::Hobo::_hash->new;               # non-shared
-      $_STAT->{$pkg} = MCE::Hobo::_hash->new;
+   MCE::Shared::init($id);
+
+   # Sets the seed of the base generator uniquely between workers.
+   # The new seed is computed using the current seed and ID value.
+   # One may set the seed at the application level for predictable
+   # results. Ditto for Math::Random.
+
+   srand( abs($_DATA->{"$pkg:seed"} - ($id * 100000)) % 2147483560 );
+
+   if ( $INC{'Math/Random.pm'} ) {
+      my $cur_seed = Math::Random::random_get_seed();
+      my $new_seed = ($cur_seed < 1073741781)
+         ? $cur_seed + ((abs($id) * 10000) % 1073741780)
+         : $cur_seed - ((abs($id) * 10000) % 1073741780);
+
+      Math::Random::random_set_seed($new_seed, $new_seed);
    }
 
-   if ( !$_DATA->{$pkg}->exists($mgr_id) ) {
-      $_DATA->{$pkg}->set( $mgr_id, MCE::Shared->share(MCE::Hobo::_hash->new) );
-      $_STAT->{$pkg}->set( $mgr_id, MCE::Shared->share(MCE::Hobo::_hash->new) );
-
-      $_STAT->{$pkg}->set("$mgr_id:seed", int(rand() * 1e9) );
-      $_STAT->{$pkg}->set("$mgr_id:id", 0 );
-
-      $_LIST->{$pkg}->clear();
-   }
-
-   ## spawn a hobo process
-
-   my $seed = $_STAT->{$pkg}->get("$mgr_id:seed");
-   my $id   = $_STAT->{$pkg}->incr("$mgr_id:id");
-
-   lock($_lock), sleep(0.01) if ($_tid && $^O eq 'netbsd');
-
-   _dispatch( $self, $pkg, $seed, $id, $mgr_id, $func, @_ );
+   _dispatch($mngd, $func, \@args);
 }
 
 ###############################################################################
@@ -180,85 +240,71 @@ sub create {
 ###############################################################################
 
 sub equal {
-   return 0 unless ( ref($_[0]) && ref($_[1]) );
-   $_[0]->{WRK_ID} == $_[1]->{WRK_ID} ? 1 : 0;
+   _croak('Usage: $hobo->equal()') if ( ref $_[0] && $_[0]->{MNGD} );
+   return 0 unless ( ref $_[0] && ref $_[1] );
+
+   ( $_[0]->{PKG   } == $_[1]->{PKG   } &&
+     $_[0]->{WRK_ID} == $_[1]->{WRK_ID} ) ? 1 : 0;
 }
 
 sub error {
-   _croak('Usage: $hobo->error()') unless ref($_[0]);
-   $_[0]->join() unless exists( $_[0]->{JOINED} );
-   $_[0]->{ERROR} || undef;
+   _croak('Usage: $hobo->error()')
+      if ( !ref( my $self = $_[0] ) || $_[0]->{MNGD} );
+
+   $self->join() if ( !exists $self->{JOINED} );
+   $self->{ERROR} || undef;
 }
 
 sub exit {
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Hobo' );
+   shift if ( defined $_[0] && $_[0] eq __PACKAGE__ );
 
-   my ($self) = ( ref($_[0]) ? shift : $_SELF );
-   my $mgr_id = $self->{MGR_ID};
-   my $wrk_id = $self->{WRK_ID};
+   my ( $self ) = ( ref $_[0] ? shift : $_SELF );
+   my ( $pkg, $wrk_id ) = ( $self->{PKG}, $self->{WRK_ID} );
 
-   if ( $wrk_id == $$ ) {
-      $_[0] ? die "Hobo exited ($_[0])\n" : die "Hobo exited (0)\n";
-      _exit(); # not reached
-   }
-   elsif ( $mgr_id eq "$$.$_tid" ) {
-      return $self if ( exists $self->{JOINED} );
-      sleep 0.015 until $_STAT->{ caller() }->get($mgr_id)->exists($wrk_id);
-
-      if ($^O eq 'MSWin32') {
-         CORE::kill('KILL', $wrk_id) if CORE::kill('ZERO', $wrk_id);
-      } else {
-         CORE::kill('QUIT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
-      }
-
-      $self;
-   }
-   else {
+   if ( $wrk_id == $$ && $self->{MGR_ID} eq "$$.$_tid" ) {
+      MCE::Hobo->finish('MCE');
       CORE::exit(@_);
    }
+   elsif ( $wrk_id == $$ ) {
+      alarm 0; my ( $exit_status, @res ) = @_; $? = $exit_status // 0;
+      $_DATA->{$pkg}->set('R'.$wrk_id, @res ? $_freeze->(\@res) : '');
+      die "Hobo exited ($?)\n" unless ( exists $_SELF->{no_fcn} );
+      _exit($?);
+   }
+
+   return $self if ( exists $self->{JOINED} );
+
+   if ( exists $_DATA->{$pkg} ) {
+      sleep 0.015 until $_DATA->{$pkg}->exists('S'.$wrk_id);
+   } else {
+      sleep 0.030;
+   }
+
+   if ($^O eq 'MSWin32') {
+      CORE::kill('KILL', $wrk_id) if CORE::kill('ZERO', $wrk_id);
+   } else {
+      CORE::kill('QUIT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
+   }
+
+   $self;
 }
 
 sub finish {
    _croak('Usage: MCE::Hobo->finish()') if ref($_[0]);
-   my $pkg = ( defined $_[1] ) ? $_[1] : caller;
-
-   _notify() if ( exists $_SELF->{_pkg} );
+   my $pkg = ( defined $_[1] ) ? $_[1] : caller();
 
    if ( $pkg eq 'MCE' ) {
-      for my $k ( keys %{ $_LIST } ) { MCE::Hobo->finish($k); }
+      for my $key ( keys %{ $_LIST } ) { MCE::Hobo->finish($key); }
    }
    elsif ( exists $_LIST->{$pkg} ) {
       return if $MCE::Signal::KILLED;
 
-      my $mgr_id = "$$.$_tid";
-
-      if ( exists $_DATA->{$pkg} && $_DATA->{$pkg}->exists($mgr_id) ) {
-         my $count = 0;
-
-         if ( $_LIST->{$pkg}->len ) {
-            sleep 0.1;
-
-            for my $hobo ( $_LIST->{$pkg}->vals ) {
-               if ( $hobo->is_running ) {
-                  CORE::kill('KILL', $hobo->pid)
-                     if CORE::kill('ZERO', $hobo->pid);
-
-                  $count++;
-               }
-            }
-         }
-
-         warn "Finished with active Hobos ($count)\n"
-            if ($count && $^O ne 'MSWin32');
-
-         $_DATA->{$pkg}->del( $mgr_id )->destroy;
-         $_STAT->{$pkg}->del( $mgr_id )->destroy;
-
-         $_STAT->{$pkg}->del("$mgr_id:seed");
-         $_STAT->{$pkg}->del("$mgr_id:id");
+      if ( exists $_DELY->{$pkg} ) {
+         &_force_reap($pkg);
+         delete($_DELY->{$pkg}), delete($_DATA->{"$pkg:seed"}),
+         delete($_LIST->{$pkg}), delete($_DATA->{"$pkg:id"}),
+         delete($_MNGD->{$pkg}), delete($_DATA->{ $pkg });
       }
-
-      delete $_LIST->{$pkg};
    }
 
    @_ = ();
@@ -267,74 +313,71 @@ sub finish {
 }
 
 sub is_joinable {
-   _croak('Usage: $hobo->is_joinable()') unless ref($_[0]);
+   _croak('Usage: $hobo->is_joinable()')
+      if ( !ref( my $self = $_[0] ) || $_[0]->{MNGD} );
 
-   my ($self) = @_;
-   my $mgr_id = $self->{MGR_ID};
-   my $wrk_id = $self->{WRK_ID};
+   my ( $wrk_id, $pkg ) = ( $self->{WRK_ID}, $self->{PKG} );
 
    if ( $wrk_id == $$ ) {
       '';
    }
-   elsif ( $mgr_id eq "$$.$_tid" ) {
+   elsif ( $self->{MGR_ID} eq "$$.$_tid" ) {
       return undef if ( exists $self->{JOINED} );
-      local ($!, $?); ( waitpid($wrk_id, _WNOHANG) == 0 ) ? '' : 1;
+      local $!;
+      ( waitpid($wrk_id, _WNOHANG) == 0 ) ? '' : do {
+         _reap_hobo($_LIST->{$pkg}->del($self->{WRK_ID}));
+         1;
+      };
    }
    else {
-      $_DATA->{ caller() }->get($mgr_id)->exists($wrk_id) ? 1 : '';
+      $_DATA->{$pkg}->exists('R'.$wrk_id) ? 1 : '';
    }
 }
 
 sub is_running {
-   _croak('Usage: $hobo->is_running()') unless ref($_[0]);
+   _croak('Usage: $hobo->is_running()')
+      if ( !ref( my $self = $_[0] ) || $_[0]->{MNGD} );
 
-   my ($self) = @_;
-   my $mgr_id = $self->{MGR_ID};
-   my $wrk_id = $self->{WRK_ID};
+   my ( $wrk_id, $pkg ) = ( $self->{WRK_ID}, $self->{PKG} );
 
    if ( $wrk_id == $$ ) {
       1;
    }
-   elsif ( $mgr_id eq "$$.$_tid" ) {
+   elsif ( $self->{MGR_ID} eq "$$.$_tid" ) {
       return undef if ( exists $self->{JOINED} );
-      local ($!, $?); ( waitpid($wrk_id, _WNOHANG) == 0 ) ? 1 : '';
+      local $!;
+      ( waitpid($wrk_id, _WNOHANG) == 0 ) ? 1 : do {
+         _reap_hobo($_LIST->{$pkg}->del($self->{WRK_ID}));
+         '';
+      };
    }
    else {
-      $_DATA->{ caller() }->get($mgr_id)->exists($wrk_id) ? '' : 1;
+      $_DATA->{$pkg}->exists('R'.$wrk_id) ? '' : 1;
    }
 }
 
 sub join {
-   _croak('Usage: $hobo->join()') unless ref($_[0]);
-
-   my ($self) = @_;
+   _croak('Usage: $hobo->join()')
+      if ( !ref( my $self = $_[0] ) || $_[0]->{MNGD} );
 
    if ( exists $self->{JOINED} ) {
       return ( defined wantarray )
-         ? wantarray ? @{ $self->{RESULT} } : $self->{RESULT}->[-1]
-         : ();
+         ? wantarray ? @{ $self->{RESULT} } : $self->{RESULT}->[-1] : ();
    }
 
-   my $mgr_id = $self->{MGR_ID};
-   my $wrk_id = $self->{WRK_ID};
-   my $pkg    = caller() eq 'MCE::Hobo' ? caller(1) : caller();
+   my ( $wrk_id, $pkg ) = ( $self->{WRK_ID}, $self->{PKG} );
 
    if ( $wrk_id == $$ ) {
       _croak('Cannot join self');
    }
-   elsif ( $mgr_id eq "$$.$_tid" ) {
-      local ($!, $?); waitpid($wrk_id, 0);
-      $_LIST->{$pkg}->del($wrk_id);
+   elsif ( $self->{MGR_ID} eq "$$.$_tid" ) {
+      local $!; waitpid($wrk_id, 0);
+      _reap_hobo($_LIST->{$pkg}->del($wrk_id));
    }
    else {
-      sleep 0.3 until ( $_DATA->{$pkg}->get($mgr_id)->exists($wrk_id) );
+      sleep 0.3 until ( $_DATA->{$pkg}->exists('R'.$wrk_id) );
+      _reap_hobo($self);
    }
-
-   my $result = $_DATA->{$pkg}->get($mgr_id)->del($wrk_id);
-
-   $self->{RESULT} = ( defined $result ) ? $_thaw->($result) : [];
-   $self->{ERROR}  = $_STAT->{$pkg}->get($mgr_id)->del($wrk_id);
-   $self->{JOINED} = 1;
 
    ( defined wantarray )
       ? wantarray ? @{ $self->{RESULT} } : $self->{RESULT}->[-1]
@@ -342,60 +385,69 @@ sub join {
 }
 
 sub kill {
-   _croak('Usage: $hobo->kill()') unless ref($_[0]);
+   _croak('Usage: $hobo->kill()')
+      if ( !ref( my $self = $_[0] ) || $_[0]->{MNGD} );
 
-   my ( $self, $signal ) = @_;
-   my $mgr_id = $self->{MGR_ID};
-   my $wrk_id = $self->{WRK_ID};
-   my $pkg    = caller;
+   my ( $wrk_id, $pkg, $signal ) = ( $self->{WRK_ID}, $self->{PKG}, $_[1] );
 
    if ( $wrk_id == $$ ) {
       CORE::kill($signal || 'INT', $$);
+      return $self;
    }
-   elsif ( $mgr_id eq "$$.$_tid" ) {
+   if ( $self->{MGR_ID} eq "$$.$_tid" ) {
       return $self if ( exists $self->{JOINED} );
-      sleep 0.015 until $_STAT->{$pkg}->get($mgr_id)->exists($wrk_id);
-      CORE::kill($signal || 'INT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
+      if ( exists $_DATA->{$pkg} ) {
+         sleep 0.015 until $_DATA->{$pkg}->exists('S'.$wrk_id);
+      } else {
+         sleep 0.030;
+      }
    }
-   else {
-      CORE::kill($signal || 'INT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
-   }
+
+   CORE::kill($signal || 'INT', $wrk_id) if CORE::kill('ZERO', $wrk_id);
 
    $self;
 }
 
 sub list {
-   _croak('Usage: MCE::Hobo->list()') if ref($_[0]);
-   my $pkg = caller() eq 'MCE::Hobo' ? caller(1) : caller();
+   my $pkg = ref $_[0] ? $_[0]->{PKG} : "$$.$_tid.".caller();
 
-   ( exists $_LIST->{$pkg} ) ? $_LIST->{$pkg}->vals : ();
+   ( exists $_LIST->{$pkg} ) ? $_LIST->{$pkg}->vals() : ();
 }
 
 sub list_joinable {
-   _croak('Usage: MCE::Hobo->list_joinable()') if ref($_[0]);
-   my $pkg = caller; local ($!, $?, $_);
+   my $pkg = ref $_[0] ? $_[0]->{PKG} : "$$.$_tid.".caller();
+   return () unless ( my $list = $_LIST->{$pkg} );
 
-   return () unless ( exists $_LIST->{$pkg} );
+   local ($!, $?, $_);
 
-   map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? () : $_ }
-         $_LIST->{$pkg}->vals;
+   map {
+      ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? () : do {
+         _reap_hobo($list->del($_->{WRK_ID}));
+         $_;
+      };
+   }
+   $list->vals();
 }
 
 sub list_running {
-   _croak('Usage: MCE::Hobo->list_running()') if ref($_[0]);
-   my $pkg = caller; local ($!, $?, $_);
+   my $pkg = ref $_[0] ? $_[0]->{PKG} : "$$.$_tid.".caller();
+   return () unless ( my $list = $_LIST->{$pkg} );
 
-   return () unless ( exists $_LIST->{$pkg} );
+   local ($!, $?, $_);
 
-   map { ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? $_ : () }
-         $_LIST->{$pkg}->vals;
+   map {
+      ( waitpid($_->{WRK_ID}, _WNOHANG) == 0 ) ? $_ : do {
+         _reap_hobo($list->del($_->{WRK_ID}));
+         ();
+      };
+   }
+   $list->vals();
 }
 
 sub pending {
-   _croak('Usage: MCE::Hobo->pending()') if ref($_[0]);
-   my $pkg = caller;
+   my $pkg = ref $_[0] ? $_[0]->{PKG} : "$$.$_tid.".caller();
 
-   ( exists $_LIST->{$pkg} ) ? $_LIST->{$pkg}->len : 0;
+   ( exists $_LIST->{$pkg} ) ? $_LIST->{$pkg}->len() : 0;
 }
 
 sub pid {
@@ -403,58 +455,74 @@ sub pid {
 }
 
 sub result {
-   my ($self) = @_;
-   _croak('Usage: $hobo->result()') unless ref($self);
-   return $self->join if ( !exists $self->{JOINED} );
+   _croak('Usage: $hobo->result()')
+      if ( !ref( my $self = $_[0] ) || $_[0]->{MNGD} );
 
+   return $self->join() if ( !exists $self->{JOINED} );
    wantarray ? @{ $self->{RESULT} } : $self->{RESULT}->[-1];
 }
 
 sub self {
-   ref($_[0]) ? $_[0] : $_SELF;
+   ( ref $_[0] ) ? ( $_[0]->{MNGD} ) ? undef : $_[0] : $_SELF;
 }
 
-sub waitall {
-   _croak('Usage: MCE::Hobo->waitall()') if ref($_[0]);
-   my $pkg = caller; local $_;
+sub wait_all {
+   my $pkg = ref $_[0] ? $_[0]->{PKG} : "$$.$_tid.".caller();
 
-   return () if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len );
+   return wantarray ? () : 0
+      if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len() );
 
-   map { $_->join; $_ } $_LIST->{$pkg}->vals;
+   local $_; ( wantarray )
+      ? map { $_->join(); $_ } $_LIST->{$pkg}->vals()
+      : map { $_->join(); () } $_LIST->{$pkg}->vals();
 }
 
-sub waitone {
-   _croak('Usage: MCE::Hobo->waitone()') if ref($_[0]);
+*waitall = \&wait_all; # compatibility
 
-   my $mgr_id = "$$.$_tid";
-   my $pkg    = caller() eq 'MCE::Hobo' ? caller(1) : caller();
+sub wait_one {
+   my $pkg = ref $_[0] ? $_[0]->{PKG} : "$$.$_tid.".caller();
 
-   return undef if ( !exists $_LIST->{$pkg} || !$_LIST->{$pkg}->len );
-   return undef if ( !$_DATA->{$pkg}->exists($mgr_id) );
+   return undef unless ( my $list = $_LIST->{$pkg} );
+   return undef if ( !$list->len() || !exists $_DATA->{$pkg} );
 
-   my ( $self, $wrk_id ); local ( $!, $? );
+   my $self; local $!;
 
-   while ( 1 ) {
-      $wrk_id = CORE::wait();
-      last if ( $self = $_LIST->{$pkg}->del($wrk_id) );
+   while () {
+      my $wrk_id = CORE::wait();
+
+      return undef if ( $wrk_id == -1 );        # no child processes
+      last if ( $self = $list->del($wrk_id) );  # our child process
+
+      for my $key ( keys %{ $_LIST } ) {        # other child process
+         _reap_hobo($_LIST->{$key}->del($wrk_id)), last
+            if ( $key ne $pkg && $_LIST->{$key}->exists($wrk_id) );
+      }
    }
 
-   my $result = $_DATA->{$pkg}->get($mgr_id)->del($wrk_id);
-
-   $self->{RESULT} = ( defined $result ) ? $_thaw->($result) : [];
-   $self->{ERROR}  = $_STAT->{$pkg}->get($mgr_id)->del($wrk_id);
-   $self->{JOINED} = 1;
+   _reap_hobo($self);
 
    $self;
 }
 
-sub yield {
-   _croak('Usage: MCE::Hobo->yield()') if ref($_[0]);
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Hobo' );
+*waitone = \&wait_one; # compatibility
 
-   ( $^O =~ /mswin|mingw|msys|cygwin/i )
-      ? sleep($_[0] || 0.015)
-      : sleep($_[0] || 0.0005);
+sub yield {
+   my $pkg = ref $_[0] ? shift->{PKG} : do {
+      shift if ( defined $_[0] && $_[0] eq __PACKAGE__ );
+      "$$.$_tid.".caller();
+   };
+   return unless ( my $mngd = $_MNGD->{$pkg} );
+
+   if ( $mngd->{CHILD} ) {
+      ( $INC{'Coro/AnyEvent.pm'} )
+         ? Coro::AnyEvent::sleep( $_DELY->{$pkg}->seconds(@_) )
+         : sleep $_DELY->{$pkg}->seconds(@_);
+   }
+   else {
+      local $_; $_->join() for list_joinable($mngd);
+   }
+
+   return;
 }
 
 ###############################################################################
@@ -464,192 +532,232 @@ sub yield {
 ###############################################################################
 
 sub _croak {
-   if ( $INC{'MCE.pm'} ) {
-      goto &MCE::_croak;
-   }
-   else {
-      require MCE::Shared::Base unless $INC{'MCE/Shared/Base.pm'};
-      goto &MCE::Shared::Base::_croak;
-   }
+   goto &MCE::_croak if $INC{'MCE.pm'};
+   require MCE::Shared::Base unless $INC{'MCE/Shared/Base.pm'};
+   goto &MCE::Shared::Base::_croak;
 }
 
 sub _dispatch {
-   my ( $self, $pkg, $seed, $id, $mgr_id, $func, @args ) = @_;
-
-   ## To avoid (Scalars leaked: N) messages; fixed in Perl 5.12.x
-   @_ = ();
-
-   local $_ = $_; my $pid = fork();
-
-   if ( !defined $pid ) {                           # error
-      return $self->_error("fork error: $!\n");
-   }
-   elsif ( $pid ) {                                 # parent
-      $self->{WRK_ID} = $pid, $_LIST->{$pkg}->set($pid, $self);
-
-      return $self;
-   }
-
-   my $wrk_id = $$;                                 # child
+   my ( $mngd, $func, $args ) = @_;
+   $mngd->{CHILD} = 1, $mngd->{WRK_ID} = $_SELF->{WRK_ID} = $$;
 
    $ENV{PERL_MCE_IPC} = 'win32' if ($^O eq 'MSWin32');
    $SIG{TERM} = $SIG{INT} = $SIG{HUP} = \&_trap;
    $SIG{QUIT} = \&_quit;
 
-   if (UNIVERSAL::can('Prima', 'cleanup')) {
-      no warnings 'redefine'; local $@; eval '*Prima::cleanup = sub {}';
-   }
+   # IO::Handle->autoflush not available in older Perl.
    {
       local $!;
-      # IO::Handle->autoflush not available in older Perl.
       select(( select(*STDERR), $| = 1 )[0]) if defined(fileno *STDERR);
       select(( select(*STDOUT), $| = 1 )[0]) if defined(fileno *STDOUT);
    }
 
-   MCE::Shared::init($id);
-
-   $_SELF = $self, %{ $_LIST } = ();
-   $_SELF->{WRK_ID} = $wrk_id;
-   $_SELF->{ _pkg } = $pkg;
-
-   ## Sets the seed of the base generator uniquely between workers.
-   ## The new seed is computed using the current seed and $_wid value.
-   ## One may set the seed at the application level for predictable
-   ## results. Ditto for Math::Random.
-
-   srand(abs($seed - ($id * 100000)) % 2147483560);
-
-   if ( $INC{'Math/Random.pm'} ) {
-      my $cur_seed = Math::Random::random_get_seed();
-
-      my $new_seed = ($cur_seed < 1073741781)
-         ? $cur_seed + ((abs($id) * 10000) % 1073741780)
-         : $cur_seed - ((abs($id) * 10000) % 1073741780);
-
-      Math::Random::random_set_seed($new_seed, $new_seed);
-   }
-
-   ## Run.
+   # Run.
+   $? = 0, $_DATA->{ $_SELF->{PKG} }->set('S'.$$, '');
+   return 0 unless ( defined $func ); # e.g. $pm->start and next
 
    local $SIG{'ALRM'} = sub { alarm 0; die "Hobo timed out\n" };
 
-   $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, '');
+   my $hobo_timeout = ( exists $_SELF->{hobo_timeout} )
+      ? $_SELF->{hobo_timeout} : $mngd->{hobo_timeout};
 
    my @res = eval {
-      alarm( $self->{hobo_timeout} || 0 );
-      no strict 'refs'; $func->(@args);
+      no strict 'refs'; alarm( $hobo_timeout || 0 );
+      $func->( @{ $args } );
    };
+   alarm 0;
 
-   alarm 0; delete $_SELF->{_pkg};
+   _exit($?) if ( $@ && $@ =~ /^Hobo exited \(\S+\)$/ );
 
-   if ( $@ && $@ ne "Hobo exited (0)\n" ) {
-      $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, $@);
-      warn "Hobo $wrk_id terminated abnormally: reason $@\n"
-         if ( $@ ne "Hobo timed out\n" );
+   if ( $@ ) {
+      chomp( my $err = $@ );
+      $? = 1, $_DATA->{ $_SELF->{PKG} }->set('S'.$$, $err);
+      warn "Hobo $$ terminated abnormally: reason $err\n" if (
+         $err ne "Hobo timed out" && !$mngd->{on_finish}
+      );
    }
 
-   $_DATA->{$pkg}->get($mgr_id)->set($wrk_id, $_freeze->(\@res));
+   $_DATA->{ $_SELF->{PKG} }->set('R'.$$, @res ? $_freeze->(\@res) : '');
 
-   _exit();
-}
-
-sub _error {
-   local $\; print {*STDERR} $_[1];
-
-   undef;
+   _exit($?);
 }
 
 sub _exit {
-   ## Hobo received a signal or exited.
-   _notify() if ( exists $_SELF->{_pkg} );
+   my ( $exit_status ) = @_;
 
-   ## Check nested Hobo workers not yet joined.
-   MCE::Hobo->finish('MCE') if $INC{'MCE/Hobo.pm'};
+   # Check nested Hobo workers not yet joined.
+   MCE::Hobo->finish('MCE') if ( keys %{ $_LIST } > 0 && !$_SELF->{SIGNALED} );
 
-   lock $_lock if ($_tid && $^O eq 'netbsd');
-
-   ## Exit child process.
+   # Exit child process.
    $SIG{__DIE__}  = sub { } unless $_tid;
    $SIG{__WARN__} = sub { };
 
-   if ($_has_threads && $^O eq 'MSWin32') {
-      threads->exit(0);
-   }
-   elsif ($_SELF->{posix_exit} && $^O ne 'MSWin32') {
-      eval { MCE::Mutex::Channel::_destroy() };
+   threads->exit($exit_status) if ( $_has_threads && $^O eq 'MSWin32' );
+
+   $SIG{HUP} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub {
+      $SIG{$_[0]} = $SIG{INT} = sub { };
+      CORE::kill($_[0], getppid()) if ( $_[0] eq 'INT' && $^O ne 'MSWin32' );
       CORE::kill('KILL', $$);
+   };
+
+   my $posix_exit = ( exists $_SELF->{posix_exit} )
+      ? $_SELF->{posix_exit} : $_MNGD->{ $_SELF->{PKG} }{posix_exit};
+
+   if ( $posix_exit && $^O ne 'MSWin32' ) {
+      eval { MCE::Mutex::Channel::_destroy() };
+      POSIX::_exit($exit_status);
    }
 
-   CORE::exit(0);
+   CORE::exit($exit_status);
 }
 
-sub _notify {
-   my $mgr_id = $_SELF->{MGR_ID};
-   my $wrk_id = $_SELF->{WRK_ID};
-   my $pkg    = delete $_SELF->{_pkg};
+sub _force_reap {
+   my ( $count, $pkg ) = ( 0, @_ );
+   return unless ( exists $_LIST->{$pkg} && $_LIST->{$pkg}->len() );
 
-   if ( $? ) {
-      $_STAT->{$pkg}->get($mgr_id)->set($wrk_id, "Hobo exited ($?)\n");
-      warn "Hobo $wrk_id terminated abnormally: reason Hobo exited ($?)\n\n";
+   for my $hobo ( $_LIST->{$pkg}->vals() ) {
+      if ( $hobo->is_running() ) {
+         CORE::kill('KILL', $hobo->pid())
+            if CORE::kill('ZERO', $hobo->pid());
+         $count++;
+      }
    }
 
-   $_DATA->{$pkg}->get($mgr_id)->set($wrk_id, $_freeze->([]));
+   $_LIST->{$pkg}->clear();
+
+   warn "Finished with active Hobos [$pkg] ($count)\n"
+      if ($count && $^O ne 'MSWin32');
+
+   return;
+}
+
+sub _max_workers {
+   my $mngd = shift;
+
+   if ( @_ ) {
+      my $cpus = $_[0];
+      if ( !defined $cpus ) {
+         delete $mngd->{max_workers};
+      } else {
+         $cpus = MCE::Util::get_ncpu() if $cpus eq 'auto';
+         $cpus = 1 if $cpus !~ /^\d+$/ || $cpus < 1;
+         $mngd->{max_workers} = $cpus;
+      }
+   }
+
+   $mngd->{max_workers};
 }
 
 sub _quit {
-   $SIG{ $_[0] } = sub { };
-   delete $_SELF->{_pkg};
+   my ( $name ) = @_;
+   $_SELF->{SIGNALED} = 1, $name =~ s/^SIG//;
 
-   _exit();
+   $SIG{$name} = sub {}, CORE::kill($name, -$$)
+      if ( exists $SIG{$name} );
+
+   _exit(0);
+}
+
+sub _reap_hobo {
+   my ( $hobo ) = @_;
+   local @_ = $_DATA->{ $hobo->{PKG} }->_get_hobo_data( $hobo->{WRK_ID} );
+
+   ( $hobo->{ERROR}, $hobo->{RESULT}, $hobo->{JOINED} ) =
+      ( pop // '', length $_[0] ? $_thaw->(pop) : [], 1 );
+
+   if ( my $on_finish = $_MNGD->{ $hobo->{PKG} }{on_finish} ) {
+      my ( $exit, $err ) = ( $? // 0, $hobo->{ERROR} );
+      my ( $code, $sig ) = ( $exit >> 8, $exit & 0x7f );
+
+      if ( ( $code > 100 || $sig == 9 ) && !$err ) {
+         $code = 2, $sig = 1,  $err = 'received SIGHUP'  if $code == 101;
+         $code = 2, $sig = 2,  $err = 'received SIGINT'  if $code == 102;
+         $code = 2, $sig = 15, $err = 'received SIGTERM' if $code == 115;
+         $code = 2, $sig = 9,  $err = 'received SIGKILL' if $sig  == 9;
+      }
+
+      $on_finish->(
+         $hobo->{WRK_ID}, $code, $hobo->{ident}, $sig, $err,
+         @{ $hobo->{RESULT} }
+      );
+   }
+
+   return;
 }
 
 sub _trap {
-   $SIG{ $_[0] } = sub { };
+   my ( $exit_status, $name ) = ( 2, @_ );
+   $_SELF->{SIGNALED} = 1, $name =~ s/^SIG//;
 
-   _exit();
+   $SIG{$name} = sub {}, CORE::kill($name, -$$)
+      if ( exists $SIG{$name} );
+
+   if    ( $name eq 'HUP'  ) { $exit_status = 101 }
+   elsif ( $name eq 'INT'  ) { $exit_status = 102 }
+   elsif ( $name eq 'TERM' ) { $exit_status = 115 }
+
+   _exit($exit_status);
 }
 
 ###############################################################################
 ## ----------------------------------------------------------------------------
-## Optimized, hash and ordhash implementations suited for MCE::Hobo.
+## Delay, hash, and ordhash implementations suited for MCE::Hobo.
 ##
 ###############################################################################
 
+package MCE::Hobo::_delay;
+
+sub new {
+   my ( $class, $delay ) = @_;
+
+   if ( !defined $delay ) {
+      $delay = ($^O =~ /mswin|mingw|msys|cygwin/i) ? 0.015 : 0.008;
+   }
+
+   bless [ $delay, Time::HiRes::time() + $delay ], $class;
+}
+
+sub seconds {
+   my ( $self, $how_long ) = @_;
+   my ( $time, $delay, $next ) = ( Time::HiRes::time(), @{ $self } );
+
+   $how_long = 0.004007 if ( defined $how_long && $how_long < 0.004007 );
+   my $adj = defined $how_long ? $how_long - $delay : 0;
+
+   if ( $next + $adj > $time ) {
+      $self->[1] += $delay + $adj;
+      return $next + $adj - $time;
+   }
+
+   $self->[1] = $time + $delay + $adj;
+
+   return 0;
+}
+
 package MCE::Hobo::_hash;
 
-use strict;
-use warnings;
-
-sub new    { bless {}, shift }
-sub set    { $_[0]->{ $_[1] } = $_[2] }
-sub get    { $_[0]->{ $_[1] } }
-sub del    { delete $_[0]->{ $_[1] } }
-sub exists { exists $_[0]->{ $_[1] } }
-sub incr   { ++$_[0]->{ $_[1] } }
+sub new    { bless {}, shift; }
+sub clear  { %{ $_[0] } = (); }
+sub exists { exists $_[0]->{ $_[1] }; }
+sub set    { $_[0]->{ $_[1] } = $_[2]; }
 
 package MCE::Hobo::_ordhash;
 
-use strict;
-use warnings;
+sub new    { my $gcnt = 0; bless [ {}, [], {}, \$gcnt ], shift; }
+sub exists { exists $_[0]->[0]{ $_[1] }; }
+sub get    { $_[0]->[0]{ $_[1] }; }
+sub len    { scalar keys %{ $_[0]->[0] }; }
 
-sub new {
-   my $gcnt = 0; bless [ {}, [], {}, \$gcnt ], shift;
-}
-
-sub set {
-   my ( $key, $data, $keys, $indx ) = ( $_[1], @{ $_[0] } );
-
-   $data->{ $key } = $_[2], $indx->{ $key } = @{ $keys };
-   push @{ $keys }, "$key";
+sub clear {
+   %{ $_[0]->[0] } = @{ $_[0]->[1] } = %{ $_[0]->[2] } = ();
+   ${ $_[0]->[3] } = 0;
 
    return;
 }
 
 sub del {
    my ( $data, $keys, $indx, $gcnt ) = @{ $_[0] };
-   my $off = delete $indx->{ $_[1] };
-
-   $keys->[ $off ] = undef;
+   $keys->[ delete $indx->{ $_[1] } // return undef ] = undef;
 
    if ( ++${ $gcnt } > @{ $keys } * 0.667 ) {
       my $i; $i = ${ $gcnt } = 0;
@@ -662,24 +770,108 @@ sub del {
    delete $data->{ $_[1] };
 }
 
-sub clear {
-   %{ $_[0]->[0] } = @{ $_[0]->[1] } = %{ $_[0]->[2] } = ();
-   ${ $_[0]->[3] } = 0;
+sub set {
+   my ( $key, $data, $keys, $indx ) = ( $_[1], @{ $_[0] } );
+   $data->{ $key } = $_[2], $indx->{ $key } = @{ $keys };
+   push @{ $keys }, "$key";
 
    return;
 }
 
-sub len {
-   scalar keys %{ $_[0]->[0] };
-}
-
 sub vals {
-   local $_; my ( $self ) = @_;
+   my ( $self ) = @_;
 
    ${ $self->[3] }
       ? @{ $self->[0] }{ grep defined($_), @{ $self->[1] } }
       : @{ $self->[0] }{ @{ $self->[1] } };
 }
+
+###############################################################################
+## ----------------------------------------------------------------------------
+## Manager class.
+##
+###############################################################################
+
+package MCE::Hobo::Manager;
+
+use base 'MCE::Hobo';
+
+sub AUTOLOAD {
+   my $self = shift;
+   my $FCN  = substr($MCE::Hobo::Manager::AUTOLOAD,
+              rindex($MCE::Hobo::Manager::AUTOLOAD, ':') + 1);
+
+   my $opt = $FCN;  $opt =~ s/^run_// or $opt =~ s/^set_//;
+
+   if ( $opt eq 'max_workers' || $opt eq 'max_procs' ) {
+      return MCE::Hobo::_max_workers($self, @_);
+   }
+   if ( $opt eq 'hobo_timeout' || $opt eq 'spawn_delay' ) {
+      $self->{$opt} = $_[0] if ( @_ && $_[0] =~ /^[\d\.]+$/ );
+      return $self->{$opt};
+   }
+   if ( $opt eq 'on_start' || $opt eq 'on_finish' ) {
+      $self->{$opt} = $_[0] if ( @_ && ( ref $_[0] eq 'CODE' || !$_[0] ) );
+      return $self->{$opt};
+   }
+   if ( $opt eq 'posix_exit' ) {
+      $self->{$opt} = $_[0] if ( @_ && $_[0] =~ /^[01]$/ );
+      return $self->{$opt};
+   }
+
+   MCE::Hobo::_croak(
+      "Can't locate object method \"$FCN\" via package \"MCE::Hobo::Manager\""
+   );
+}
+
+sub DESTROY {
+   if ( $_[0]->{MGR_ID} eq "$$.$_tid" ) {
+      MCE::Hobo::_force_reap( my $pkg = $_[0]->{PKG} );
+      delete($_DELY->{$pkg}), delete($_DATA->{"$pkg:seed"}),
+      delete($_LIST->{$pkg}), delete($_DATA->{"$pkg:id"}),
+      delete($_MNGD->{$pkg}), delete($_DATA->{ $pkg });
+   }
+   return;
+}
+
+sub finish    { shift->exit( @_ ); }
+sub is_child  { $_[0]->{CHILD} ? 1 : ''; }
+sub is_parent { $_[0]->{CHILD} ? '' : 1; }
+
+sub running_procs {
+   return $_[0]->pending() unless wantarray;
+   local $_; map { $_->pid } $_[0]->list();
+}
+
+sub start {
+   ( @_ == 2 )
+      ? shift->create( { no_fcn => 1, ident => shift } )
+      : shift->create( { no_fcn => 1 } );
+}
+
+sub start_child {
+   ( @_ >= 3 )
+      ? shift->create( { ident => shift }, @_ )
+      : shift->create( @_ );
+}
+
+sub wait_for_available_procs {
+   my ( $self, $nbr ) = @_;
+   my $max_workers = $self->{max_workers};
+
+   $nbr ||= 1;  $nbr = 1 if ( $nbr < 0 );
+   $nbr   = $max_workers if ( $nbr > $max_workers );
+   $self->wait_one() until ( $max_workers - $self->pending() >= $nbr );
+
+   return;
+}
+
+*reap_finished_children = \&MCE::Hobo::yield;
+*wait_children = \&MCE::Hobo::yield; # compatibility
+*wait_all_children = \&MCE::Hobo::wait_all;
+
+sub set_waitpid_blocking_sleep { 0; } # no-op
+sub waitpid_blocking_sleep     { 0; }
 
 1;
 
@@ -693,7 +885,7 @@ __END__
 
 =head1 NAME
 
-MCE::Hobo - A threads-like parallelization module
+MCE::Hobo - A threads-like parallelization module with managed capabilities
 
 =head1 VERSION
 
@@ -722,7 +914,7 @@ This document describes MCE::Hobo version 1.826
    $_->join() for @hobos;
 
    # Joining occurs immediately as hobo(s) complete execution.
-   1 while MCE::Hobo->waitone();
+   1 while MCE::Hobo->wait_one();
 
    my $hobo = mce_async { foreach (@files) { ... } };
 
@@ -738,11 +930,16 @@ This document describes MCE::Hobo version 1.826
    # Get a hobo's ID
    $pid = MCE::Hobo->pid();  # $$
    $pid = $hobo->pid();
-   $tid = MCE::Hobo->tid();  # $$  same thing
-   $tid = $hobo->tid();
+   $pid = MCE::Hobo->tid();  # tid is an alias for pid
+   $pid = $hobo->tid();
 
    # Test hobo objects
    if ( $hobo1 == $hobo2 ) {
+      ...
+   }
+
+   # Test for within the child or parent
+   if ( MCE::Hobo->in_child() ) {
       ...
    }
 
@@ -807,7 +1004,7 @@ including running alongside C<threads>.
    my $hobo2 = MCE::Hobo->new( \&parallel_task, 2 );
    my $hobo3 = MCE::Hobo->new( sub { parallel_task(3) } );
 
-   $_->join for MCE::Hobo->list();  # ditto: MCE::Hobo->waitall();
+   $_->join for MCE::Hobo->list();  # ditto: MCE::Hobo->wait_all();
 
    # search array (total one round-trip via IPC)
    my @vals = $ary->vals( "val =~ / ID 2 /" );
@@ -849,7 +1046,8 @@ due to a module with a C<DESTROY> or C<END> block not accounting for the process
 ID C<$$.$tid> the object was constructed under: e.g. C<Cache::BDB>.
 
 Constructing a Hobo inside a thread implies C<posix_exit => 1> or if present
-CGI, FCGI, Curses, Gearman::Util, Gearman::XS, Mojo::IOLoop, Prima, Tk, or Wx.
+CGI, FCGI, Coro, Curses, Gearman::Util, Gearman::XS, Mojo::IOLoop, Prima, Tk,
+Wx, or Win32::GUI.
 
    my $hobo1 = MCE::Hobo->create( { posix_exit => 1 }, sub {
       ...
@@ -964,6 +1162,12 @@ emitted via croak if there are active hobos not yet joined.
 
    MCE::Hobo->finish();
 
+=item MCE::Hobo->in_child()
+
+Returns C<true> if within the child or a C<false> value if the parent.
+
+Current API available since 1.827.
+
 =item $hobo->is_running()
 
 Returns true if a hobo is still running.
@@ -1003,7 +1207,7 @@ workers have been notified to quit.
       # instead, use a flag to exit loop
       $SIG{'QUIT'} = sub { $quit = 1 };
 
-      while (1) {
+      while () {
          $len = $_redis->rpush('list', $count++);
          last if $quit;
       }
@@ -1017,7 +1221,7 @@ workers have been notified to quit.
       # do not exit from inside handler
       $SIG{'QUIT'} = sub { $quit = 1 };
 
-      while (1) {
+      while () {
          $len = $array->push($count++);
          last if $quit;
       }
@@ -1075,7 +1279,7 @@ Returns a count of all hobos not yet joined.
 
 =item $hobo->result()
 
-Returns the result obtained by C<join>, C<waitone>, or C<waitall>. If the
+Returns the result obtained by C<join>, C<wait_one>, or C<wait_all>. If the
 process has not yet exited, waits for the corresponding hobo to complete its
 execution.
 
@@ -1090,9 +1294,9 @@ execution.
 
    MCE::Hobo->create('task', $_) for ( reverse 1 .. 3 );
 
-   # 1 while MCE::Hobo->waitone;
+   # 1 while MCE::Hobo->wait_one();
 
-   while ( my $hobo = MCE::Hobo->waitone() ) {
+   while ( my $hobo = MCE::Hobo->wait_one() ) {
       my $err = $hobo->error() // 'no error';
       my $res = $hobo->result();
       my $pid = $hobo->pid();
@@ -1130,7 +1334,7 @@ Class method that allows a hobo to obtain it's own I<MCE::Hobo> object.
 Returns the ID of the hobo.
 
    pid: $$  process id
-   tid: $$  same thing
+   tid: $$  alias for pid
 
 =item MCE::Hobo->pid()
 
@@ -1139,16 +1343,19 @@ Returns the ID of the hobo.
 Class methods that allows a hobo to obtain its own ID.
 
    pid: $$  process id
-   tid: $$  same thing
+   tid: $$  alias for pid
 
-=item MCE::Hobo->waitone()
+=item MCE::Hobo->wait_one()
 
-=item MCE::Hobo->waitall()
+=item MCE::Hobo->wait_all()
 
 Meaningful for the manager process only, waits for one or all hobos to
-complete execution. Afterwards, returns the corresponding hobo(s). If a
-hobo does not exist, returns the C<undef> value or an empty list for
-C<waitone> and C<waitall> respectively.
+complete execution. Afterwards, returns the corresponding hobo(s).
+If a hobo doesn't exist, returns the C<undef> value or an empty list
+for C<wait_one> and C<wait_all> respectively.
+
+The C<waitone> and C<waitall> methods are aliases since 1.827 for
+backwards compatibility.
 
    use MCE::Hobo;
    use Time::HiRes qw(sleep);
@@ -1164,11 +1371,11 @@ C<waitone> and C<waitall> respectively.
    # join, traditional use case
    $_->join() for MCE::Hobo->list();
 
-   # waitone, simplistic use case
-   1 while MCE::Hobo->waitone();
+   # wait_one, simplistic use case
+   1 while MCE::Hobo->wait_one();
 
-   # waitone
-   while ( my $hobo = MCE::Hobo->waitone() ) {
+   # wait_one
+   while ( my $hobo = MCE::Hobo->wait_one() ) {
       my $err = $hobo->error() // 'no error';
       my $res = $hobo->result();
       my $pid = $hobo->pid();
@@ -1176,8 +1383,8 @@ C<waitone> and C<waitall> respectively.
       print "[$pid] $err : $res\n";
    }
 
-   # waitall
-   my @hobos = MCE::Hobo->waitall();
+   # wait_all
+   my @hobos = MCE::Hobo->wait_all();
 
    for ( @hobos ) {
       my $err = $_->error() // 'no error';
@@ -1187,15 +1394,238 @@ C<waitone> and C<waitall> respectively.
       print "[$pid] $err : $res\n";
    }
 
-=item MCE::Hobo->yield( floating_seconds )
+=item MCE::Hobo->yield( [ floating_seconds ] )
+
+Prior API till 1.826.
 
 Let this hobo yield CPU time to other hobos. By default, the class method calls
-C<sleep(0.0005)> on UNIX and C<sleep(0.015)> on Windows including Cygwin.
+C<sleep(0.008)> on UNIX and C<sleep(0.015)> on Windows including Cygwin.
 
    MCE::Hobo->yield();
    MCE::Hobo->yield(0.05);
 
+   # total run time: 0.25 seconds, sleep occurs in parallel
+
+   MCE::Hobo->create( sub { MCE::Hobo->yield(0.25) } ) for 1 .. 4;
+   MCE::Hobo->wait_all();
+
+Current API available since 1.827.
+
+Give other hobos a chance to run, optionally for given time. Yield behaves
+similarly to MCE's interval option for throttling hobos from running too
+fast. Another use case is preventing hobos from initiating many connections
+simultaneously. See the next section for fetching URLs in parallel.
+
+   # total run time: 1.00 second
+
+   MCE::Hobo->create( sub { MCE::Hobo->yield(0.25) } ) for 1 .. 4;
+   MCE::Hobo->wait_all();
+
 =back
+
+=head1 PARALLEL HTTP REQUESTS USING ANYEVENT
+
+This demonstration constructs two queues, two handles, starts the
+shared-manager process if needed, and spawns four hobo workers.
+For this demonstration, am chunking 64 URLs per job. In reality,
+one may run with 200 workers and chunk 300 URLs on a 24-way box.
+
+ # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ # perl demo.pl              -- all output
+ # perl demo.pl  >/dev/null  -- mngr/hobo output
+ # perl demo.pl 2>/dev/null  -- show results only
+ #
+ # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ use strict;
+ use warnings;
+
+ use AnyEvent;
+ use AnyEvent::HTTP;
+ use Time::HiRes qw( time );
+
+ use MCE::Hobo;
+ use MCE::Shared;
+
+ my $que = MCE::Shared->queue();
+ my $ret = MCE::Shared->queue();
+
+ # Construct shared handles to serialize output from many hobos
+ # writing simultaneously. This prevents garbled output.
+
+ mce_open my $OUT, ">>", \*STDOUT or die "open error: $!";
+ mce_open my $ERR, ">>", \*STDERR or die "open error: $!";
+
+ # Must start the shared-server manually when Perl lacks IO::FDPass.
+ # This restriction applies to MCE::Shared::{ Condvar,Handle,Queue }.
+ # MCE::Shared loads IO::FDPass automatically if available.
+
+ MCE::Shared->start() unless $INC{'IO/FDPass.pm'};
+
+ # Spawn workers early for minimum memory consumption.
+
+ MCE::Hobo->create({ posix_exit => 1 }, 'task', $_) for 1 .. 4;
+
+ # Obtain or generate input data for hobos to process.
+
+ my ( $count, @urls ) = ( 0 );
+
+ push @urls, map { "http://127.0.0.$_/"   } 1..254;
+ push @urls, map { "http://192.168.0.$_/" } 1..254; # 508 URLs total
+
+ while ( @urls ) {
+     my @chunk = splice(@urls, 0, 64);
+     $que->enqueue( { ID => ++$count, INPUT => \@chunk } );
+ }
+
+ # So that workers leave the loop after consuming the queue.
+
+ $que->end();
+
+ # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ # Loop for the manager process. The manager may do other work if
+ # need be and periodically check $ret->pending() not shown here.
+ #
+ # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ my $start = time;
+
+ printf {$ERR} "Mngr - entering loop\n";
+
+ while ( $count ) {
+     my ( $result, $failed ) = $ret->dequeue( 2 );
+
+     # Remove ID from result, so not treated as a URL item.
+
+     printf {$ERR} "Mngr - received job %s\n", delete $result->{ID};
+
+     # Display the URL and the size captured.
+
+     foreach my $url ( keys %{ $result } ) {
+         printf {$OUT} "%s: %d\n", $url, length($result->{$url})
+             if $result->{$url};  # url has content
+     }
+
+     # Display URLs the hobo worker could not reach.
+
+     if ( @{ $failed } ) {
+         foreach my $url ( @{ $failed } ) {
+             print {$OUT} "Failed: $url\n";
+         }
+     }
+
+     # Decrement the count.
+
+     $count--;
+ }
+
+ MCE::Hobo->wait_all();
+
+ printf {$ERR} "Mngr - exiting loop\n\n";
+ printf {$ERR} "Duration: %0.3f seconds\n\n", time - $start;
+
+ exit;
+
+ # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ # Hobos enqueue two items ( $result and $failed ) per each job
+ # for the manager process. Likewise, the manager process dequeues
+ # two items above. Optionally, Hobos add ID to result.
+ #
+ # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ sub task {
+     my ( $id ) = @_;
+     printf {$ERR} "Hobo $id entering loop\n";
+
+     while ( my $job = $que->dequeue() ) {
+         my ( $result, $failed ) = ( { ID => $job->{ID} }, [ ] );
+
+         # Walk URLs, provide a hash and array refs for data.
+
+         printf {$ERR} "Hobo $id running  job $job->{ID}\n";
+         walk( $job, $result, $failed );
+
+         # Send results to the manager process.
+
+         $ret->enqueue( $result, $failed );
+     }
+
+     printf {$ERR} "Hobo $id exiting loop\n";
+ }
+
+ sub walk {
+     my ( $job, $result, $failed ) = @_;
+
+     # Yielding is critical when running an event loop in parallel.
+     # Not doing so means that the app may reach contention points
+     # with the firewall and likely impose unnecessary hardship at
+     # the OS level. The idea here is not to have multiple workers
+     # initiate HTTP requests to a batch of URLs at the same time.
+     # Yielding in 1.827+ behaves more like scatter for the worker
+     # to run solo in a fraction of time.
+
+     MCE::Hobo->yield( 0.03 );   # MCE::Hobo 1.827
+
+     my $cv = AnyEvent->condvar();
+
+     # Populate the hash ref for URLs it could reach.
+     # Do not mix AnyEvent timeout and Hobo timeout.
+     # Choose to do the event timeout if available.
+
+     foreach my $url ( @{ $job->{INPUT} } ) {
+         $cv->begin();
+
+         http_get $url, timeout => 2, sub {
+             my ( $data, $headers ) = @_;
+             $result->{$url} = $data;
+             $cv->end();
+         };
+     }
+
+     $cv->recv();
+
+     # Populate the array ref for URLs it could not reach.
+
+     foreach my $url ( @{ $job->{INPUT} } ) {
+         push @{ $failed }, $url unless (exists $result->{ $url });
+     }
+
+     return;
+ }
+
+ __END__
+
+ $ perl demo.pl
+
+ Hobo 1 entering loop
+ Hobo 2 entering loop
+ Hobo 3 entering loop
+ Mngr - entering loop
+ Hobo 2 running  job 2
+ Hobo 3 running  job 3
+ Hobo 1 running  job 1
+ Hobo 4 entering loop
+ Hobo 4 running  job 4
+ Hobo 2 running  job 5
+ Mngr - received job 2
+ Hobo 3 running  job 6
+ Mngr - received job 3
+ Hobo 1 running  job 7
+ Mngr - received job 1
+ Hobo 4 running  job 8
+ Mngr - received job 4
+ http://192.168.0.1/: 3729
+ Hobo 2 exiting loop
+ Mngr - received job 5
+ Hobo 3 exiting loop
+ Mngr - received job 6
+ Hobo 1 exiting loop
+ Mngr - received job 7
+ Hobo 4 exiting loop
+ Mngr - received job 8
+ Mngr - exiting loop
+
+ Duration: 4.131 seconds
 
 =head1 CROSS-PLATFORM TEMPLATE FOR BINARY EXECUTABLE
 
@@ -1228,13 +1658,13 @@ threads are all necessary for the binary to exit successfully.
 
    sub task {
       my ( $id ) = @_;
-      while ( defined ( my $num = $seq_a->next ) ) {
+      while ( defined ( my $num = $seq_a->next() ) ) {
          print "$id: $num\n";
       }
    }
 
    MCE::Hobo->new( \&task, $_ ) for 1 .. 2;
-   MCE::Hobo->waitall;
+   MCE::Hobo->wait_all();
 
    threads->exit(0) if $INC{"threads.pm"};
 
@@ -1244,7 +1674,8 @@ The inspiration for C<MCE::Hobo> comes from wanting C<threads>-like behavior
 for processes. Both can run side-by-side including safe-use by MCE workers.
 Likewise, the documentation resembles C<threads>.
 
-The inspiration for C<waitall> and C<waitone> comes from C<Parallel::WorkUnit>.
+The inspiration for C<wait_all> and C<wait_one> comes from the
+C<Parallel::WorkUnit> module.
 
 =head1 SEE ALSO
 

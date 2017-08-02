@@ -113,15 +113,6 @@ sub new {
    $_Q->{_type} = (exists $_argv{type} && defined $_argv{type})
       ? $_argv{type} : $TYPE;
 
-   _croak('Queue: (await) must be 1 or 0')
-      if ($_Q->{_await} ne '1' && $_Q->{_await} ne '0');
-   _croak('Queue: (fast) must be 1 or 0')
-      if ($_Q->{_fast} ne '1' && $_Q->{_fast} ne '0');
-   _croak('Queue: (porder) must be 1 or 0')
-      if ($_Q->{_porder} ne '1' && $_Q->{_porder} ne '0');
-   _croak('Queue: (type) must be 1 or 0')
-      if ($_Q->{_type} ne '1' && $_Q->{_type} ne '0');
-
    if (exists $_argv{queue}) {
       _croak('Queue: (queue) is not an ARRAY reference')
          if (ref $_argv{queue} ne 'ARRAY');
@@ -134,11 +125,11 @@ sub new {
    # --------------------------------------------------------------------------
 
    $_Q->{_init_pid} = $_has_threads ? $$ .'.'. $_tid : $$;
-   $_Q->{_dsem} = 0 if ($_Q->{_fast});
+   $_Q->{_dsem} = 0 if $_Q->{_fast};
 
    my $_caller = caller() eq 'MCE::Shared' ? caller(1) : caller();
 
-   if ($^O ne 'MSWin32' && $_tid == 0 && $_Q->{_fast} == 0) {
+   if ($^O ne 'MSWin32' && $_tid == 0 && !$_Q->{_fast}) {
       if ($_caller !~ /^MCE::/) {
          for my $_i (0 .. MUTEX_LOCKS - 1) {
             $_Q->{'_mutex_'.$_i} = MCE::Mutex->new( impl => 'Channel' );
@@ -695,7 +686,7 @@ sub _heap_insert_high {
 
    my (
       $_DAU_R_SOCK_REF, $_DAU_R_SOCK, $_obj, $_freeze, $_thaw,
-      $_Q, $_cnt, $_id, $_pending, $_t
+      $_cnt, $_id, $_pending, $_t
    );
 
    my %_output_function = (
@@ -706,7 +697,7 @@ sub _heap_insert_high {
          chomp($_id = <$_DAU_R_SOCK>),
          chomp($_t  = <$_DAU_R_SOCK>);
 
-         $_Q = $_obj->{ $_id } || do {
+         my $_Q = $_obj->{ $_id } || do {
             print {$_DAU_R_SOCK} $LF;
          };
          $_Q->{_tsem} = $_t;
@@ -729,7 +720,8 @@ sub _heap_insert_high {
          chomp($_cnt = <$_DAU_R_SOCK>);
 
          $_cnt = 0 if ($_cnt == 1);
-         $_Q = $_obj->{ $_id } || do {
+
+         my $_Q = $_obj->{ $_id } || do {
             print {$_DAU_R_SOCK} '-1'.$LF;
             return;
          };
@@ -785,7 +777,7 @@ sub _heap_insert_high {
             print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
          }
          elsif (defined $_buf) {
-            if (!ref($_buf)) {
+            if (!ref($_buf) && !looks_like_number($_buf)) {
                print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
             } else {
                $_buf = $_freeze->([ $_buf ]);
@@ -814,7 +806,7 @@ sub _heap_insert_high {
          chomp($_id  = <$_DAU_R_SOCK>),
          chomp($_cnt = <$_DAU_R_SOCK>);
 
-         $_Q = $_obj->{ $_id } || do {
+         my $_Q = $_obj->{ $_id } || do {
             print {$_DAU_R_SOCK} '-1'.$LF;
             return;
          };
@@ -823,7 +815,7 @@ sub _heap_insert_high {
             my $_buf = $_Q->_dequeue();
 
             if (defined $_buf) {
-               if (!ref($_buf)) {
+               if (!ref($_buf) && !looks_like_number($_buf)) {
                   print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
                } else {
                   $_buf = $_freeze->([ $_buf ]);
@@ -910,7 +902,7 @@ no overloading;
 my $_is_MSWin32 = ($^O eq 'MSWin32') ? 1 : 0;
 
 my ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
-    $_freeze, $_thaw);
+    $_freeze, $_thaw, $_pending);
 
 sub _init_queue {
    ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
@@ -1010,6 +1002,10 @@ sub dequeue_nb {
    }
 
    _req_queue('O~QUN', $_id.$LF . $_cnt.$LF, $_cnt, undef);
+}
+
+sub pending {
+   (@_ == 1 && !wantarray) ? _size('pending', @_) : _auto('pending', @_);
 }
 
 1;
