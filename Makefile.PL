@@ -77,7 +77,7 @@ WriteMakefile(
       'strict'       => 0,
       'warnings'     => 0,
       'Carp'         => 0,
-      'MCE'          => 1.830,
+      'MCE'          => 1.829,
       'POSIX'        => 0,
       'Scalar::Util' => 0,
       'Socket'       => 0,

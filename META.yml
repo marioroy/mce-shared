@@ -69,7 +69,7 @@ recommends:
   Sereal::Encoder: '3.015'
 requires:
   Carp: '0'
-  MCE: '1.830'
+  MCE: '1.829'
   POSIX: '0'
   Scalar::Util: '0'
   Socket: '0'
