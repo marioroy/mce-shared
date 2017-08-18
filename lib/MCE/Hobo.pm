@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized once redefine );
 
 package MCE::Hobo;
 
-our $VERSION = '1.826';
+our $VERSION = '1.827';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -71,16 +71,16 @@ sub _clear {
 bless my $_SELF = { MGR_ID => "$$.$_tid", WRK_ID => $$ }, __PACKAGE__;
 
 sub init {
-   _croak('Usage: MCE::Hobo->init()') if ref($_[0]);
    shift if ( defined $_[0] && $_[0] eq __PACKAGE__ );
 
+   # -- options -------------------------------------------------------
+   # max_workers hobo_timeout posix_exit on_start on_finish
+   # ------------------------------------------------------------------
+
    my $pkg = "$$.$_tid.".( caller eq __PACKAGE__ ? caller(1) : caller );
+   my $mngd = $_MNGD->{$pkg} = ( ref $_[0] eq 'HASH' ) ? shift : { @_ };
 
-   # -- options --------------------------------------------------------
-   # max_workers on_start on_finish hobo_timeout posix_exit spawn_delay
-   # -------------------------------------------------------------------
-
-   my $mngd = $_MNGD->{$pkg} = { @_ };  @_ = ();
+   @_ = ();
 
    $mngd->{MGR_ID} = "$$.$_tid", $mngd->{PKG} = $pkg,
    $mngd->{WRK_ID} =  $$;
@@ -130,27 +130,23 @@ sub init {
 ## Tip found in threads::async.
 
 sub async (&;@) {
-   unless ( defined $_[0] && $_[0] eq __PACKAGE__ ) {
-      unshift @_, __PACKAGE__;
-   }
    goto &create;
 }
 
 sub create {
-   _croak('Usage: MCE::Hobo->create()') if ref($_[0]);
-
    my $mngd = $_MNGD->{ "$$.$_tid.".caller() } // do {
       # Unless defined, construct $mngd internally on first use.
       init(); $_MNGD->{ "$$.$_tid.".caller() };
    };
 
-   shift;
+   shift if ( $_[0] eq __PACKAGE__ );
 
    # ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
 
    my $self = bless ref $_[0] eq 'HASH' ? { %{ shift() } } : { }, __PACKAGE__;
 
    $self->{MGR_ID} = $mngd->{MGR_ID}, $self->{PKG} = $mngd->{PKG};
+   $self->{ident } = shift if ( !ref $_[0] && ref $_[1] eq 'CODE' );
 
    my $func = shift; $func = caller().'::'.$func
       if ( !ref $func && length $func && index($func,':') < 0 );
@@ -193,7 +189,6 @@ sub create {
    elsif ( $pid ) {                                      # parent
       $self->{WRK_ID} = $pid, $list->set($pid, $self);
       $mngd->{on_start}->($pid, $self->{ident}) if $mngd->{on_start};
-      sleep $mngd->{spawn_delay} if $mngd->{spawn_delay};
 
       return $self;
    }
@@ -249,8 +244,7 @@ sub exit {
    my ( $pkg, $wrk_id ) = ( $self->{PKG}, $self->{WRK_ID} );
 
    if ( $wrk_id == $$ && $self->{MGR_ID} eq "$$.$_tid" ) {
-      MCE::Hobo->finish('MCE');
-      CORE::exit(@_);
+      MCE::Hobo->finish('MCE'); CORE::exit(@_);
    }
    elsif ( $wrk_id == $$ ) {
       alarm 0; my ( $exit_status, @res ) = @_; $? = $exit_status // 0;
@@ -278,7 +272,9 @@ sub exit {
 
 sub finish {
    _croak('Usage: MCE::Hobo->finish()') if ref($_[0]);
-   my $pkg = ( defined $_[1] ) ? $_[1] : caller();
+   shift if ( defined $_[0] && $_[0] eq __PACKAGE__ );
+
+   my $pkg = defined($_[0]) ? $_[0] : caller();
 
    if ( $pkg eq 'MCE' ) {
       for my $key ( keys %{ $_LIST } ) { MCE::Hobo->finish($key); }
@@ -770,11 +766,25 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.826
+This document describes MCE::Hobo version 1.827
 
 =head1 SYNOPSIS
 
    use MCE::Hobo;
+
+   MCE::Hobo->init(
+      max_workers => 'auto',   # default undef, unlimited
+      hobo_timeout => 20,      # default undef, no timeout
+      posix_exit => 1,         # default undef, CORE::exit
+      on_start => sub {
+         my ( $pid, $ident ) = @_;
+         ...
+      },
+      on_finish => sub {
+         my ( $pid, $exit, $ident, $signal, $error, @ret ) = @_;
+         ...
+      }
+   );
 
    MCE::Hobo->create( sub { print "Hello from hobo\n" } )->join();
 
@@ -819,11 +829,6 @@ This document describes MCE::Hobo version 1.826
       ...
    }
 
-   # Test for within the child or parent
-   if ( MCE::Hobo->in_child() ) {
-      ...
-   }
-
    # Give other hobos a chance to run
    MCE::Hobo->yield();
    MCE::Hobo->yield(0.05);
@@ -844,7 +849,8 @@ This document describes MCE::Hobo version 1.826
    $hobo->kill('SIGUSR1');
 
    # Exit a hobo
-   MCE::Hobo->exit();
+   MCE::Hobo->exit(0);
+   MCE::Hobo->exit(0, @ret);  # MCE::Hobo 1.827+
 
 =head1 DESCRIPTION
 
@@ -915,20 +921,14 @@ a code ref.
 
 =item $hobo = MCE::Hobo->create( { options }, FUNCTION, ARGS )
 
-Options may be specified via a hash structure. At this time, C<posix_exit> and
-C<hobo_timeout> are the only options supported. Set C<posix_exit> to avoid all
-END and destructor processing. Set C<hobo_timeout>, in number of seconds, if
-you want the hobo process to terminate after some time. The default is C<0>
-for no timeout.
+=item $hobo = MCE::Hobo->create( IDENT, FUNCTION, ARGS )
 
-Many modules on CPAN are not thread-safe nor safe to use with many processes.
-The C<posix_exit> option must be set explicitly if your application is crashing,
-due to a module with a C<DESTROY> or C<END> block not accounting for the process
-ID C<$$.$tid> the object was constructed under: e.g. C<Cache::BDB>.
+Options, excluding C<ident>, may be specified globally via the C<init> function.
+Otherwise, C<ident>, C<hobo_timeout>, and C<posix_exit> may be set uniquely.
 
-Constructing a Hobo inside a thread implies C<posix_exit => 1> or if present
-CGI, FCGI, Coro, Curses, Gearman::Util, Gearman::XS, Mojo::IOLoop, Prima, Tk,
-Wx, or Win32::GUI.
+The C<ident> option, available since 1.827, is used by callback functions
+C<on_start> and C<on_finish>, for identifying the started and finished
+process respectively.
 
    my $hobo1 = MCE::Hobo->create( { posix_exit => 1 }, sub {
       ...
@@ -1018,10 +1018,14 @@ not immediately to not leave a zombie or defunct process.
 
    $hobo->join();  # later
 
-=item MCE::Hobo->exit()
+=item MCE::Hobo->exit( 0 )
 
-A hobo can be exited at any time by calling C<MCE::Hobo->exit()>.
-This behaves the same as C<exit(status)> when called from the main process.
+=item MCE::Hobo->exit( 0, @ret )
+
+A hobo can exit at any time by calling C<MCE::Hobo->exit()>. Otherwise,
+the behavior is the same as C<exit(status)> when called from the main process.
+Current since 1.827, a worker may optionally return data, to be transmitted
+to the parent process.
 
 =item MCE::Hobo->finish()
 
@@ -1043,11 +1047,62 @@ emitted via croak if there are active hobos not yet joined.
 
    MCE::Hobo->finish();
 
-=item MCE::Hobo->in_child()
+=item MCE::Hobo->init( options )
 
-Returns C<true> if within the child or a C<false> value if the parent.
+The init function accepts a list of MCE::Hobo options.
 
-Current API available since 1.827.
+   MCE::Hobo->init(
+      max_workers => 'auto',   # default undef, unlimited
+      hobo_timeout => 20,      # default undef, no timeout
+      posix_exit => 1,         # default undef, CORE::exit
+      on_start => sub {
+         my ( $pid, $ident ) = @_;
+         ...
+      },
+      on_finish => sub {
+         my ( $pid, $exit, $ident, $signal, $error, @ret ) = @_;
+         ...
+      }
+   );
+
+   # Identification given as option or 1st argument.
+   # Current API available since 1.827.
+
+   for my $key ( 'aa' .. 'zz' ) {
+      MCE::Hobo->create( { ident => $key }, sub { ... } );
+      MCE::Hobo->create( $key, sub { ... } );
+   }
+
+   MCE::Hobo->wait_all;
+
+Set C<max_workers> if you want to limit the number of workers by waiting
+automatically for an available slot. Specify C<auto> to obtain the number
+of logical cores via C<MCE::Util::get_ncpu()>.
+
+Set C<hobo_timeout>, in number of seconds, if you want the hobo process to
+terminate after some time. The default is C<0> for no timeout.
+
+Set C<posix_exit> to avoid all END and destructor processing. Constructing
+MCE::Hobo inside a thread implies 1 or if present CGI, FCGI, Coro, Curses,
+Gearman::Util, Gearman::XS, Mojo::IOLoop, Prima, Tk, Wx, or Win32::GUI.
+
+The callback options C<on_start> and C<on_finish> are called in the parent
+process after starting a Hobo and later when terminated. The arguments
+for the subroutines were inspired by L<Parallel::ForkManager>.
+
+The parameters for C<on_start> are the following:
+
+   - pid of the process
+   - identification (ident option or 1st arg to create)
+
+The parameters for C<on_finish> are the following:
+
+   - pid of the process
+   - program exit code
+   - identification (ident option or 1st arg to create)
+   - exit signal id
+   - error message from eval inside MCE::Hobo
+   - returned data
 
 =item $hobo->is_running()
 
@@ -1327,6 +1382,8 @@ one may run with 200 workers and chunk 300 URLs on a 24-way box.
  use MCE::Hobo;
  use MCE::Shared;
 
+ # Construct two queues, input and return.
+
  my $que = MCE::Shared->queue();
  my $ret = MCE::Shared->queue();
 
@@ -1335,12 +1392,6 @@ one may run with 200 workers and chunk 300 URLs on a 24-way box.
 
  mce_open my $OUT, ">>", \*STDOUT or die "open error: $!";
  mce_open my $ERR, ">>", \*STDERR or die "open error: $!";
-
- # Must start the shared-server manually when Perl lacks IO::FDPass.
- # This restriction applies to MCE::Shared::{ Condvar,Handle,Queue }.
- # MCE::Shared loads IO::FDPass automatically if available.
-
- MCE::Shared->start() unless $INC{'IO/FDPass.pm'};
 
  # Spawn workers early for minimum memory consumption.
 

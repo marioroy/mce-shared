@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.826';
+our $VERSION = '1.827';
 
 use MCE::Shared::Base ();
 use base 'MCE::Shared::Base::Common';
@@ -58,7 +58,7 @@ sub _hfind {
    }
    else {
       my $query = shift;
-      $params->{'hfind'} = 1;
+      $params->{'hfind'} = undef;
 
       MCE::Shared::Base::_find_hash(
          $self->[0][0], $params, $query, $self->[0]
@@ -81,7 +81,7 @@ sub _lfind {
    }
    else {
       my $query = shift;
-      $params->{'lfind'} = 1;
+      $params->{'lfind'} = undef;
 
       MCE::Shared::Base::_find_hash(
          $self->[1][0], $params, $query, $self->[1]
@@ -1115,7 +1115,7 @@ MCE::Shared::Minidb - A pure-Perl in-memory data store
 
 =head1 VERSION
 
-This document describes MCE::Shared::Minidb version 1.826
+This document describes MCE::Shared::Minidb version 1.827
 
 =head1 DESCRIPTION
 

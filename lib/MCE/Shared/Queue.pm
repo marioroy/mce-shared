@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.826';
+our $VERSION = '1.827';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -188,11 +188,11 @@ sub clear {
 sub end {
    my ($_Q) = @_;
 
-   if (!$_Q->{_ended}) {
+   if (!exists $_Q->{_ended}) {
       if (!$_Q->{_nb_flag}) {
          1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
       }
-      $_Q->{_ended} = 1;
+      $_Q->{_ended} = undef;
    }
 
    return;
@@ -205,7 +205,7 @@ sub enqueue {
 
    return unless (scalar @_);
 
-   if ($_Q->{_ended}) {
+   if (exists $_Q->{_ended}) {
       warn "Queue: (enqueue) called on queue that has been 'end'ed\n";
       return;
    }
@@ -228,7 +228,7 @@ sub enqueuep {
 
    return unless (scalar @_);
 
-   if ($_Q->{_ended}) {
+   if (exists $_Q->{_ended}) {
       warn "Queue: (enqueuep) called on queue that has been 'end'ed\n";
       return;
    }
@@ -293,7 +293,7 @@ sub dequeue {
       }
    }
 
-   if ($_Q->{_ended} && !$_Q->_has_data()) {
+   if (exists $_Q->{_ended} && !$_Q->_has_data()) {
       1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
    }
 
@@ -314,7 +314,9 @@ sub dequeue_nb {
       return;
    }
 
-   $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
+   if (!$_Q->{_nb_flag} && $_Q->_has_data()) {
+      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+   }
 
    if (defined $_cnt && $_cnt ne '1') {
       _croak('Queue: (dequeue count argument) is not valid')
@@ -327,12 +329,17 @@ sub dequeue_nb {
             $_pending += @{ $_Q->{_datp}->{$_h} };
          }
       }
+
+      $_Q->{_nb_flag} = $_pending > $_cnt ? 1 : 0;
       $_cnt = $_pending if $_pending < $_cnt;
 
       return map { $_Q->_dequeue() } 1 .. $_cnt;
    }
 
-   return $_Q->_dequeue() // ();
+   my $_buf = $_Q->_dequeue();
+   $_Q->{_nb_flag} = $_Q->_has_data() ? 1 : 0;
+
+   return defined($_buf) ? $_buf : ();
 }
 
 # pending ( )
@@ -347,7 +354,7 @@ sub pending {
       }
    }
 
-   return ($_Q->{_ended})
+   return (exists $_Q->{_ended})
       ? $_pending ? $_pending : undef
       : $_pending;
 }
@@ -362,7 +369,7 @@ sub insert {
 
    return unless (scalar @_);
 
-   if ($_Q->{_ended}) {
+   if (exists $_Q->{_ended}) {
       warn "Queue: (insert) called on queue that has been 'end'ed\n";
       return;
    }
@@ -410,7 +417,7 @@ sub insertp {
 
    return unless (scalar @_);
 
-   if ($_Q->{_ended}) {
+   if (exists $_Q->{_ended}) {
       warn "Queue: (insertp) called on queue that has been 'end'ed\n";
       return;
    }
@@ -768,7 +775,7 @@ sub _heap_insert_high {
             }
          }
 
-         if ($_Q->{_ended} && !$_Q->_has_data()) {
+         if (exists $_Q->{_ended} && !$_Q->_has_data()) {
             1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
          }
 
@@ -810,6 +817,10 @@ sub _heap_insert_high {
             print {$_DAU_R_SOCK} '-1'.$LF;
             return;
          };
+
+         if (!$_Q->{_nb_flag} && $_Q->_has_data()) {
+            1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+         }
 
          if ($_cnt == 1) {
             my $_buf = $_Q->_dequeue();
@@ -1024,7 +1035,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.826
+This document describes MCE::Shared::Queue version 1.827
 
 =head1 DESCRIPTION
 

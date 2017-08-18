@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.826';
+our $VERSION = '1.827';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -53,6 +53,24 @@ my ($_count, %_lkup) = (0);
 sub share {
    shift if (defined $_[0] && $_[0] eq 'MCE::Shared');
 
+   # construction via module option
+   if ( ref $_[0] eq 'HASH' && $_[0]->{module} ) {
+      my $_params = shift;
+
+      return MCE::Shared->condvar(@_)
+         if ( $_params->{module} eq 'MCE::Shared::Condvar' );
+      return MCE::Shared->handle(@_)
+         if ( $_params->{module} eq 'MCE::Shared::Handle' );
+      return MCE::Shared->queue(@_)
+         if ( $_params->{module} eq 'MCE::Shared::Queue' );
+
+      $_params->{class} = ':construct_module:';
+
+      return MCE::Shared::Server::_new(
+         $_params, [ @_, delete $_params->{new} || 'new' ]
+      );
+   }
+
    my $_params = ref $_[0] eq 'HASH' && ref $_[1] ? shift : {};
    my ($_class, $_ra, $_item) = (blessed($_[0]), refaddr($_[0]));
 
@@ -67,12 +85,8 @@ sub share {
    # blessed object, \@array, \%hash, or \$scalar
    if ( $_class ) {
       _incr_count($_[0]), return $_[0] if $_[0]->can('SHARED_ID');
-
-      _croak("Running MCE::Queue via MCE::Shared is not supported.\n",
-             "A shared queue is possible via MCE::Shared->queue().\n\n")
-         if ($_class eq 'MCE::Queue');
-
       $_params->{'class'} = $_class;
+
       $_item = MCE::Shared::Server::_new($_params, $_[0]);
    }
    elsif ( ref $_[0] eq 'ARRAY' ) {
@@ -145,6 +159,67 @@ if ( $INC{'PDL.pm'} ) {
    };
 }
 
+sub AUTOLOAD {
+   # $AUTOLOAD = MCE::Shared::<method_name>
+   my $_fcn = substr($MCE::Shared::AUTOLOAD, 13);
+
+   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
+
+   return MCE::Shared::Object::_init(@_) if $_fcn eq 'init';
+   return MCE::Shared::Server::_start() if $_fcn eq 'start';
+   return MCE::Shared::Server::_stop() if $_fcn eq 'stop';
+
+   if ( $_fcn eq 'array' || $_fcn eq 'hash' ) {
+      _use( 'MCE::Shared::'.ucfirst($_fcn) );
+      my $_params = ref $_[0] eq 'HASH' ? shift : {};
+
+      my $_item = ( $_fcn eq 'array' )
+         ? &share($_params, MCE::Shared::Array->new())
+         : &share($_params, MCE::Shared::Hash->new());
+
+      if ( scalar @_ ) {
+         $_params->{_DEEPLY_} = 1;
+         if ( $_fcn eq 'array' ) {
+            for ( my $i = 0; $i <= $#_; $i += 1 ) {
+               &_share($_params, $_item, $_[$i]) if ref($_[$i]);
+            }
+         } else {
+            for ( my $i = 1; $i <= $#_; $i += 2 ) {
+               &_share($_params, $_item, $_[$i]) if ref($_[$i]);
+            }
+         }
+         $_item->assign(@_);
+      }
+
+      return $_item;
+   }
+   elsif ( $_fcn eq 'handle' ) {
+      require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
+
+      my $_item = &share( MCE::Shared::Handle->new([]) );
+      my $_fh   = \do { no warnings 'once'; local *FH };
+
+      tie *{ $_fh }, 'MCE::Shared::Object', $_item;
+      if ( @_ ) { $_item->OPEN(@_) or return ''; }
+
+      return $_fh;
+   }
+
+   # cache, condvar, minidb, ordhash, queue, scalar, sequence, et cetera
+   $_fcn = 'sequence' if $_fcn eq 'num_sequence';
+
+   my $_pkg = ucfirst( lc $_fcn ); local $@;
+
+   if ( $INC{"MCE/Shared/$_pkg.pm"} || eval "use MCE::Shared::$_pkg (); 1" ) {
+      $_pkg = "MCE::Shared::$_pkg";
+
+      return &share({}, $_pkg->new(_shared => 1, @_)) if $_fcn eq 'cache';
+      return &share({}, $_pkg->new(@_));
+   }
+
+   _croak("Can't locate object method \"$_fcn\" via package \"MCE::Shared\"");
+}
+
 sub open (@) {
    shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
    require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
@@ -171,82 +246,6 @@ sub open (@) {
    } else {
       $_item->OPEN(@_);
    }
-}
-
-sub AUTOLOAD {
-   # $AUTOLOAD = MCE::Shared::<method_name>
-   my $_fn = substr($MCE::Shared::AUTOLOAD, 13);
-
-   shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-
-   return MCE::Shared::Object::_init(@_) if $_fn eq 'init';
-   return MCE::Shared::Server::_start() if $_fn eq 'start';
-   return MCE::Shared::Server::_stop() if $_fn eq 'stop';
-
-   # array, handle, hash, ordhash
-   if ( $_fn eq 'array' ) {
-      require MCE::Shared::Array unless $INC{'MCE/Shared/Array.pm'};
-
-      my $_params = ref $_[0] eq 'HASH' ? shift : {};
-      my $_item   = &share($_params, MCE::Shared::Array->new());
-
-      if ( scalar @_ ) {
-         $_params->{_DEEPLY_} = 1;
-         for ( my $i = 0; $i <= $#_; $i += 1 ) {
-            &_share($_params, $_item, $_[$i]) if ref($_[$i]);
-         }
-         $_item->assign(@_);
-      }
-
-      return $_item;
-   }
-   elsif ( $_fn eq 'handle' ) {
-      require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
-
-      my $_item = &share( MCE::Shared::Handle->new([]) );
-      my $_fh   = \do { no warnings 'once'; local *FH };
-
-      tie *{ $_fh }, 'MCE::Shared::Object', $_item;
-      if ( @_ ) { $_item->OPEN(@_) or return ''; }
-
-      return $_fh;
-   }
-   elsif ( $_fn eq 'hash' || $_fn eq 'ordhash' ) {
-      if ( $_fn eq 'hash' ) {
-         require MCE::Shared::Hash unless $INC{'MCE/Shared/Hash.pm'};
-      } else {
-         require MCE::Shared::Ordhash unless $INC{'MCE/Shared/Ordhash.pm'};
-      }
-
-      my $_params = ref $_[0] eq 'HASH' ? shift : {};
-      my $_item   = ( $_fn eq 'hash' )
-         ? &share($_params, MCE::Shared::Hash->new())
-         : &share($_params, MCE::Shared::Ordhash->new());
-
-      if ( scalar @_ ) {
-         $_params->{_DEEPLY_} = 1;
-         for ( my $i = 1; $i <= $#_; $i += 2 ) {
-            &_share($_params, $_item, $_[$i]) if ref($_[$i]);
-         }
-         $_item->assign(@_);
-      }
-
-      return $_item;
-   }
-
-   # cache, condvar, minidb, queue, scalar, sequence, et cetera
-   $_fn = 'sequence' if $_fn eq 'num_sequence';
-
-   my $_pkg = ucfirst( lc $_fn ); local $@;
-
-   if ( $INC{"MCE/Shared/$_pkg.pm"} || eval "use MCE::Shared::$_pkg (); 1" ) {
-      $_pkg = "MCE::Shared::$_pkg";
-
-      return &share({}, $_pkg->new(_shared => 1, @_)) if $_fn eq 'cache';
-      return &share({}, $_pkg->new(@_));
-   }
-
-   _croak("Can't locate object method \"$_fn\" via package \"MCE::Shared\"");
 }
 
 ###############################################################################
@@ -308,7 +307,7 @@ sub TIEHASH {
       }
    }
 
-   return MCE::Shared->cache(@_)   if $_cache;
+   return MCE::Shared->cache(@_) if $_cache;
    return MCE::Shared->ordhash(@_) if $_ordered;
    return MCE::Shared->hash(@_);
 }
@@ -350,17 +349,25 @@ sub _share {
 }
 
 sub _tie {
-   local $@; my ($_fn, $_params) = (shift, shift);
+   my ($_fcn, $_params) = (shift, shift);
+
    _use( my $_module = $_params->{'module'} ) or _croak("$@\n");
 
-   _croak("Can't locate object method \"$_fn\" via package \"$_module\"")
-      unless eval qq{ $_module->can('$_fn') };
+   _croak("Can't locate object method \"$_fcn\" via package \"$_module\"")
+      unless eval qq{ $_module->can('$_fcn') };
 
-   my $_obj = $_module->$_fn(@_) or return '';
+   $_params->{class} = ':construct_module:';
+   $_params->{tied } = 1;
 
-   return '' if (@_ && $_fn eq 'TIEHANDLE' && !defined(fileno $_obj));
+   my $_item = MCE::Shared::Server::_new($_params, [ @_, $_fcn ]);
 
-   MCE::Shared->share($_params, $_obj);
+   if ( $_item && $_item->[2] ) {
+      # set encoder/decoder automatically for DB files
+      $_item->[2] = MCE::Shared::Server::_get_freeze(),
+      $_item->[3] = MCE::Shared::Server::_get_thaw();
+   }
+
+   $_item;
 }
 
 sub _use {
@@ -411,7 +418,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.826
+This document describes MCE::Shared version 1.827
 
 =head1 SYNOPSIS
 
@@ -1025,6 +1032,154 @@ shared-manager process. The unbless option is passed to export.
 
    $shared_ob;     # becomes undef
 
+=item encoder ( CODE )
+
+=item decoder ( CODE )
+
+Override freeze/thaw routines. Applies to STORE and FETCH only, particularly
+for TIE'd objects. These are called internally for shared DB objects.
+
+Current API available since 1.827.
+
+   use MCE::Shared;
+   use BerkeleyDB;
+   use DB_File;
+
+   my $file1 = 'file1.db';
+   my $file2 = 'file2.db';
+
+   tie my @db1, 'MCE::Shared', { module => 'DB_File' }, $file1,
+      O_RDWR|O_CREAT, 0640 or die "open error '$file1': $!";
+
+   tie my %db2, 'MCE::Shared', { module => 'BerkeleyDB::Hash' },
+      -Filename => $file2, -Flags => DB_CREATE
+      or die "open error '$file2': $!";
+
+   # Called automatically by MCE::Shared for DB files.
+   # tied(@db1)->encoder( MCE::Shared::Server::_get_freeze );
+   # tied(@db1)->decoder( MCE::Shared::Server::_get_thaw );
+   # tied(%db2)->encoder( MCE::Shared::Server::_get_freeze );
+   # tied(%db2)->decoder( MCE::Shared::Server::_get_thaw );
+   # et cetera.
+
+   $db1[0] = 'foo';   # store plain and complex structure
+   $db1[1] = { key => 'value' };
+   $db1[2] = [ 'complex' ];
+
+   $db2{key} = 'foo'; # ditto, plain and complex structure
+   $db2{sun} = [ 'complex' ];
+
+The following presents a concurrent L<Tie::File> demonstration. Each element
+in the array corresponds to a record in the plain text file. JSON, being
+readable, seems appropiate for encoding complex objects.
+
+   use strict;
+   use warnings;
+
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   # Class extending Tie::File with two sugar methods.
+   # Requires MCE::Shared 1.827+.
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   package My::File;
+
+   use Tie::File;
+
+   our @ISA = 'Tie::File';
+
+   sub append {
+      my ($self, $key) = @_;
+      my $val = $self->FETCH($key); $val .= $_[2];
+      $self->STORE($key, $val);
+      length $val;
+   }
+
+   sub incr {
+      my ( $self, $key ) = @_;
+      my $val = $self->FETCH($key); $val += 1;
+      $self->STORE($key, $val);
+      $val;
+   }
+
+   1;
+
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   # The MCE::Mutex module isn't needed unless IPC involves two or
+   # more trips for the underlying action.
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   package main;
+
+   use MCE::Hobo;
+   use MCE::Mutex;
+   use MCE::Shared;
+
+   use JSON::MaybeXS;
+
+   # Safety for data having line breaks.
+   use constant EOL => "\x{0a}~\x{0a}";
+
+   my $file  = 'file.txt';
+   my $mutex = MCE::Mutex->new();
+   my $pid   = $$;
+
+   my $ob = tie my @db, 'MCE::Shared', { module => 'My::File' }, $file,
+      recsep => EOL or die "open error '$file': $!";
+
+   $ob->encoder( \&JSON::MaybeXS::encode_json );
+   $ob->decoder( \&JSON::MaybeXS::decode_json );
+
+   $db[20] = 0;  # a counter at offset 20 into the array
+   $db[21] = [ qw/ foo bar / ];  # store complex structure
+
+   sub task {
+      my $id  = sprintf "%02s", shift;
+      my $row = int($id) - 1;
+      my $chr = sprintf "%c", 97 + $id - 1;
+
+      # A mutex isn't necessary when storing a value.
+      # Ditto for fetching a value.
+
+      $db[$row] = "Hello from $id: ";  # 1 trip
+      my $val   = length $db[$row];    # 1 trip
+
+      # A mutex may be necessary for updates involving 2 or
+      # more trips (FETCH and STORE) during IPC, from and to
+      # the shared-manager process, unless a unique row.
+
+      for ( 1 .. 40 ) {
+       # $db[$row] .= $id;         # 2 trips, unique row - okay
+         $ob->append($row, $chr);  # 1 trip via the OO interface
+
+       # $mu->lock;
+       # $db[20] += 1;             # incrementing counter, 2 trips
+       # $mu->unlock;
+
+         $ob->incr(20);            # same thing via OO, 1 trip
+      }
+
+      my $len = length $db[$row];  # 1 trip
+
+      printf "hobo %2d : %d\n", $id, $len;
+   }
+
+   MCE::Hobo->create('task', $_) for 1 .. 20;
+   MCE::Hobo->waitall;
+
+   printf "counter : %d\n", $db[20];
+   print  $db[21]->[0], "\n";  # foo
+
+   sub CLONE {
+      $pid = 0;      # thread safety for completeness
+   }
+
+   END {
+      if ( $pid == $$ ) {
+         undef $ob;  # important, undef $ob before @db
+         untie @db;  # untie @db to flush pending writes
+      }
+   }
+
 =item export ( { unbless => 1 }, keys )
 
 =item export
@@ -1484,6 +1639,147 @@ command in the pipeline.
    );
 
    # ( "a_a", "b_b", "c_c" )
+
+=head1 LOGGER DEMO
+
+Often, the requirement may call for concurrent logging by many workers.
+Calling localtime or gmtime per each log entry is expensive. This uses
+the old time-stamp value unless one second has elapsed.
+
+   use strict;
+   use warnings;
+
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   # Logger class. Requires MCE::Shared 1.827+.
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   package My::Logger;
+
+   use Time::HiRes qw( time );
+
+   # construction
+
+   sub new {
+       my ( $class, %self ) = @_;
+
+       open $self{fh}, ">>", $self{path} or return '';
+       binmode $self{fh};
+
+       $self{stamp} = localtime;  # or gmtime
+       $self{time } = time;
+
+       bless \%self, $class;
+   }
+
+   # $ob->log("message");
+
+   sub log {
+       my ( $self, $stamp ) = ( shift );
+
+       if ( time - $self->{time} > 1.0 ) {
+           $self->{stamp} = $stamp = localtime;  # or gmtime
+           $self->{time } = time;
+       }
+       else {
+           $stamp = $self->{stamp};
+       }
+
+       print {$self->{fh}} "$stamp --- @_\n";
+   }
+
+   # $ob->autoflush(0);
+   # $ob->autoflush(1);
+
+   sub autoflush {
+       my ( $self, $flag ) = @_;
+
+       if ( defined fileno($self->{fh}) ) {
+            $flag ? select(( select($self->{fh}), $| = 1 )[0])
+                  : select(( select($self->{fh}), $| = 0 )[0]);
+
+            return 1;
+       }
+
+       return;
+   }
+
+   # $ob->binmode($layer);
+   # $ob->binmode();
+
+   sub binmode {
+       my ( $self, $layer ) = @_;
+
+       if ( defined fileno($self->{fh}) ) {
+           CORE::binmode $self->{fh}, $layer // ':raw';
+
+           return 1;
+       }
+
+       return;
+   }
+
+   # $ob->close()
+
+   sub close {
+       my ( $self ) = @_;
+
+       if ( defined fileno($self->{fh}) ) {
+           close $self->{'fh'};
+       }
+
+       return;
+   }
+
+   # $ob->flush();
+
+   sub flush {
+       my ( $self ) = @_;
+
+       if ( defined fileno($self->{fh}) ) {
+           my $old_fh = select $self->{fh};
+           my $old_af = $|; $| = 1; $| = $old_af;
+           select $old_fh;
+
+           return 1;
+       }
+
+       return;
+   }
+
+   1;
+
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   # Main script.
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   package main;
+
+   use MCE::Hobo;
+   use MCE::Shared;
+
+   my $file = "log.txt";
+   my $pid  = $$;
+
+   my $ob = MCE::Shared->share( { module => 'My::Logger' }, path => $file )
+       or die "open error '$file': $!";
+
+   # $ob->autoflush(1);   # optional, flush write immediately
+
+   sub work {
+       my $id = shift;
+       for ( 1 .. 250_000 ) {
+           $ob->log("Hello from $id: $_");
+       }
+   }
+
+   MCE::Hobo->create('work', $_) for 1 .. 4;
+   MCE::Hobo->waitall;
+
+   # Threads and multi-process safety for closing the handle.
+
+   sub CLONE { $pid = 0; }
+
+   END { $ob->close if $ob && $pid == $$; }
 
 =head1 REQUIREMENTS
 

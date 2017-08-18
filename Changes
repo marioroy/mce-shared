@@ -1,6 +1,32 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.827 Fri Aug 18 03:00:00 EST 2017
+
+  [BUG FIXES]
+
+  * Fixed bug in MCE::Shared::Queue. Thank you, Tomohiro Hosaka.
+
+  [ENHANCEMENTS]
+
+  * Added Coro and Win32::GUI to list for enabling posix_exit.
+  * Added encoder/decoder methods for overriding serialization.
+  * Added iterator method to MCE::Cache.
+
+  * Improved auto-dereferencing for shared arrays, hashes, and scalars.
+  * Improved open method for non-shared file-handles in MCE::Shared::Handle.
+  * Improved shared-PDL support. Updated MCE::Cookbook on Github.
+  * Improved signal handling, including nested parallel-sessions.
+
+  * Preserve lexical type for numbers during IPC.
+  * Refactored MCE::Hobo, MCE::Shared, and MCE::Shared::Server.
+
+  * No longer loads threads on the Windows platform in MCE::Shared::Server.
+    This enables MCE::Hobo to spin faster, including lesser memory
+    consumption. Threads isn't required to run MCE::Hobo.
+
+  * Bumped MCE dependency to 1.830.
+
 1.826 Wed May 03 03:00:00 EST 2017
 
   * Reduced memory consumption.

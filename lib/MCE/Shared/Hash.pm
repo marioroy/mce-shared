@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.826';
+our $VERSION = '1.827';
 
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
@@ -312,7 +312,7 @@ MCE::Shared::Hash - Hash helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Hash version 1.826
+This document describes MCE::Shared::Hash version 1.827
 
 =head1 DESCRIPTION
 

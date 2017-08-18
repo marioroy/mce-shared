@@ -16,7 +16,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.826';
+our $VERSION = '1.827';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -90,8 +90,8 @@ sub TIEHASH {
    # data resides, when constructed with MCE::Shared->cache( ... ).
 
    $obj->_prealloc() unless $opts->{_shared};
-
    $obj->mset(@_) if @_;
+
    $obj;
 }
 
@@ -949,7 +949,7 @@ MCE::Shared::Cache - A hybrid LRU-plain cache helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Cache version 1.826
+This document describes MCE::Shared::Cache version 1.827
 
 =head1 DESCRIPTION
 

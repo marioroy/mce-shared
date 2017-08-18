@@ -13,16 +13,21 @@ no warnings qw( threads recursion uninitialized numeric once );
 
 package MCE::Shared::Server;
 
-our $VERSION = '1.826';
+our $VERSION = '1.827';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 
-use Carp ();
-
 no overloading;
+
+use Carp ();
+use Storable ();
+
+use Scalar::Util qw( blessed looks_like_number reftype weaken );
+use Socket qw( SOL_SOCKET SO_RCVBUF );
+use Time::HiRes qw( sleep time );
 
 my ($_has_threads, $_spawn_child, $_freeze2, $_freeze, $_thaw);
 
@@ -53,7 +58,6 @@ BEGIN {
    }
 
    if (!defined $_freeze) {
-      require Storable;
       $_freeze2 = \&Storable::freeze,
       $_freeze  = \&Storable::freeze,
       $_thaw    = \&Storable::thaw;
@@ -62,10 +66,6 @@ BEGIN {
 
 sub _get_freeze { $_freeze; }
 sub _get_thaw   { $_thaw;   }
-
-use Scalar::Util qw( blessed looks_like_number reftype weaken );
-use Socket qw( SOL_SOCKET SO_RCVBUF );
-use Time::HiRes qw( sleep time );
 
 use MCE::Util ();
 use MCE::Signal ();
@@ -118,43 +118,35 @@ sub _croak { goto &Carp::croak }
 sub  CLONE { $_tid = threads->tid() if $_has_threads }
 
 END {
-   CORE::kill('KILL', $$) if ($_is_MSWin32 && $MCE::Signal::KILLED);
-   &_stop() if ($_init_pid && $_init_pid eq "$$.$_tid" && $_is_client);
+   CORE::kill('KILL', $$)
+      if ($_is_MSWin32 && $MCE::Signal::KILLED);
+   &_stop()
+      if ($_init_pid && $_init_pid eq "$$.$_tid" && $_is_client);
 }
 
 sub _new {
    return _share(@_) if (!$_svr_pid && $_[0]->{delay_start});
 
    my ($_class, $_deeply, %_hndls) = ($_[0]->{class}, $_[0]->{_DEEPLY_});
-
-   my $_has_fh = ( $_class =~ /^MCE::Shared::(?:Condvar|Queue)$/   ||
-      ( reftype $_[1] eq 'HASH' && reftype $_[1]->{fh} eq 'GLOB' ) ||
-        reftype $_[1] eq 'GLOB'
-   );
+   my $_has_fh = ($_class =~ /^MCE::Shared::(?:Condvar|Queue)$/);
 
    if (!$_svr_pid) {
       # Minimum support on platforms without IO::FDPass (not installed).
-      # Condvar, Queue, and Handle must be shared first before others.
+      # Condvar and Queue must be shared first before others.
       return _share(@_) if $_has_fh && !$INC{'IO/FDPass.pm'};
 
       _start();
    }
-
    if ($_has_fh) {
       _croak("Sharing '$_class' while the server is running requires\n" .
              "the 'IO::FDPass' module which is missing in Perl")
          if !$INC{'IO/FDPass.pm'};
 
-      $_[1] = { fh => $_[1] } if reftype $_[1] eq 'GLOB';
-
       for my $_k (qw(
          _qw_sock _qr_sock _aw_sock _ar_sock _cw_sock _cr_sock _mutex
-         _mutex_0 _mutex_1 _mutex_2 _mutex_3 _mutex_4 _mutex_5 fh
+         _mutex_0 _mutex_1 _mutex_2 _mutex_3 _mutex_4 _mutex_5
       )) {
          if ( defined $_[1]->{ $_k } ) {
-            if ( $_k eq 'fh' && ref $_[1]->{'filename'} ) {
-               delete $_[1]->{'filename'}; # Tie::File
-            }
             $_hndls{ $_k } = delete $_[1]->{ $_k };
             $_[1]->{ $_k } = undef;
          }
@@ -171,8 +163,16 @@ sub _new {
    my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
    my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
 
-   my $_buf = $_freeze->(shift);
-   my $_bu2 = $_freeze2->([ @_ ]);
+   ##
+   # Sereal cannot encode $DB_RECNO. Therefore, must encode using Storable.
+   # Error: DB_File::RECNOINFO does not define the method FIRSTKEY
+   #
+   # my $ob = tie my @db, 'MCE::Shared', { module => 'DB_File' }, $file,
+   #    O_RDWR|O_CREAT, 0640, $DB_RECNO or die "open error '$file': $!";
+   ##
+
+   my $_buf = Storable::freeze(shift);
+   my $_bu2 = Storable::freeze([ @_ ]);
 
    local $\ = undef if (defined $\);
    local $/ = $LF if ($/ ne $LF);
@@ -188,7 +188,7 @@ sub _new {
    undef($_buf), undef($_bu2);
 
    if (keys %_hndls) {
-      for my $_k (qw( _qw_sock _qr_sock _aw_sock _cw_sock fh )) {
+      for my $_k (qw( _qw_sock _qr_sock _aw_sock _cw_sock )) {
          if (exists $_hndls{ $_k }) {
             IO::FDPass::send( fileno $_DAU_W_SOCK, fileno $_hndls{ $_k } );
             <$_DAU_W_SOCK>;
@@ -196,12 +196,13 @@ sub _new {
       }
    }
 
-   chomp($_id = <$_DAU_W_SOCK>), chomp($_len = <$_DAU_W_SOCK>),
-   read($_DAU_W_SOCK, $_buf, $_len);
+   chomp($_id = <$_DAU_W_SOCK>), chomp($_len = <$_DAU_W_SOCK>);
+   read($_DAU_W_SOCK, $_buf, $_len) if $_len;
 
    $_DAT_LOCK->unlock();
+   $! = $_id, return '' unless $_len;
 
-   if (keys %_hndls && !exists $_hndls{'fh'}) {
+   if (keys %_hndls) {
       $_all{ $_id } = $_class;
       $_obj{ $_id } = \%_hndls;
    }
@@ -243,7 +244,23 @@ sub _share {
    my $_class = delete $_params->{'class'};
    my $_id = ++$_next_id;
 
-   if ($_class eq ':construct_pdl:') {
+   if ($_class eq ':construct_module:') {
+      my ($_module, $_fcn) = ($_params->{module}, pop @{ $_item });
+      my $_has_args = @{ $_item } ? 1 : 0;
+
+      local $@; MCE::Shared::_use( $_class = $_module ) or _croak("$@\n");
+
+      _croak("Can't locate object method \"$_fcn\" via package \"$_module\"")
+         unless eval qq{ $_module->can('$_fcn') };
+
+      $! = 0; $_item = $_module->$_fcn(@{ $_item }) or return '';
+      $_export_nul{ $_class } = undef if ($_fcn eq 'TIEHANDLE');
+
+      return '' if (
+         $_has_args && $_fcn eq 'TIEHANDLE' && !defined(fileno $_item)
+      );
+   }
+   elsif ($_class eq ':construct_pdl:') {
       local $@; local $SIG{__DIE__};
 
       $_class = 'PDL', $_item = eval q{
@@ -270,17 +287,7 @@ sub _share {
    if ($_class eq 'MCE::Shared::Handle' && reftype $_item eq 'ARRAY') {
       require Symbol unless $INC{'Symbol.pm'};
       $_obj{ $_id } = Symbol::gensym();
-      $_export_nul{ $_class } = 1;
-
-      bless $_obj{ $_id }, $_class;
-   }
-   elsif (ref $_item eq 'HASH' && exists $_item->{'fh'}) {
-      require MCE::Shared::Handle unless $INC{'MCE/Shared/Handle.pm'};
-      $_obj{ $_id } = delete $_item->{'fh'};
-      $_export_nul{ $_class } = 1;
-
-      # enable autoflush
-      select(( select($_obj{ $_id }), $| = 1 )[0]);
+      $_export_nul{ $_class } = undef;
 
       bless $_obj{ $_id }, $_class;
    }
@@ -290,19 +297,32 @@ sub _share {
       if ( reftype $_obj{ $_id } eq 'HASH' &&
            reftype $_obj{ $_id }->{'fh'} eq 'GLOB' ) {
 
-         # enable autoflush
-         select(( select($_obj{ $_id }->{'fh'}), $| = 1 )[0]);
+         if ( $_class->isa('Tie::File') ) {
+            # enable autoflush, enable raw layer
+            select(( select($_obj{ $_id }->{'fh'}), $| = 1 )[0]);
+            binmode($_obj{ $_id }->{'fh'}, ':raw');
+         }
 
-         # enable raw layer
-         binmode($_obj{ $_id }->{'fh'}, ':raw') if $_class->isa('Tie::File');
-
-         $_export_nul{ $_class } = 1;
+         $_export_nul{ $_class } = undef;
       }
    }
 
    my $self = bless [ $_id, $_class ], 'MCE::Shared::Object';
 
    $_ob2{ $_id } = $_freeze->([ $self ]);
+
+   if ( $_params->{tied} ) {
+      # set encoder/decoder upon receipt in MCE::Shared::_tie
+      $self->[2] = 1 if $_class->isa('DB_File');
+      $self->[2] = 1 if $_class->isa('SDBM_File');
+      $self->[2] = 1 if $_class->isa('SQLite_File');
+      $self->[2] = 1 if $_class->isa('BerkeleyDB::Hash');
+      $self->[2] = 1 if $_class->isa('BerkeleyDB::Btree');
+      $self->[2] = 1 if $_class->isa('BerkeleyDB::Recno');
+      $self->[2] = 1 if $_class->isa('BerkeleyDB::Queue');
+
+      $_export_nul{ $_class } = undef if $self->[2];
+   }
 
    if ( my $_code = $_obj{ $_id }->can('_shared_init') ) {
       $_code->($_obj{ $_id });
@@ -393,7 +413,7 @@ sub _destroy {
    # safety for circular references to not loop endlessly
    return if exists $_lkup->{ $_id };
 
-   $_lkup->{ $_id } = 1;
+   $_lkup->{ $_id } = undef;
 
    if (exists $_ob3{ "$_id:deeply" }) {
       for my $_oid (keys %{ $_ob3{ "$_id:deeply" } }) {
@@ -419,14 +439,6 @@ sub _destroy {
          $_obj{ $_id }->can('DESTROY') ? $_obj{ $_id }->DESTROY() : do {
             close $_obj{ $_id } if defined(fileno $_obj{ $_id });
          };
-      }
-      elsif (reftype $_obj{ $_id } eq 'HASH') {
-         my $_o = $_obj{ $_id };
-         if (reftype $_o->{'fh'} eq 'GLOB') {
-            $_o->can('DESTROY') ? $_o->DESTROY() : do {
-               close $_o->{'fh'} if defined(fileno $_o->{'fh'});
-            };
-         }
       }
    }
 
@@ -457,11 +469,6 @@ sub _exit {
       elsif (reftype $_o eq 'GLOB') {
          $_o->can('DESTROY') ? $_o->DESTROY() : do {
             close $_o if defined(fileno $_o);
-         };
-      }
-      elsif (reftype $_o eq 'HASH' && reftype $_o->{'fh'} eq 'GLOB') {
-         $_o->can('DESTROY') ? $_o->DESTROY() : do {
-            close $_o->{'fh'} if defined(fileno $_o->{'fh'});
          };
       }
    }
@@ -524,7 +531,7 @@ sub _loop {
       no warnings 'redefine'; local $@; eval '*Prima::cleanup = sub {}';
    }
 
-   my ($_id, $_fn, $_wa, $_len, $_le2, $_le3, $_func, $_var);
+   my ($_id, $_fcn, $_wa, $_len, $_le2, $_le3, $_func, $_var);
    my ($_client_id, $_done) = (0, 0);
 
    my $_channels   = $_SVR->{_dat_r_sock};
@@ -533,12 +540,12 @@ sub _loop {
 
    my $_auto_reply = sub {
       if ( $_wa == WA_ARRAY ) {
-         my @_ret = eval { $_var->$_fn(@_) };
+         my @_ret = eval { $_var->$_fcn(@_) };
          my $_buf = $_freeze->(\@_ret);
          return print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
       }
 
-      my $_ret = eval { $_var->$_fn(@_) };
+      my $_ret = eval { $_var->$_fcn(@_) };
 
       return print {$_DAU_R_SOCK} length($_ret).'0'.$LF, $_ret
          if ( !ref $_ret && defined $_ret && !looks_like_number $_ret );
@@ -550,7 +557,6 @@ sub _loop {
 
    my $_fetch = sub {
       return print {$_DAU_R_SOCK} '-1'.$LF if !defined($_[0]);
-
       return print {$_DAU_R_SOCK} length($_[0]).'0'.$LF, $_[0]
          if ( !ref $_[0] && defined $_[0] && !looks_like_number $_[0] );
 
@@ -569,9 +575,11 @@ sub _loop {
 
       if ( wantarray ) {
          my $_key = $_obj->FIRSTKEY;
-         push @_keys, $_key if defined($_key);
-         while ( defined($_key = $_obj->NEXTKEY('')) ) {
+         if ( defined $_key ) {
             push @_keys, $_key;
+            while ( defined($_key = $_obj->NEXTKEY('')) ) {
+               push @_keys, $_key;
+            }
          }
       }
       elsif ( $_obj->isa('Tie::ExtraHash') ) {
@@ -581,10 +589,12 @@ sub _loop {
          $_cnt = keys %{ $_obj->[2] };
       }
       else {
-         my $_key = $_obj->FIRSTKEY;
-         $_cnt = defined($_key) ? 1 : 0;
-         while ( defined($_key = $_obj->NEXTKEY('')) ) {
-            $_cnt++;
+         my $_key = $_obj->FIRSTKEY; $_cnt = 0;
+         if ( defined $_key ) {
+            $_cnt = 1;
+            while ( defined($_key = $_obj->NEXTKEY('')) ) {
+               $_cnt++;
+            }
          }
       }
 
@@ -661,20 +671,20 @@ sub _loop {
          chomp($_len = <$_DAU_R_SOCK>),
          read($_DAU_R_SOCK, $_buf, $_len);
 
-         $_params = $_thaw->($_buf);
+         $_params = Storable::thaw($_buf);
          $_class  = $_params->{'class'};
 
-         { local $@; MCE::Shared::_use($_class); }
+         { local $@; MCE::Shared::_use($_params->{module} || $_class); }
 
          chomp($_len = <$_DAU_R_SOCK>), read($_DAU_R_SOCK, $_buf, $_len),
          chomp($_len = <$_DAU_R_SOCK>), print({$_DAU_R_SOCK} $LF);
 
-         $_args = $_thaw->($_buf); undef $_buf;
+         $_args = Storable::thaw($_buf); undef $_buf;
 
          if ($_len) {
-            $_export_nul{ $_class } = 1;
+            $_export_nul{ $_class } = undef;
 
-            for my $_k (qw( _qw_sock _qr_sock _aw_sock _cw_sock fh )) {
+            for my $_k (qw( _qw_sock _qr_sock _aw_sock _cw_sock )) {
                if (exists $_args->[0]->{ $_k }) {
                    delete $_args->[0]->{ $_k };
 
@@ -689,8 +699,12 @@ sub _loop {
             }
          }
 
-         $_item = _share($_params, @{ $_args });
-         $_buf  = $_freeze->($_item);
+         $_item = _share($_params, @{ $_args }) or do {
+            print {$_DAU_R_SOCK} int($!).$LF . '0'.$LF;
+            return;
+         };
+
+         $_buf = $_freeze->($_item);
 
          print {$_DAU_R_SOCK} $_item->SHARED_ID().$LF .
             length($_buf).$LF, $_buf;
@@ -723,7 +737,7 @@ sub _loop {
          chomp(my $_id1 = <$_DAU_R_SOCK>),
          chomp(my $_id2 = <$_DAU_R_SOCK>);
 
-         $_ob3{ "$_id1:deeply" }->{ $_id2 } = 1;
+         $_ob3{ "$_id1:deeply" }->{ $_id2 } = undef;
 
          return;
       },
@@ -739,16 +753,16 @@ sub _loop {
 
       SHR_M_OBJ.$LF => sub {                      # Object request
          chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_fn  = <$_DAU_R_SOCK>),
+         chomp($_fcn = <$_DAU_R_SOCK>),
          chomp($_wa  = <$_DAU_R_SOCK>),
          chomp($_len = <$_DAU_R_SOCK>),
 
          read($_DAU_R_SOCK, my($_buf), $_len);
 
-         $_var = $_obj{ $_id } || do { return $_warn0->($_fn) };
+         $_var = $_obj{ $_id } || do { return $_warn0->($_fcn) };
 
          $_wa  ? $_auto_reply->(@{ $_thaw->($_buf) })
-               : eval { $_var->$_fn(@{ $_thaw->($_buf) }) };
+               : eval { $_var->$_fcn(@{ $_thaw->($_buf) }) };
 
          warn $@ if $@;
 
@@ -756,19 +770,19 @@ sub _loop {
       },
 
       SHR_M_OB0.$LF => sub {                      # Object request - thaw'less
-         chomp($_id = <$_DAU_R_SOCK>),
-         chomp($_fn = <$_DAU_R_SOCK>),
-         chomp($_wa = <$_DAU_R_SOCK>);
+         chomp($_id  = <$_DAU_R_SOCK>),
+         chomp($_fcn = <$_DAU_R_SOCK>),
+         chomp($_wa  = <$_DAU_R_SOCK>);
 
-         $_var = $_obj{ $_id } || do { return $_warn0->($_fn) };
+         $_var = $_obj{ $_id } || do { return $_warn0->($_fcn) };
 
-         my $_code = $_var->can($_fn) || do {
-            if ( ($_fn eq 'keys' || $_fn eq 'SCALAR') &&
+         my $_code = $_var->can($_fcn) || do {
+            if ( ($_fcn eq 'keys' || $_fcn eq 'SCALAR') &&
                  ($_var->can('NEXTKEY') || $_var->can('FETCHSIZE')) ) {
                $_obj_keys;
             }
             else {
-               $_wa ? $_auto_reply->() : eval { $_var->$_fn() };
+               $_wa ? $_auto_reply->() : eval { $_var->$_fcn() };
                warn $@ if $@;
                return;
             }
@@ -800,16 +814,16 @@ sub _loop {
 
       SHR_M_OB1.$LF => sub {                      # Object request - thaw'less
          chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_fn  = <$_DAU_R_SOCK>),
+         chomp($_fcn = <$_DAU_R_SOCK>),
          chomp($_wa  = <$_DAU_R_SOCK>),
          chomp($_len = <$_DAU_R_SOCK>),
 
          read($_DAU_R_SOCK, my($_arg1), $_len);
 
-         $_var = $_obj{ $_id } || do { return $_warn0->($_fn) };
+         $_var = $_obj{ $_id } || do { return $_warn0->($_fcn) };
 
          $_wa  ? $_auto_reply->($_arg1)
-               : eval { $_var->$_fn($_arg1) };
+               : eval { $_var->$_fcn($_arg1) };
 
          warn $@ if $@;
 
@@ -818,7 +832,7 @@ sub _loop {
 
       SHR_M_OB2.$LF => sub {                      # Object request - thaw'less
          chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_fn  = <$_DAU_R_SOCK>),
+         chomp($_fcn = <$_DAU_R_SOCK>),
          chomp($_wa  = <$_DAU_R_SOCK>),
          chomp($_len = <$_DAU_R_SOCK>),
          chomp($_le2 = <$_DAU_R_SOCK>),
@@ -826,10 +840,10 @@ sub _loop {
          read($_DAU_R_SOCK, my($_arg1), $_len),
          read($_DAU_R_SOCK, my($_arg2), $_le2);
 
-         $_var = $_obj{ $_id } || do { return $_warn0->($_fn) };
+         $_var = $_obj{ $_id } || do { return $_warn0->($_fcn) };
 
          $_wa  ? $_auto_reply->($_arg1, $_arg2)
-               : eval { $_var->$_fn($_arg1, $_arg2) };
+               : eval { $_var->$_fcn($_arg1, $_arg2) };
 
          warn $@ if $@;
 
@@ -984,8 +998,8 @@ sub _loop {
       },
 
       SHR_O_CLR.$LF => sub {                      # Clear
-         chomp($_id = <$_DAU_R_SOCK>),
-         chomp($_fn = <$_DAU_R_SOCK>);
+         chomp($_id  = <$_DAU_R_SOCK>),
+         chomp($_fcn = <$_DAU_R_SOCK>);
 
          my $_var = $_obj{ $_id } || do { return };
 
@@ -997,7 +1011,7 @@ sub _loop {
             delete $_ob3{ "$_id:deeply" };
          }
 
-         eval { $_var->$_fn() };
+         eval { $_var->$_fcn() };
 
          warn $@ if $@;
 
@@ -1006,7 +1020,7 @@ sub _loop {
 
       SHR_O_FCH.$LF => sub {                      # Fetch
          chomp($_id  = <$_DAU_R_SOCK>),
-         chomp($_fn  = <$_DAU_R_SOCK>),
+         chomp($_fcn = <$_DAU_R_SOCK>),
          chomp($_len = <$_DAU_R_SOCK>);
 
          read($_DAU_R_SOCK, my($_key), $_len) if $_len;
@@ -1016,9 +1030,9 @@ sub _loop {
          };
 
          $_len ? ( chop $_key )
-                 ? $_fetch->( eval { $_var->$_fn(@{ $_thaw->($_key) }) } )
-                 : $_fetch->( eval { $_var->$_fn($_key) } )
-               :   $_fetch->( eval { $_var->$_fn() } );
+                 ? $_fetch->( eval { $_var->$_fcn(@{ $_thaw->($_key) }) } )
+                 : $_fetch->( eval { $_var->$_fcn($_key) } )
+               :   $_fetch->( eval { $_var->$_fcn() } );
 
          warn $@ if $@;
 
@@ -1026,13 +1040,13 @@ sub _loop {
       },
 
       SHR_O_SZE.$LF => sub {                      # Size
-         chomp($_id = <$_DAU_R_SOCK>),
-         chomp($_fn = <$_DAU_R_SOCK>);
+         chomp($_id  = <$_DAU_R_SOCK>),
+         chomp($_fcn = <$_DAU_R_SOCK>);
 
-         $_var = $_obj{ $_id } || do { return $_warn0->($_fn) };
+         $_var = $_obj{ $_id } || do { return $_warn0->($_fcn) };
 
-         my $_code = $_var->can($_fn) || do {
-            if ( ($_fn eq 'keys' || $_fn eq 'SCALAR') &&
+         my $_code = $_var->can($_fcn) || do {
+            if ( ($_fcn eq 'keys' || $_fcn eq 'SCALAR') &&
                  ($_var->can('NEXTKEY') || $_var->can('FETCHSIZE')) ) {
                $_obj_keys;
             }
@@ -1075,10 +1089,10 @@ sub _loop {
 
       my $_val_bytes = "\x00\x00\x00\x00";
       my $_ptr_bytes = unpack( 'I', pack('P', $_val_bytes) );
-      my ($_count, $_nbytes, $_start) = (1);
+      my ($_count, $_nbytes, $_start);
 
       while (!$_done) {
-         $_start = time;
+         $_start = time, $_count = 1;
 
          # MSWin32 FIONREAD
          IOCTL: ioctl($_DAT_R_SOCK, 0x4004667f, $_ptr_bytes);
@@ -1092,8 +1106,6 @@ sub _loop {
             }
             goto IOCTL;
          }
-
-         $_count = 1;
 
          do {
             sysread($_DAT_R_SOCK, $_func, 8);
@@ -1131,13 +1143,11 @@ use MCE::Shared::Base ();
 use bytes;
 
 use constant {
-   # shared object
-   _ID    => 0, _CLASS => 1, _ENCODE => 2, _DECODE => 3,
+   _ID    => 0, _CLASS => 1, _ENCODE => 2, _DECODE => 3, # shared object
    _DREF  => 4, _ITER  => 5,
 };
 use constant {
-   # wantarray
-   _UNDEF => 0, _ARRAY => 1, _SCALAR => 2,
+   _UNDEF => 0, _ARRAY => 1, _SCALAR => 2, # wantarray
 };
 
 ## Below, no circular reference to original, therefore no memory leaks.
@@ -1337,8 +1347,8 @@ sub _auto {
          length($_[2]).$LF . length($_[3]).$LF, $_[2], $_[3]);
    }
    else {
-      my ( $_fn, $_id, $_tmp ) = ( shift, shift()->[_ID], $_freeze->([ @_ ]) );
-      my $_buf = $_id.$LF . $_fn.$LF . $_wa.$LF . length($_tmp).$LF;
+      my ( $_fcn, $_id, $_tmp ) = ( shift, shift()->[_ID], $_freeze->([ @_ ]) );
+      my $_buf = $_id.$LF . $_fcn.$LF . $_wa.$LF . length($_tmp).$LF;
 
       $_dat_ex->();
       print({$_DAT_W_SOCK} 'M~OBJ'.$LF . $_chn.$LF),
@@ -1414,7 +1424,7 @@ sub _req2 {
 # Called by CLEAR and clear.
 
 sub _req3 {
-   my ( $_fn, $self ) = @_;
+   my ( $_fcn, $self ) = @_;
    local $\ = undef if (defined $\);
    local $/ = $LF   if ($/ ne $LF );
 
@@ -1422,7 +1432,7 @@ sub _req3 {
 
    $_dat_ex->();
    print({$_DAT_W_SOCK} 'O~CLR'.$LF . $_chn.$LF),
-   print({$_DAU_W_SOCK} $self->[_ID].$LF . $_fn.$LF);
+   print({$_DAU_W_SOCK} $self->[_ID].$LF . $_fcn.$LF);
    $_dat_un->();
 
    return;
@@ -1452,7 +1462,7 @@ sub _req4 {
    read $_DAU_W_SOCK, my($_buf), $_len;
    $_dat_un->();
 
-   if ( $_[1]->[_DECODE] ) {
+   if ( $_[1]->[_DECODE] && $_[0] eq 'FETCH' ) {
       local $@; $_buf = $_thaw->($_buf)[0] if $_frozen;
       return eval { $_[1]->[_DECODE]->($_buf) } || $_buf;
    }
@@ -1486,11 +1496,11 @@ our $AUTOLOAD;
 
 sub AUTOLOAD {
    # $AUTOLOAD = MCE::Shared::Object::<method_name>
-   my $_fn = substr($AUTOLOAD, 21);
+   my $_fcn = substr($AUTOLOAD, 21);
 
    # save this method for future calls
    no strict 'refs';
-   *$AUTOLOAD = sub { _auto($_fn, @_) };
+   *$AUTOLOAD = sub { _auto($_fcn, @_) };
 
    goto &{ $AUTOLOAD };
 }
@@ -1684,6 +1694,14 @@ sub next {
    read $_DAU_W_SOCK, my($_buf), $_len;
    $_dat_un->();
 
+   if ( $_[0]->[_DECODE] ) {
+      my $_b = $_thaw->($_buf); local $@;
+
+      return wantarray
+         ? ( $_b->[0], eval { $_[0]->[_DECODE]->($_b->[-1]) } || $_b->[-1] )
+         :             eval { $_[0]->[_DECODE]->($_b->[-1]) } || $_b->[-1];
+   }
+
    wantarray ? @{ $_thaw->($_buf) } : $_thaw->($_buf)[-1];
 }
 
@@ -1735,7 +1753,7 @@ sub STORE {
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
          delete $_new{ $_[2]->SHARED_ID() };
       }
-      else {
+      elsif ($_[0]->[1] =~ /^MCE::Shared::(?:Array|Hash)$/) {
          $_[2] = MCE::Shared::share({ _DEEPLY_ => 1 }, $_[2]);
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
       }
@@ -1745,10 +1763,7 @@ sub STORE {
 }
 
 sub set {
-   if (@_ > 1 && $_[0]->[_ENCODE]) {
-      $_[-1] = $_[0]->[_ENCODE]->($_[-1]) if ref($_[-1]);
-   }
-   elsif (ref $_[2]) {
+   if (ref $_[2]) {
       if ($_blessed->($_[2]) && $_[2]->can('SHARED_ID')) {
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
          delete $_new{ $_[2]->SHARED_ID() };
@@ -1781,7 +1796,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.826
+This document describes MCE::Shared::Server version 1.827
 
 =head1 DESCRIPTION
 

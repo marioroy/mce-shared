@@ -69,12 +69,26 @@ BEGIN {
       return $id;
    }
 
+   my $cnt_start  = 0;
+   my $cnt_finish = 0;
+
+   MCE::Hobo->init(
+      on_start => sub {
+         my ( $pid, $id ) = @_;
+         ++$cnt_start;
+      },
+      on_finish => sub {
+         my ( $pid, $exit, $id, $sig, $err, @ret ) = @_;
+         ++$cnt_finish;
+      }
+   );
+
    MCE::Hobo->create(\&task, 2);
 
    my $hobo = MCE::Hobo->wait_one();
-   my $err = $hobo->error // 'no error';
-   my $res = $hobo->result;
-   my $pid = $hobo->pid;
+   my $err  = $hobo->error // 'no error';
+   my $res  = $hobo->result;
+   my $pid  = $hobo->pid;
 
    is ( $res, "2", 'check wait_one' );
 
@@ -93,6 +107,8 @@ BEGIN {
    }
 
    is ( "@result", "1 2 3", 'check wait_all' );
+   is ( $cnt_start , 4, 'check on_start'  );
+   is ( $cnt_finish, 4, 'check on_finish' );
 }
 
 is ( MCE::Hobo->finish(), undef, 'check finish' );
