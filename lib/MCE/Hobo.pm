@@ -89,8 +89,8 @@ sub init {
 
    if ( !exists $_LIST->{$pkg} ) {
       $_LIST->{ $pkg } = MCE::Hobo::_ordhash->new();
-      $_DELY->{ $pkg } = MCE::Shared->share( MCE::Hobo::_delay->new() );
-      $_DATA->{ $pkg } = MCE::Shared->share( MCE::Hobo::_hash->new() );
+      $_DELY->{ $pkg } = MCE::Shared->share({ module => 'MCE::Hobo::_delay' });
+      $_DATA->{ $pkg } = MCE::Shared->share({ module => 'MCE::Hobo::_hash' });
       $_DATA->{"$pkg:seed"} = int(rand() * 1e9);
       $_DATA->{"$pkg:id"  } = 0;
    }
@@ -544,7 +544,7 @@ sub _dispatch {
    alarm 0; _exit($?) if ( $@ && $@ =~ /^Hobo exited \(\S+\)$/ );
 
    if ( $@ ) {
-      chomp( my $err = $@ );
+      my $err = $@;
       $? = 1, $_DATA->{ $_SELF->{PKG} }->set('S'.$$, $err);
       warn "Hobo $$ terminated abnormally: reason $err\n" if (
          $err ne "Hobo timed out" && !$mngd->{on_finish}
@@ -1358,7 +1358,7 @@ A demonstration is provided in the next section for fetching URLs in parallel.
 
 =back
 
-=head1 PARALLEL HTTP REQUESTS USING ANYEVENT
+=head1 PARALLEL HTTP GET DEMONSTRATION USING ANYEVENT
 
 This demonstration constructs two queues, two handles, starts the
 shared-manager process if needed, and spawns four hobo workers.

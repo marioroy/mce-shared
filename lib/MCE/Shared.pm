@@ -387,9 +387,9 @@ sub _use {
    }
 
    return 1 if eval q{
+      $_class->can('new') ||
       $_class->can('TIEARRAY') || $_class->can('TIEHANDLE') ||
-      $_class->can('TIEHASH')  || $_class->can('TIESCALAR') ||
-      $_class->can('new')
+      $_class->can('TIEHASH')  || $_class->can('TIESCALAR')
    };
 
    if (!exists $INC{ join('/',split(/::/,$_class)).'.pm' }) {
@@ -1069,117 +1069,6 @@ Current API available since 1.827.
    $db2{key} = 'foo'; # ditto, plain and complex structure
    $db2{sun} = [ 'complex' ];
 
-The following presents a concurrent L<Tie::File> demonstration. Each element
-in the array corresponds to a record in the plain text file. JSON, being
-readable, seems appropiate for encoding complex objects.
-
-   use strict;
-   use warnings;
-
-   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   # Class extending Tie::File with two sugar methods.
-   # Requires MCE::Shared 1.827+.
-   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-   package My::File;
-
-   use Tie::File;
-
-   our @ISA = 'Tie::File';
-
-   sub append {
-      my ($self, $key) = @_;
-      my $val = $self->FETCH($key); $val .= $_[2];
-      $self->STORE($key, $val);
-      length $val;
-   }
-
-   sub incr {
-      my ( $self, $key ) = @_;
-      my $val = $self->FETCH($key); $val += 1;
-      $self->STORE($key, $val);
-      $val;
-   }
-
-   1;
-
-   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   # The MCE::Mutex module isn't needed unless IPC involves two or
-   # more trips for the underlying action.
-   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-   package main;
-
-   use MCE::Hobo;
-   use MCE::Mutex;
-   use MCE::Shared;
-
-   use JSON::MaybeXS;
-
-   # Safety for data having line breaks.
-   use constant EOL => "\x{0a}~\x{0a}";
-
-   my $file  = 'file.txt';
-   my $mutex = MCE::Mutex->new();
-   my $pid   = $$;
-
-   my $ob = tie my @db, 'MCE::Shared', { module => 'My::File' }, $file,
-      recsep => EOL or die "open error '$file': $!";
-
-   $ob->encoder( \&JSON::MaybeXS::encode_json );
-   $ob->decoder( \&JSON::MaybeXS::decode_json );
-
-   $db[20] = 0;  # a counter at offset 20 into the array
-   $db[21] = [ qw/ foo bar / ];  # store complex structure
-
-   sub task {
-      my $id  = sprintf "%02s", shift;
-      my $row = int($id) - 1;
-      my $chr = sprintf "%c", 97 + $id - 1;
-
-      # A mutex isn't necessary when storing a value.
-      # Ditto for fetching a value.
-
-      $db[$row] = "Hello from $id: ";  # 1 trip
-      my $val   = length $db[$row];    # 1 trip
-
-      # A mutex may be necessary for updates involving 2 or
-      # more trips (FETCH and STORE) during IPC, from and to
-      # the shared-manager process, unless a unique row.
-
-      for ( 1 .. 40 ) {
-       # $db[$row] .= $id;         # 2 trips, unique row - okay
-         $ob->append($row, $chr);  # 1 trip via the OO interface
-
-       # $mu->lock;
-       # $db[20] += 1;             # incrementing counter, 2 trips
-       # $mu->unlock;
-
-         $ob->incr(20);            # same thing via OO, 1 trip
-      }
-
-      my $len = length $db[$row];  # 1 trip
-
-      printf "hobo %2d : %d\n", $id, $len;
-   }
-
-   MCE::Hobo->create('task', $_) for 1 .. 20;
-   MCE::Hobo->waitall;
-
-   printf "counter : %d\n", $db[20];
-   print  $db[21]->[0], "\n";  # foo
-
-   sub CLONE {
-      $pid = 0;      # thread safety for completeness
-   }
-
-   END {
-      if ( $pid == $$ ) {
-         undef $ob;  # important, undef $ob before @db
-         untie @db;  # untie @db to flush pending writes
-      }
-   }
-
 =item export ( { unbless => 1 }, keys )
 
 =item export
@@ -1640,11 +1529,11 @@ command in the pipeline.
 
    # ( "a_a", "b_b", "c_c" )
 
-=head1 LOGGER DEMO
+=head1 LOGGER DEMONSTRATION
 
 Often, the requirement may call for concurrent logging by many workers.
 Calling localtime or gmtime per each log entry is expensive. This uses
-the old time-stamp value unless one second has elapsed.
+the old time-stamp value until one second has elapsed.
 
    use strict;
    use warnings;
@@ -1780,6 +1669,123 @@ the old time-stamp value unless one second has elapsed.
    sub CLONE { $pid = 0; }
 
    END { $ob->close if $ob && $pid == $$; }
+
+=head1 TIE::FILE DEMONSTRATION
+
+The following presents a concurrent L<Tie::File> demonstration. Each element
+in the array corresponds to a record in the text file. JSON, being readable,
+seems appropiate for encoding complex objects.
+
+   use strict;
+   use warnings;
+
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   # Class extending Tie::File with two sugar methods.
+   # Requires MCE::Shared 1.827+.
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   package My::File;
+
+   use Tie::File;
+
+   our @ISA = 'Tie::File';
+
+   # $ob->append('string');
+
+   sub append {
+       my ($self, $key) = @_;
+       my $val = $self->FETCH($key); $val .= $_[2];
+       $self->STORE($key, $val);
+       length $val;
+   }
+
+   # $ob->incr($key);
+
+   sub incr {
+       my ( $self, $key ) = @_;
+       my $val = $self->FETCH($key); $val += 1;
+       $self->STORE($key, $val);
+       $val;
+   }
+
+   1;
+
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   # The MCE::Mutex module isn't needed unless IPC involves two or
+   # more trips for the underlying action.
+   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   package main;
+
+   use MCE::Hobo;
+   use MCE::Mutex;
+   use MCE::Shared;
+
+   use JSON::MaybeXS;
+
+   # Safety for data having line breaks.
+   use constant EOL => "\x{0a}~\x{0a}";
+
+   my $file  = 'file.txt';
+   my $mutex = MCE::Mutex->new();
+   my $pid   = $$;
+
+   my $ob = tie my @db, 'MCE::Shared', { module => 'My::File' }, $file,
+       recsep => EOL or die "open error '$file': $!";
+
+   $ob->encoder( \&JSON::MaybeXS::encode_json );
+   $ob->decoder( \&JSON::MaybeXS::decode_json );
+
+   $db[20] = 0;  # a counter at offset 20 into the array
+   $db[21] = [ qw/ foo bar / ];  # store complex structure
+
+   sub task {
+       my $id  = sprintf "%02s", shift;
+       my $row = int($id) - 1;
+       my $chr = sprintf "%c", 97 + $id - 1;
+
+       # A mutex isn't necessary when storing a value.
+       # Ditto for fetching a value.
+
+       $db[$row] = "Hello from $id: ";  # 1 trip
+       my $val   = length $db[$row];    # 1 trip
+
+       # A mutex may be necessary for updates involving 2 or
+       # more trips (FETCH and STORE) during IPC, from and to
+       # the shared-manager process, unless a unique row.
+
+       for ( 1 .. 40 ) {
+         # $db[$row] .= $id;         # 2 trips, unique row - okay
+           $ob->append($row, $chr);  # 1 trip via the OO interface
+
+         # $mu->lock;
+         # $db[20] += 1;             # incrementing counter, 2 trips
+         # $mu->unlock;
+
+           $ob->incr(20);            # same thing via OO, 1 trip
+       }
+
+       my $len = length $db[$row];   # 1 trip
+
+       printf "hobo %2d : %d\n", $id, $len;
+   }
+
+   MCE::Hobo->create('task', $_) for 1 .. 20;
+   MCE::Hobo->waitall;
+
+   printf "counter : %d\n", $db[20];
+   print  $db[21]->[0], "\n";  # foo
+
+   sub CLONE {
+       $pid = 0;       # thread safety for completeness
+   }
+
+   END {
+       if ( $pid == $$ ) {
+           undef $ob;  # important, undef $ob before @db
+           untie @db;  # untie @db to flush pending writes
+       }
+   }
 
 =head1 REQUIREMENTS
 
