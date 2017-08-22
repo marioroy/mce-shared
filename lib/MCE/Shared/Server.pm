@@ -369,16 +369,16 @@ sub _stop {
    return unless ($_is_client && $_init_pid && $_init_pid eq "$$.$_tid");
    MCE::Hobo->finish('MCE') if $INC{'MCE/Hobo.pm'};
 
-   local ($!, $?); %_all = (), %_obj = ();
+   local ($!, $?, $@); %_all = (), %_obj = ();
 
    if (defined $_svr_pid) {
       my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
 
       if (ref $_svr_pid) {
-         local $@; eval { $_svr_pid->kill('KILL') };
+         eval { $_svr_pid->kill('KILL') };
       }
       else {
-         local $@; eval {
+         eval {
             local $\ = undef if (defined $\);
             print {$_DAT_W_SOCK} SHR_M_STP.$LF.'0'.$LF;
          };
@@ -1159,7 +1159,7 @@ use overload (
       no overloading;
       $_[0]->[_DREF] || do {
          local $@; my $c = $_[0]->[_CLASS];
-         return $_[0] unless eval qq{ require $c; $c->can('TIEARRAY') };
+         return $_[0] unless eval qq{ eval { require $c }; $c->can('TIEARRAY') };
          tie my @a, __PACKAGE__, bless([ @{ $_[0] }[ 0..3 ] ], __PACKAGE__);
          $_[0]->[_DREF] = \@a;
       };
@@ -1168,7 +1168,7 @@ use overload (
       no overloading;
       $_[0]->[_DREF] || do {
          local $@; my $c = $_[0]->[_CLASS];
-         return $_[0] unless eval qq{ require $c; $c->can('TIEHASH') };
+         return $_[0] unless eval qq{ eval { require $c }; $c->can('TIEHASH') };
          tie my %h, __PACKAGE__, bless([ @{ $_[0] }[ 0..3 ] ], __PACKAGE__);
          $_[0]->[_DREF] = \%h;
       };
@@ -1177,7 +1177,7 @@ use overload (
       no overloading;
       $_[0]->[_DREF] || do {
          local $@; my $c = $_[0]->[_CLASS];
-         return $_[0] unless eval qq{ require $c; $c->can('TIESCALAR') };
+         return $_[0] unless eval qq{ eval { require $c }; $c->can('TIESCALAR') };
          tie my $s, __PACKAGE__, bless([ @{ $_[0] }[ 0..3 ] ], __PACKAGE__);
          $_[0]->[_DREF] = \$s;
       };
@@ -1753,7 +1753,8 @@ sub STORE {
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
          delete $_new{ $_[2]->SHARED_ID() };
       }
-      elsif ($_[0]->[1] =~ /^MCE::Shared::(?:Array|Hash)$/) {
+      elsif ( $_[0]->[1]->isa('MCE::Shared::Array') ||
+              $_[0]->[1]->isa('MCE::Shared::Hash') ) {
          $_[2] = MCE::Shared::share({ _DEEPLY_ => 1 }, $_[2]);
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
       }
