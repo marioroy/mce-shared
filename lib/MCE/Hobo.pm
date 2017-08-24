@@ -1573,6 +1573,7 @@ threads are necessary for the binary to exit successfully.
  use if $^O eq "MSWin32", "threads::shared";
 
  # Include minimum dependencies for MCE::Hobo.
+ # Add other modules required by your application here.
 
  use Storable ();
  use Time::HiRes ();
