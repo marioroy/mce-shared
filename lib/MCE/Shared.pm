@@ -363,7 +363,7 @@ sub _tie {
 
    if ( $_item && $_item->[2] ) {
       # Set encoder/decoder automatically for DB files.
-      # e.g. DB_File, SDBM_File, SQLite_File, BerkeleyDB
+      # e.g. DB_File, CDB_File, SDBM_File, SQLite_File, BerkeleyDB
       $_item->[2] = MCE::Shared::Server::_get_freeze(),
       $_item->[3] = MCE::Shared::Server::_get_thaw();
    }
@@ -826,23 +826,26 @@ For further reading, see L<MCE::Shared::Minidb>.
 
 This class method transfers the blessed-object to the shared-manager
 process and returns a C<MCE::Shared::Object> containing the C<SHARED_ID>.
-For classes not included with C<MCE::Shared>, the object must not contain
-any C<GLOB>'s or C<CODE_REF>'s or the transfer will fail.
+Starting with the 1.827 release, the module option sends parameters to the
+shared-manager, where the object is then constructed. This is useful for
+classes involving a file handle.
 
  use MCE::Shared;
  use MCE::Shared::Ordhash;
 
  my $oh1 = MCE::Shared->share( MCE::Shared::Ordhash->new() );
- my $oh2 = MCE::Shared->ordhash();       # same thing
+ my $oh2 = MCE::Shared->share({ module => 'MCE::Shared::Ordhash' });
+ my $oh3 = MCE::Shared->ordhash();      # same thing
 
  $oh1->assign( @pairs );
  $oh2->assign( @pairs );
+ $oh3->assign( @pairs );
 
  use Hash::Ordered;
 
  my ($ho_shared, $ho_nonshared);
 
- $ho_shared = MCE::Shared->share( Hash::Ordered->new() );
+ $ho_shared = MCE::Shared->share({ module => 'Hash::Ordered' });
  $ho_shared->push( @pairs );
 
  $ho_nonshared = $ho_shared->export();   # back to non-shared
@@ -853,21 +856,65 @@ hash, or scalar object.
 
  use MCE::Shared;
 
- use MCE::Shared::Array;    # Loading helper classes is not necessary
- use MCE::Shared::Hash;     # when using the shorter form.
- use MCE::Shared::Scalar;
+ use MCE::Shared::Array;    # Loading helper classes isn't necessary
+ use MCE::Shared::Hash;     # when using the shorter form or via the
+ use MCE::Shared::Scalar;   # module option.
 
  my $a1 = MCE::Shared->share( MCE::Shared::Array->new( @list ) );
+ my $a2 = MCE::Shared->share({ module => 'MCE::Shared::Array' }, @list );
  my $a3 = MCE::Shared->share( [ @list ] );  # sugar syntax
- my $a2 = MCE::Shared->array( @list );
+ my $a4 = MCE::Shared->array( @list );
 
  my $h1 = MCE::Shared->share( MCE::Shared::Hash->new( @pairs ) );
+ my $h2 = MCE::Shared->share({ module => 'MCE::Shared::Hash' }, @pairs );
  my $h3 = MCE::Shared->share( { @pairs } ); # sugar syntax
- my $h2 = MCE::Shared->hash( @pairs );
+ my $h4 = MCE::Shared->hash( @pairs );
 
  my $s1 = MCE::Shared->share( MCE::Shared::Scalar->new( 20 ) );
- my $s2 = MCE::Shared->share( \do{ my $o = 20 } );
+ my $s2 = MCE::Shared->share({ module => 'MCE::Shared::Scalar' }, 20 );
+ my $s3 = MCE::Shared->share( \do{ my $o = 20 } );
  my $s4 = MCE::Shared->scalar( 20 );
+
+When the C<module> option is given, one may optionally specify the constructor
+function via the C<new> option. This is necessary for the CDB_File module,
+which provides two different objects. One is created by new (default), and
+accessed by insert and finish. The other is created by TIEHASH, and accessed
+by FETCH.
+
+ use MCE::Hobo;
+ use MCE::Shared;
+
+ # populate CDB file
+ my $cdb = MCE::Shared->share({ module => 'CDB_File' }, 't.cdb', "t.cdb.$$")
+    or die "$!\n";
+
+ $cdb->insert( $_ => $_ ) for ('aa'..'zz');
+ $cdb->finish;
+
+ # use CDB file
+ my $cdb1 = tie my %hash, 'MCE::Shared', { module => 'CDB_File' }, 't.cdb';
+
+ # same thing, without involving TIE and extra hash variable
+ my $cdb2 = MCE::Shared->share(
+    { module => 'CDB_File', new => 'TIEHASH' }, 't.cdb'
+ );
+
+ print $hash{'aa'}, "\n";
+ print $cdb1->FETCH('bb'), "\n";
+ print $cdb2->FETCH('cc'), "\n";
+
+ # rewind may be omitted on first use for parallel iteration
+ $cdb2->rewind;
+
+ for ( 1 .. 3 ) {
+    mce_async {
+       while ( my ($k,$v) = $cdb2->next ) {
+          print "[$$] $k => $v\n";
+       }
+    };
+ }
+
+ MCE::Hobo->wait_all;
 
 =back
 

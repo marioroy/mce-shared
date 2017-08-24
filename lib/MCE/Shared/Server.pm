@@ -314,8 +314,10 @@ sub _share {
    if ( $_params->{tied} ) {
       # set encoder/decoder upon receipt in MCE::Shared::_tie
       $self->[2] = 1 if $_class->isa('DB_File');
+      $self->[2] = 1 if $_class->isa('CDB_File');
       $self->[2] = 1 if $_class->isa('SDBM_File');
       $self->[2] = 1 if $_class->isa('SQLite_File');
+
       $self->[2] = 1 if $_class->isa('BerkeleyDB::Hash');
       $self->[2] = 1 if $_class->isa('BerkeleyDB::Btree');
       $self->[2] = 1 if $_class->isa('BerkeleyDB::Recno');
@@ -577,7 +579,8 @@ sub _loop {
          my $_key = $_obj->FIRSTKEY;
          if ( defined $_key ) {
             push @_keys, $_key;
-            while ( defined($_key = $_obj->NEXTKEY('')) ) {
+            # CDB_File expects the $_key argument
+            while ( defined( $_key = $_obj->NEXTKEY($_key) ) ) {
                push @_keys, $_key;
             }
          }
@@ -592,7 +595,8 @@ sub _loop {
          my $_key = $_obj->FIRSTKEY; $_cnt = 0;
          if ( defined $_key ) {
             $_cnt = 1;
-            while ( defined($_key = $_obj->NEXTKEY('')) ) {
+            # CDB_File expects the $_key argument
+            while ( defined( $_key = $_obj->NEXTKEY($_key) ) ) {
                $_cnt++;
             }
          }
