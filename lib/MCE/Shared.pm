@@ -135,30 +135,6 @@ sub share {
 ##
 ###############################################################################
 
-if ( $INC{'PDL.pm'} ) {
-   # PDL sharing -- construction takes place under the shared server-process
-   local $@; eval q{
-
-      sub pdl_byte     { push @_, 'byte';     goto &_pdl_share }
-      sub pdl_short    { push @_, 'short';    goto &_pdl_share }
-      sub pdl_ushort   { push @_, 'ushort';   goto &_pdl_share }
-      sub pdl_long     { push @_, 'long';     goto &_pdl_share }
-      sub pdl_longlong { push @_, 'longlong'; goto &_pdl_share }
-      sub pdl_float    { push @_, 'float';    goto &_pdl_share }
-      sub pdl_double   { push @_, 'double';   goto &_pdl_share }
-      sub pdl_ones     { push @_, 'ones';     goto &_pdl_share }
-      sub pdl_sequence { push @_, 'sequence'; goto &_pdl_share }
-      sub pdl_zeroes   { push @_, 'zeroes';   goto &_pdl_share }
-      sub pdl_indx     { push @_, 'indx';     goto &_pdl_share }
-      sub pdl          { push @_, 'pdl';      goto &_pdl_share }
-
-      sub _pdl_share {
-         shift if ( defined $_[0] && $_[0] eq 'MCE::Shared' );
-         MCE::Shared::Server::_new({ 'class' => ':construct_pdl:' }, [ @_ ]);
-      }
-   };
-}
-
 sub AUTOLOAD {
    # $AUTOLOAD = MCE::Shared::<method_name>
    my $_fcn = substr($MCE::Shared::AUTOLOAD, 13);
@@ -203,6 +179,14 @@ sub AUTOLOAD {
       if ( @_ ) { $_item->OPEN(@_) or return ''; }
 
       return $_fh;
+   }
+   elsif ( $_fcn eq 'pdl' ||
+      $_fcn =~ /^pdl_(byte|u?short|.*long|float|double|ones|sequence|zeroes|indx)$/
+   ) {
+      $_fcn = $1 if ( $_fcn ne 'pdl' );
+      push @_, $_fcn; _use('PDL') or _croak($@);
+
+      return MCE::Shared::Server::_new({ 'class' => ':construct_pdl:' }, [ @_ ]);
    }
 
    # cache, condvar, minidb, ordhash, queue, scalar, sequence, et cetera

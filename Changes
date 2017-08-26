@@ -1,7 +1,7 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.827 Wed Aug 23 19:30:00 EST 2017
+1.827 Fri Aug 25 21:00:00 EST 2017
 
   [BUG FIXES]
 
@@ -22,6 +22,7 @@ Revision history for Perl module MCE::Shared.
   * Improved open method for non-shared file-handles in MCE::Shared::Handle.
   * Improved shared-PDL support. Updated MCE::Cookbook on Github.
   * Improved signal handling, including nested parallel-sessions.
+  * Improved running MCE::Hobo and MCE::Shared with PDL.
 
   * In MCE::Hobo, waitall and waitone are now aliases to wait_all and
     wait_one respectively for backwards compatibility.

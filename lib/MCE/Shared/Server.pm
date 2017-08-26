@@ -38,8 +38,6 @@ BEGIN {
    $_spawn_child = $_has_threads  ? 0 : 1;
 
    eval 'use IO::FDPass ()' if !$INC{'IO/FDPass.pm'} && $^O ne 'cygwin';
-   eval 'PDL::no_clone_skip_warning()' if $INC{'PDL.pm'};
-   eval 'use PDL::IO::Storable' if $INC{'PDL.pm'};
 
    if (!exists $INC{'PDL.pm'}) {
       eval '
@@ -337,6 +335,11 @@ sub _start {
    return if $_svr_pid;
    require threads, $_spawn_child = 0, $_has_threads = 1
       if ( $INC{'Win32/GUI.pm'} && !$_has_threads );
+
+   if ($INC{'PDL.pm'}) { local $@;
+      eval 'use PDL::IO::Storable' unless $INC{'PDL/IO/Storable.pm'};
+      eval 'PDL::no_clone_skip_warning()';
+   }
 
    $_init_pid = "$$.$_tid"; local $_;
 
@@ -884,19 +887,18 @@ sub _loop {
             # Do not export: e.g. objects with file handles
             if ( exists $_export_nul{ $_all{ $_id } } ) {
                print {$_DAU_R_SOCK} '-1'.$LF;
-
                return;
             }
 
             # MCE::Shared::{ Array, Hash, Ordhash }, Hash::Ordered
             if ($_obj{ $_id }->can('clone')) {
                $_buf = ($_len)
-                  ? $_freeze2->($_obj{ $_id }->clone(@{ $_thaw->($_keys) }))
-                  : $_freeze2->($_obj{ $_id });
+                  ? Storable::freeze($_obj{ $_id }->clone(@{ $_thaw->($_keys) }))
+                  : Storable::freeze($_obj{ $_id });
             }
             # Other
             else {
-               $_buf = $_freeze2->($_obj{ $_id });
+               $_buf = Storable::freeze($_obj{ $_id });
             }
 
             print {$_DAU_R_SOCK} length($_buf).$LF, $_buf;
@@ -965,7 +967,7 @@ sub _loop {
 
          if ($_all{ $_id } eq 'PDL') {
             # PDL ins( inplace($this), $what, @coords );
-            local @_ = @{ $_thaw->($_buf) };
+            local @_ = @{ Storable::thaw($_buf) };
 
             if (@_ == 1) {
                ins( inplace($_obj{ $_id }), @_, 0, 0 );
@@ -1583,7 +1585,7 @@ sub export {
       read $_DAU_W_SOCK, $_buf, $_len;
       $_dat_un->();
 
-      $_item = $_lkup->{ $_id } = $_thaw->($_buf);
+      $_item = $_lkup->{ $_id } = Storable::thaw($_buf);
       undef $_buf;
    }
 
@@ -1716,16 +1718,16 @@ sub next {
 ##
 ###############################################################################
 
-if ( $INC{'PDL.pm'} ) {
-   local $@; eval q{ sub ins_inplace {
-      my $_id = shift()->[_ID];
-      if ( @_ ) {
-         my $_tmp = $_freeze->([ @_ ]);
-         my $_buf = $_id.$LF . length($_tmp).$LF;
-         _req2('O~PDL', $_buf, $_tmp);
-      }
-      return;
-   } };
+sub ins_inplace {
+   my $_id = shift()->[_ID];
+
+   if ( @_ ) {
+      my $_tmp = Storable::freeze([ @_ ]);
+      my $_buf = $_id.$LF . length($_tmp).$LF;
+      _req2('O~PDL', $_buf, $_tmp);
+   }
+
+   return;
 }
 
 sub FETCHSIZE { _size('FETCHSIZE', @_) }
