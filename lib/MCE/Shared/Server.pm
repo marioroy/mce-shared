@@ -387,7 +387,8 @@ sub _stop {
             local $\ = undef if (defined $\);
             print {$_DAT_W_SOCK} SHR_M_STP.$LF.'0'.$LF;
          };
-         local $SIG{'ALRM'} = sub {
+         local ($SIG{'INT'}, $SIG{'ALRM'});
+         $SIG{'INT'} = $SIG{'ALRM'} = sub {
             alarm 0; sleep 0.015;
             CORE::kill 'KILL', $_svr_pid;
          };
@@ -1327,54 +1328,62 @@ sub _init {
 ##
 ###############################################################################
 
+my $_signaled; my $_sigint = sub { $_signaled = 1 };
+
 # Called by AUTOLOAD, STORE, set, and keys.
 
 sub _auto {
-   my $_wa = !defined wantarray ? _UNDEF : wantarray ? _ARRAY : _SCALAR;
+  my $_wa = !defined wantarray ? _UNDEF : wantarray ? _ARRAY : _SCALAR;
+  my ($_frozen, $_buf); $_signaled = undef if $_signaled;
 
-   local $\ = undef if (defined $\);
+  {
+    local $\ = undef if (defined $\);
+    local $SIG{INT} = $_sigint;
 
-   if ( @_ == 2 ) {
+    if ( @_ == 2 ) {
       $_dat_ex->();
       print({$_DAT_W_SOCK} 'M~OB0'.$LF . $_chn.$LF),
       print({$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . $_wa.$LF);
-   }
-   elsif ( @_ == 3 && !ref $_[2] && defined $_[2] && !looks_like_number($_[2]) ) {
+    }
+    elsif ( @_ == 3 && !ref $_[2] && defined $_[2] && !looks_like_number($_[2]) ) {
       $_dat_ex->();
       print({$_DAT_W_SOCK} 'M~OB1'.$LF . $_chn.$LF),
       print({$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . $_wa.$LF .
          length($_[2]).$LF, $_[2]);
-   }
-   elsif ( @_ == 4 && !ref $_[3] && defined $_[3] && !looks_like_number($_[3])
-                   && !ref $_[2] && defined $_[2] && !looks_like_number($_[2]) ) {
+    }
+    elsif ( @_ == 4 && !ref $_[3] && defined $_[3] && !looks_like_number($_[3])
+                    && !ref $_[2] && defined $_[2] && !looks_like_number($_[2]) ) {
       $_dat_ex->();
       print({$_DAT_W_SOCK} 'M~OB2'.$LF . $_chn.$LF),
       print({$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . $_wa.$LF .
          length($_[2]).$LF . length($_[3]).$LF, $_[2], $_[3]);
-   }
-   else {
+    }
+    else {
       my ( $_fcn, $_id, $_tmp ) = ( shift, shift()->[_ID], $_freeze->([ @_ ]) );
       my $_buf = $_id.$LF . $_fcn.$LF . $_wa.$LF . length($_tmp).$LF;
 
       $_dat_ex->();
       print({$_DAT_W_SOCK} 'M~OBJ'.$LF . $_chn.$LF),
       print({$_DAU_W_SOCK} $_buf, $_tmp);
-   }
+    }
 
-   if ( $_wa ) {
+    if ( $_wa ) {
       local $/ = $LF if ($/ ne $LF);
       chomp(my $_len = <$_DAU_W_SOCK>);
+      $_frozen = chop $_len;
 
-      my $_frozen = chop($_len);
-      read $_DAU_W_SOCK, my($_buf), $_len;
-      $_dat_un->();
+      read $_DAU_W_SOCK, $_buf, $_len;
+    }
 
-      return ( $_wa != _ARRAY )
-         ? $_frozen ? $_thaw->($_buf)[0] : $_buf
-         : @{ $_thaw->($_buf) };
-   }
+    $_dat_un->();
+  }
 
-   $_dat_un->();
+  CORE::kill('INT', $$) if $_signaled;
+  return unless $_wa;
+
+  return ( $_wa != _ARRAY )
+    ? $_frozen ? $_thaw->($_buf)[0] : $_buf
+    : @{ $_thaw->($_buf) };
 }
 
 # Called by MCE::Hobo ( ->join, ->wait_one ).
