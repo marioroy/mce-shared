@@ -346,8 +346,9 @@ sub _tie {
    my $_item = MCE::Shared::Server::_new($_params, [ @_, $_fcn ]);
 
    if ( $_item && $_item->[2] ) {
-      # Set encoder/decoder automatically for DB files.
-      # e.g. DB_File, CDB_File, SDBM_File, SQLite_File, BerkeleyDB
+      # Set encoder/decoder automatically for DB files:
+      # - AnyDBM_File, DB_File, GDBM_File, NDBM_File, ODBM_File, SDBM_File,
+      # - BerkeleyDB::*, CDB_File, and SQLite_File
       $_item->[2] = MCE::Shared::Server::_get_freeze(),
       $_item->[3] = MCE::Shared::Server::_get_thaw();
    }
