@@ -111,14 +111,16 @@ my %_export_nul;
 my @_db_modules = qw(
    AnyDBM_File DB_File GDBM_File NDBM_File ODBM_File SDBM_File
    BerkeleyDB::Btree BerkeleyDB::Hash BerkeleyDB::Queue
-   BerkeleyDB::Recno CDB_File SQLite_File
+   BerkeleyDB::Recno CDB_File KyotoCabinet::DB SQLite_File
+   TokyoCabinet::ADB TokyoCabinet::BDB TokyoCabinet::HDB
+   Tie::Array::DBD Tie::Hash::DBD
 );
 
 my $_is_MSWin32 = ( $^O eq 'MSWin32') ? 1 : 0;
 my $_tid = $_has_threads ? threads->tid() : 0;
 my $_oid = "$$.$_tid";
 
-sub _croak { goto &Carp::croak }
+sub _croak { kill('INT', $MCE::Signal::main_proc_id); goto &Carp::croak }
 sub  CLONE { $_tid = threads->tid() if $_has_threads }
 
 END {
@@ -250,9 +252,12 @@ sub _share {
 
    if ($_class eq ':construct_module:') {
       my ($_module, $_fcn) = ($_params->{module}, pop @{ $_item });
-      my $_has_args = @{ $_item } ? 1 : 0;
+      my $_has_args = @{ $_item } ? 1 : 0; local $@;
 
-      local $@; MCE::Shared::_use( $_class = $_module ) or _croak("$@\n");
+      ($_module) = $_module =~ /(.*)/; # remove tainted'ness
+      ($_fcn   ) = $_fcn    =~ /(.*)/;
+
+      MCE::Shared::_use( $_class = $_module ) or _croak("$@\n");
 
       _croak("Can't locate object method \"$_fcn\" via package \"$_module\"")
          unless eval qq{ $_module->can('$_fcn') };
@@ -437,9 +442,10 @@ sub _destroy {
 
          undef ${ $_obj{ $_id } };
       }
-      elsif ($_obj{ $_id }->isa('Tie::File')) {
-         $_obj{ $_id }->flush();
-      }
+      elsif ($_obj{ $_id }->isa('Tie::File')) { $_obj{ $_id }->flush();   }
+      elsif ($_obj{ $_id }->can('sync'))      { $_obj{ $_id }->sync();    }
+      elsif ($_obj{ $_id }->can('db_sync'))   { $_obj{ $_id }->db_sync(); }
+      elsif ($_obj{ $_id }->can('close'))     { $_obj{ $_id }->close();   }
       elsif (reftype $_obj{ $_id } eq 'GLOB') {
          $_obj{ $_id }->can('DESTROY') ? $_obj{ $_id }->DESTROY() : do {
             close $_obj{ $_id } if defined(fileno $_obj{ $_id });
@@ -447,8 +453,8 @@ sub _destroy {
       }
    }
 
-   weaken( delete $_obj{ $_id } ) if ( exists $_obj{ $_id } );
-   weaken( delete $_itr{ $_id } ) if ( exists $_itr{ $_id } );
+   weaken( delete $_obj{ $_id } ) if exists($_obj{ $_id });
+   weaken( delete $_itr{ $_id } ) if exists($_itr{ $_id });
 
    delete($_itr{ "$_id:args"  }), delete($_all{ $_id }),
    delete($_ob3{ "$_id:count" }), delete($_ob2{ $_id });
@@ -468,14 +474,21 @@ sub _exit {
 
    # Flush file handles.
    for my $_o ( values %_obj ) {
-      if ($_o->isa('Tie::File')) {
-         $_o->flush();
-      }
+      if    ($_o->isa('Tie::File')) { $_o->flush();   }
+      elsif ($_o->can('sync'))      { $_o->sync();    }
+      elsif ($_o->can('db_sync'))   { $_o->db_sync(); }
+      elsif ($_o->can('close'))     { $_o->close();   }
       elsif (reftype $_o eq 'GLOB') {
          $_o->can('DESTROY') ? $_o->DESTROY() : do {
             close $_o if defined(fileno $_o);
          };
       }
+   }
+
+   # Destroy non-exportable objects.
+   for my $_id ( keys %_all ) {
+      weaken( delete $_obj{ $_id } )
+         if ( exists $_export_nul{ $_all{ $_id } } );
    }
 
    # Wait for the main thread to exit.
@@ -1165,6 +1178,7 @@ use overload (
       no overloading;
       $_[0]->[_DREF] || do {
          local $@; my $c = $_[0]->[_CLASS];
+         ($c) = $c =~ /(.*)/; # remove tainted'ness
          return $_[0] unless eval qq{ eval { require $c }; $c->can('TIEARRAY') };
          tie my @a, __PACKAGE__, bless([ @{ $_[0] }[ 0..3 ] ], __PACKAGE__);
          $_[0]->[_DREF] = \@a;
@@ -1174,6 +1188,7 @@ use overload (
       no overloading;
       $_[0]->[_DREF] || do {
          local $@; my $c = $_[0]->[_CLASS];
+         ($c) = $c =~ /(.*)/; # remove tainted'ness
          return $_[0] unless eval qq{ eval { require $c }; $c->can('TIEHASH') };
          tie my %h, __PACKAGE__, bless([ @{ $_[0] }[ 0..3 ] ], __PACKAGE__);
          $_[0]->[_DREF] = \%h;
@@ -1183,6 +1198,7 @@ use overload (
       no overloading;
       $_[0]->[_DREF] || do {
          local $@; my $c = $_[0]->[_CLASS];
+         ($c) = $c =~ /(.*)/; # remove tainted'ness
          return $_[0] unless eval qq{ eval { require $c }; $c->can('TIESCALAR') };
          tie my $s, __PACKAGE__, bless([ @{ $_[0] }[ 0..3 ] ], __PACKAGE__);
          $_[0]->[_DREF] = \$s;
@@ -1460,10 +1476,9 @@ sub _req4 {
    $_dat_ex->();
    print({$_DAT_W_SOCK} 'O~FCH'.$LF . $_chn.$LF),
    print({$_DAU_W_SOCK} $_[1]->[_ID].$LF . $_[0].$LF . length($_key).$LF, $_key);
-
    chomp(my $_len = <$_DAU_W_SOCK>);
-   $_dat_un->(), return undef if ($_len < 0);
 
+   $_dat_un->(), return undef if ($_len < 0);
    my $_frozen = chop($_len);
    read $_DAU_W_SOCK, my($_buf), $_len;
    $_dat_un->();
@@ -1693,22 +1708,21 @@ sub next {
    $_dat_ex->();
    print({$_DAT_W_SOCK} 'M~INX'.$LF . $_chn.$LF),
    print({$_DAU_W_SOCK} $_[0]->[_ID].$LF);
-
    chomp(my $_len = <$_DAU_W_SOCK>);
-   $_dat_un->(), return if ($_len < 0);
 
+   $_dat_un->(), return if ($_len < 0);
    read $_DAU_W_SOCK, my($_buf), $_len;
    $_dat_un->();
 
-   if ( $_[0]->[_DECODE] ) {
-      my $_b = $_thaw->($_buf); local $@;
+   my $_b; return wantarray ? () : undef unless @{ $_b = $_thaw->($_buf) };
 
-      return wantarray
-         ? ( $_b->[0], eval { $_[0]->[_DECODE]->($_b->[-1]) } || $_b->[-1] )
-         :             eval { $_[0]->[_DECODE]->($_b->[-1]) } || $_b->[-1];
+   if ( $_[0]->[_DECODE] ) {
+      local $@; $_b->[-1] = eval { $_[0]->[_DECODE]->($_b->[-1]) } || $_b->[-1];
    }
 
-   wantarray ? @{ $_thaw->($_buf) } : $_thaw->($_buf)[-1];
+   ( wantarray )
+      ? @{ $_b } == 2 ? ( $_b->[0], delete $_b->[-1] ) : @{ $_b }
+      : delete $_b->[-1];
 }
 
 ###############################################################################
@@ -1747,15 +1761,15 @@ sub NEXTKEY {
 }
 
 sub STORE {
-   if (@_ > 1 && $_[0]->[_ENCODE]) {
+   if ( @_ > 1 && $_[0]->[_ENCODE] ) {
       $_[-1] = $_[0]->[_ENCODE]->($_[-1]) if ref($_[-1]);
    }
-   elsif (@_ == 2 && $_blessed->($_[1]) && $_[1]->can('SHARED_ID')) {
+   elsif ( @_ == 2 && $_blessed->($_[1]) && $_[1]->can('SHARED_ID') ) {
       _req2('M~DEE', $_[0]->[_ID].$LF, $_[1]->SHARED_ID().$LF);
       delete $_new{ $_[1]->SHARED_ID() };
    }
-   elsif (ref $_[2]) {
-      if ($_blessed->($_[2]) && $_[2]->can('SHARED_ID')) {
+   elsif ( ref $_[2] ) {
+      if ( $_blessed->($_[2]) && $_[2]->can('SHARED_ID') ) {
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
          delete $_new{ $_[2]->SHARED_ID() };
       }
@@ -1765,13 +1779,12 @@ sub STORE {
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
       }
    }
-   _auto('STORE', @_);
-   1;
+   _auto('STORE', @_); 1;
 }
 
 sub set {
-   if (ref $_[2]) {
-      if ($_blessed->($_[2]) && $_[2]->can('SHARED_ID')) {
+   if ( ref $_[2] ) {
+      if ( $_blessed->($_[2]) && $_[2]->can('SHARED_ID') ) {
          _req2('M~DEE', $_[0]->[_ID].$LF, $_[2]->SHARED_ID().$LF);
          delete $_new{ $_[2]->SHARED_ID() };
       }
@@ -1780,7 +1793,7 @@ sub set {
 }
 
 sub keys {
-   (@_ == 1 && !wantarray) ? _size('keys', @_) : _auto('keys', @_);
+   ( @_ == 1 && !wantarray ) ? _size('keys', @_) : _auto('keys', @_);
 }
 
 {

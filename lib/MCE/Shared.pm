@@ -333,7 +333,7 @@ sub _share {
 }
 
 sub _tie {
-   my ($_fcn, $_params) = (shift, shift);
+   my ( $_fcn, $_params ) = ( shift, shift );
 
    _use( my $_module = $_params->{'module'} ) or _croak("$@\n");
 
@@ -346,9 +346,12 @@ sub _tie {
    my $_item = MCE::Shared::Server::_new($_params, [ @_, $_fcn ]);
 
    if ( $_item && $_item->[2] ) {
-      # Set encoder/decoder automatically for DB files:
+      ##
+      # Set encoder/decoder automatically for supported DB modules.
       # - AnyDBM_File, DB_File, GDBM_File, NDBM_File, ODBM_File, SDBM_File,
-      # - BerkeleyDB::*, CDB_File, and SQLite_File
+      # - CDB_File, SQLite_File, Tie::Array::DBD, Tie::Hash::DBD,
+      # - BerkeleyDB::*, KyotoCabinet::DB, TokyoCabinet::*
+      ##
       $_item->[2] = MCE::Shared::Server::_get_freeze(),
       $_item->[3] = MCE::Shared::Server::_get_thaw();
    }
@@ -359,17 +362,24 @@ sub _tie {
 sub _use {
    my $_class = $_[0];
 
-   if ($_class =~ /(.*)::_/ && !exists $INC{ join('/',split(/::/,$1)).'.pm' }) {
-      eval "require $1";  # e.g. MCE::Hobo::_hash
+   if ( $_class =~ /(.*)::_/ ) {
+      # e.g. MCE::Hobo::_hash
+      eval "require $1" unless $INC{ join('/',split(/::/,$1)).'.pm' };
    }
-   elsif ($_class eq 'Tie::StdArray' && !$INC{'Tie/Array.pm'}) {
-      eval 'require Tie::Array';
+   elsif ( $_class =~ /^(BerkeleyDB)::(?:Btree|Hash|Queue|Recno)$/ ) {
+      eval "require $1" unless $INC{"$1.pm"};
    }
-   elsif ($_class =~ /^Tie::(?:Std|Extra)Hash$/ && !$INC{'Tie/Hash.pm'}) {
-      eval 'require Tie::Hash';
+   elsif ( $_class =~ /^(TokyoCabinet|KyotoCabinet)::[ABH]?DB$/ ) {
+      eval "require $1" unless $INC{"$1.pm"};
    }
-   elsif ($_class eq 'Tie::StdScalar' && !$INC{'Tie/Scalar.pm'}) {
-      eval 'require Tie::Scalar';
+   elsif ( $_class =~ /^Tie::(?:Std|Extra)Hash$/ ) {
+      eval "require Tie::Hash" unless $INC{'Tie/Hash.pm'};
+   }
+   elsif ( $_class eq 'Tie::StdArray' ) {
+      eval "require Tie::Array" unless $INC{'Tie/Array.pm'};
+   }
+   elsif ( $_class eq 'Tie::StdScalar' ) {
+      eval "require Tie::Scalar" unless $INC{'Tie/Scalar.pm'};
    }
 
    return 1 if eval q{
@@ -378,7 +388,7 @@ sub _use {
       $_class->can('TIEHASH')  || $_class->can('TIESCALAR')
    };
 
-   if (!exists $INC{ join('/',split(/::/,$_class)).'.pm' }) {
+   if ( !exists $INC{ join('/',split(/::/,$_class)).'.pm' } ) {
       # remove tainted'ness from $_class
       ($_class) = $_class =~ /(.*)/;
 
