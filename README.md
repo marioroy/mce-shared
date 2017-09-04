@@ -87,9 +87,20 @@ The next demonstration does the same thing using a MCE Model.
 
 ### Installation and Dependencies
 
+MCE::Shared enables extra functionality on systems with IO::FDPass installed.
+Without it, MCE::Shared is unable to send file descriptors to the shared-manager
+process. The use of IO::FDPass applies to Condvar, Queue, and Handle (mce_open).
+IO::FDpass isn't used for anything else.
+
 To install this module type the following:
 
+    # Appends IO::FDPass to PREREQ_PM if C compiler is available.
+
     perl Makefile.PL
+
+    # Or exclude the IO::FDPass check and not append to PREREQ_PM.
+
+    MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL
 
     make
     make test

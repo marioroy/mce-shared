@@ -519,10 +519,10 @@ code asynchronously.
 
 =head1 EXTRA FUNCTIONALITY
 
-MCE::Shared enables extra functionality on systems with L<IO::FDPass>
-installed. Without it, MCE::Shared is unable to send C<file descriptors> to
-the shared-manager process. The use of IO::FDPass applies to Condvar, Queue
-and Handle (mce_open). IO::FDpass isn't used for anything else.
+MCE::Shared enables extra functionality on systems with L<IO::FDPass> installed.
+Without it, MCE::Shared is unable to send file descriptors to the shared-manager
+process. The use of IO::FDPass applies to Condvar, Queue, and Handle (mce_open).
+IO::FDpass isn't used for anything else.
 
  use MCE::Shared;
 

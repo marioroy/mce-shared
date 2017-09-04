@@ -15,6 +15,9 @@ my $has_cc;
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 
 if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
+   local $SIG{'__DIE__'};
+   local $@;
+
    eval 'use IO::FDPass 1.1; 1' or do {
       if ( $^O eq 'MSWin32' ) {
          $has_cc = `gcc.exe --version 2>nul` || `cl.exe /? 2>nul`;
@@ -34,8 +37,6 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
 my %io_fdpass;
 
 if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_cc ) {
-   local $@; local $SIG{'__DIE__'};
-
    if ( $^O =~ /mingw|msys|cygwin/i ) {
       # cygwin and friends lack file-descriptor passing capability
    }
