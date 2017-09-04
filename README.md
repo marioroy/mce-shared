@@ -89,8 +89,8 @@ The next demonstration does the same thing using a MCE Model.
 
 MCE::Shared enables extra functionality on systems with IO::FDPass installed.
 Without it, MCE::Shared is unable to send file descriptors to the shared-manager
-process. The use of IO::FDPass applies to Condvar, Queue, and Handle (mce_open).
-IO::FDpass isn't used for anything else.
+process. The use applies to Condvar, Queue, and Handle (mce_open). IO::FDpass
+isn't used for anything else.
 
 To install this module type the following:
 
