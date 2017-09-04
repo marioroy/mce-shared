@@ -95,11 +95,9 @@ isn't used for anything else.
 To install this module type the following:
 
     # Appends IO::FDPass to PREREQ_PM if C compiler is available.
-
     perl Makefile.PL
 
     # Or exclude the IO::FDPass check and not append to PREREQ_PM.
-
     MCE_PREREQ_EXCLUDE_IO_FDPASS=1 perl Makefile.PL
 
     make
