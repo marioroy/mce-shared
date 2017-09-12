@@ -676,6 +676,7 @@ A handle helper class for use as a standalone or managed by L<MCE::Shared>.
 =head1 SYNOPSIS
 
  # non-shared or local construction for use by a single process
+ # shorter, mce_open is an alias for MCE::Shared::Handle::open
 
  use MCE::Shared::Handle;
 
@@ -687,6 +688,7 @@ A handle helper class for use as a standalone or managed by L<MCE::Shared>.
  mce_open my $fh, "<", "bio.fasta" or die "open error: $!";
 
  # construction for sharing with other threads and processes
+ # shorter, mce_open is an alias for MCE::Shared::open
 
  use MCE::Shared;
 

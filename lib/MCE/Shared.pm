@@ -671,6 +671,7 @@ a message and stop if open fails.
 See L<MCE::Shared::Handle> for chunk IO demonstrations.
 
  # non-shared or local construction for use by a single process
+ # shorter, mce_open is an alias for MCE::Shared::Handle::open
 
  use MCE::Shared::Handle;
 
@@ -680,6 +681,7 @@ See L<MCE::Shared::Handle> for chunk IO demonstrations.
  mce_open my $fh, "<", "file.log" or die "$!";
 
  # construction for sharing with other threads and processes
+ # shorter, mce_open is an alias for MCE::Shared::open
 
  use MCE::Shared;
 
