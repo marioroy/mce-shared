@@ -489,7 +489,7 @@ sub wait_one {
 sub yield {
    _croak('Usage: MCE::Hobo->yield()') if ref($_[0]);
    shift if ( defined $_[0] && $_[0] eq __PACKAGE__ );
-   my $pkg = "$$.$_tid.".caller();
+   my $pkg = $_SELF->{PKG};
 
    return unless ( my $mngd = $_MNGD->{$pkg} );
 
