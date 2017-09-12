@@ -909,9 +909,235 @@ by FETCH.
     };
  }
 
- MCE::Hobo->wait_all;
+ MCE::Hobo->waitall;
 
 =back
+
+=head1 DBM SHARING
+
+Construting a shared DBM object is possible starting with the 1.827 release.
+Supported modules are L<AnyDBM_File>, L<BerkeleyDB>, L<CDB_File>, L<DB_File>,
+L<GDBM_File>, L<NDBM_File>, L<ODBM_File>, L<SDBM_File>, L<SQLite_File>,
+L<Tie::Array::DBD>, and L<Tie::Hash::DBD>. The list includes
+L<Tokyo Cabinet|http://fallabs.com/tokyocabinet/> and
+L<Kyoto Cabinet|http://fallabs.com/kyotocabinet/>. Also, see forked version
+by L<Altice Labs|https://github.com/alticelabs/kyoto>. It contains an updated
+C<kyotocabinet> folder that builds successfully with recent compilers.
+
+Freeze-thaw during C<STORE>-C<FETCH> (for complex data) is handled
+automatically using Serial 3.015+ (if available) or Storable.
+The following provides shared-constructions for various DBM modules.
+
+=over 3
+
+=item AnyDBM_File
+
+ use MCE::Shared;
+ use Fcntl;
+ use AnyDBM_File;
+
+ BEGIN { @AnyDBM_File::ISA = qw( DB_File GDBM_File NDBM_File ODBM_File ); }
+
+ tie my %h1, 'MCE::Shared', { module => 'AnyDBM_File' },
+    'foo_a', O_CREAT|O_RDWR or die "open error: $!";
+
+=item BerkeleyDB
+
+ use MCE::Shared;
+ use BerkeleyDB;
+
+ tie my %h1, 'MCE::Shared', { module => 'BerkeleyDB::Hash' },
+    -Filename => 'foo_a', -Flags => DB_CREATE
+       or die "open error: $!";
+   
+ tie my %h2, 'MCE::Shared', { module => 'BerkeleyDB::Btree' },
+    -Filename => 'foo_b', -Flags => DB_CREATE
+       or die "open error: $!";
+
+ tie my @a1, 'MCE::Shared', { module => 'BerkeleyDB::Queue' },
+    -Filename => 'foo_c', -Flags => DB_CREATE
+       or die "open error: $!";
+
+ tie my @a2, 'MCE::Shared', { module => 'BerkeleyDB::Recno' },
+    -Filename => 'foo_d', -Flags => DB_CREATE -Len => 20
+       or die "open error: $!";
+
+=item DB_File
+
+ use MCE::Shared;
+ use Fcntl;
+ use DB_File;
+
+ # Use pre-defined references ( $DB_HASH, $DB_BTREE, $DB_RECNO ).
+
+ tie my %h1, 'MCE::Shared', { module => 'DB_File' },
+    'foo_a', O_CREAT|O_RDWR, 0640, $DB_HASH or die "open error: $!";
+
+ tie my %h2, 'MCE::Shared', { module => 'DB_File' },
+    'foo_b', O_CREAT|O_RDWR, 0640, $DB_BTREE or die "open error: $!";
+
+ tie my @a1, 'MCE::Shared', { module => 'DB_File' },
+    'foo_c', O_CREAT|O_RDWR, 0640, $DB_RECNO or die "open error: $!";
+
+ # Changing defaults - see DB_File for valid options.
+
+ my $opt_h = DB_File::HASHINFO->new();
+ my $opt_b = DB_File::BTREEINFO->new();
+ my $opt_r = DB_File::RECNOINFO->new();
+
+ $opt_h->{'cachesize'} = 12345;
+
+ tie my %h3, 'MCE::Shared', { module => 'DB_File' },
+    'foo_d', O_CREAT|O_RDWR, 0640, $opt_h or die "open error: $!";
+
+=item KyotoCabinet
+
+=item TokyoCabinet
+
+ use MCE::Shared;
+ use KyotoCabinet;
+ use TokyoCabinet;
+
+ # file extension denotes hash database
+
+ tie my %h1, 'MCE::Shared', { module => 'KyotoCabinet::DB' }, 'foo.kch',
+    KyotoCabinet::DB::OWRITER | KyotoCabinet::DB::OCREATE
+       or die "open error: $!";
+
+ tie my %h2, 'MCE::Shared', { module => 'TokyoCabinet::HDB' }, 'foo.tch',
+    TokyoCabinet::HDB::OWRITER | TokyoCabinet::HDB::OCREAT
+       or die "open error: $!";
+
+ # file extension denotes tree database
+
+ tie my %h3, 'MCE::Shared', { module => 'KyotoCabinet::DB' }, 'foo.kct',
+    KyotoCabinet::DB::OWRITER | KyotoCabinet::DB::OCREATE
+       or die "open error: $!";
+
+ tie my %h4, 'MCE::Shared', { module => 'TokyoCabinet::BDB' }, 'foo.tcb',
+    TokyoCabinet::BDB::OWRITER | TokyoCabinet::BDB::OCREAT
+       or die "open error: $!";
+
+ # on-memory hash database
+
+ tie my %h5, 'MCE::Shared', { module => 'KyotoCabinet::DB' }, '*';
+ tie my %h6, 'MCE::Shared', { module => 'TokyoCabinet::ADB' }, '*';
+
+ # on-memory tree database
+
+ tie my %h7, 'MCE::Shared', { module => 'KyotoCabinet::DB' }, '%#pccap=256m';
+ tie my %h8, 'MCE::Shared', { module => 'TokyoCabinet::ADB' }, '+';
+
+=item Tie::Array::DBD
+
+=item Tie::Hash::DBD
+
+ use MCE::Shared;
+ use Tie::Array::DBD;
+ use Tie::Hash::DBD;
+
+ # A valid string is required for the DSN argument, not a DBI handle.
+ # Do not specify the 'str' option for Tie::(Array|Hash)::DBD.
+ # Instead, see encoder-decoder methods described under Common API.
+
+ tie my @a1, 'MCE::Shared', { module => 'Tie::Array::DBD' },
+    'dbi:SQLite:dbname=foo_a.db', {
+       tbl => 't_tie_analysis',
+       key => 'h_key',
+       fld => 'h_value'
+    };
+
+ tie my %h1, 'MCE::Shared', { module => 'Tie::Hash::DBD' },
+    'dbi:SQLite:dbname=foo_h.db', {
+       tbl => 't_tie_analysis',
+       key => 'h_key',
+       fld => 'h_value'
+    };
+
+ tie my %h2, 'MCE::Shared', { module => 'Tie::Hash::DBD'},
+    'dbi:CSV:f_dir=.;f_ext=.csv/r;csv_null=1;csv_decode_utf8=0', {
+       tbl => 'mytable',
+       key => 'h_key',
+       fld => 'h_value'
+    };
+
+ # By default, Sereal 3.015+ is used for serialization if available.
+ # This overrides serialization from Sereal-or-Storable to JSON::XS.
+
+ use JSON::XS ();
+
+ tied(%ha2)->encoder( \&JSON::XS::encode_json );
+ tied(%ha2)->decoder( \&JSON::XS::decode_json );
+
+ $h2{'foo'} = 'plain value';
+ $h2{'bar'} = { @pairs };
+ $h2{'baz'} = [ @list ];
+
+=back
+
+=head1 DBM SHARING (CONT)
+
+Duplicate keys and DBM filters are not supported, just plain array and hash
+functionality. The OO interface provides better performance when needed.
+Use C<iterator> or C<next> for iterating over the elements.
+
+=over 3
+
+ use MCE::Hobo;
+ use MCE::Shared;
+ use Fcntl;
+ use DB_File;
+
+ unlink 'foo_a';
+
+ my $ob = tie my %h1, 'MCE::Shared', { module => 'DB_File' },
+    'foo_a', O_CREAT|O_RDWR, 0640, $DB_HASH or die "open error: $!";
+
+ $h1{key} = 'value';
+ my $val = $h1{key};
+
+ while ( my ($k, $v) = each %h1 ) {
+    print "1: $k => $v\n";
+ }
+
+ # object oriented fashion, faster
+
+ tied(%h1)->STORE( key1 => 'value1' );
+ my $val1 = tied(%h1)->FETCH('key1');
+
+ $ob->STORE( key2 => 'value2' );
+ my $val2 = $ob->FETCH('key2');
+
+ # non-parallel iteration
+
+ my $iter = $ob->iterator;
+ while ( my ($k, $v) = $iter->() ) {
+    print "2: $k => $v\n";
+ }
+
+ # parallel iteration
+
+ sub task {
+    while ( my ($k, $v) = $ob->next ) {
+       print "[$$] $k => $v\n";
+       sleep 1;
+    }
+ }
+
+ MCE::Hobo->create(\&task) for 1 .. 3;
+ MCE::Hobo->waitall;
+
+ $ob->rewind;
+
+ # undef $ob and $iter before %h1 when destroying manually
+
+ undef $ob;
+ undef $iter;
+
+ untie %h1;
+
+See also L<Tie::File Demonstration|/"TIE::FILE DEMONSTRATION">, at the end
+of the documentation.
 
 =head1 PDL SHARING
 
