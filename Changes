@@ -1,7 +1,7 @@
 
 Revision history for Perl module MCE::Shared.
 
-1.827 Tue Sep 12 05:00:00 EST 2017
+1.827 Tue Sep 12 16:00:00 EST 2017
 
   [BUG FIXES]
 
@@ -12,11 +12,11 @@ Revision history for Perl module MCE::Shared.
   * Refactored MCE::Hobo, MCE::Shared, and MCE::Shared::Server.
   * Preserve lexical type for numbers during IPC.
 
-  * Added encoder/decoder methods for overriding serialization.
-  * Added concurrent logger and Tie::File demonstrations to MCE::Shared.
-  * Added parallel HTTP get demonstration using AnyEvent to MCE::Hobo.
   * Added Coro and Win32::GUI to list for enabling posix_exit.
-  * Added "DBM Sharing" section to the POD documentation.
+  * Added encoder and decoder methods for overriding serialization.
+  * Added parallel HTTP get demonstration using AnyEvent to MCE::Hobo.
+  * Added Inline::Python, Logger, and Tie::File demonstrations to MCE::Shared.
+  * Added DBM-Sharing section to the POD documentation.
   * Added iterator method to MCE::Cache.
 
   * Improved auto-dereferencing for shared arrays, hashes, and scalars.

@@ -927,8 +927,9 @@ by L<Altice Labs|https://github.com/alticelabs/kyoto>. It contains an updated
 C<kyotocabinet> folder that builds successfully with recent compilers.
 
 Freeze-thaw during C<STORE>-C<FETCH> (for complex data) is handled
-automatically using Serial 3.015+ (if available) or Storable.
-The following provides shared-constructions for various DBM modules.
+automatically using Serial 3.015+ (if available) or Storable. Below, are
+constructions for sharing various DBM modules. The construction for
+C<CDB_File> is given in the prior section.
 
 =over 3
 
@@ -1797,6 +1798,82 @@ command in the pipeline.
 
  # ( "a_a", "b_b", "c_c" )
 
+=head1 INLINE::PYTHON DEMONSTRATION
+
+Sharing a Python class is possible, starting with the 1.827 release.
+The construction is simply calling share with the module option.
+Methods are accessible via the OO interface.
+
+ use strict;
+ use warnings;
+
+ #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ # Define Python class.
+ #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ package My::Class;
+
+ use Inline::Python qw( py_eval py_bind_class );
+
+ py_eval ( <<'END_OF_PYTHON_CLASS' );
+
+ class MyClass:
+     def __init__(self):
+         self.data = [0,0]
+
+     def set (self, key, value):
+         self.data[key] = value
+
+     def get (self, key):
+         try: return self.data[key]
+         except KeyError: return None
+
+     def incr (self, key):
+         try: self.data[key] = self.data[key] + 1
+         except KeyError: self.data[key] = 1
+
+ END_OF_PYTHON_CLASS
+
+ # Register methods for best performance.
+
+ py_bind_class(
+     'My::Class', '__main__', 'MyClass',
+     'set', 'get', 'incr'
+ );
+
+ 1;
+
+ #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ # Share Python class. Requires MCE::Shared 1.827+.
+ #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ package main;
+
+ use MCE::Hobo;
+ use MCE::Shared;
+
+ my $py1 = MCE::Shared->share({ module => 'My::Class' });
+ my $py2 = MCE::Shared->share({ module => 'My::Class' });
+
+ MCE::Shared->start;
+
+ $py1->set(0, 100);
+ $py2->set(1, 200);
+
+ die "Ooops" unless $py1->get(0) eq '100';
+ die "Ooops" unless $py2->get(1) eq '200';
+
+ sub task {
+     $py1->incr(0) for 1 .. 50000;
+     $py2->incr(1) for 1 .. 50000;
+ }
+
+ MCE::Hobo->create(\&task) for 1 .. 3;
+ MCE::Hobo->waitall;
+
+ print $py1->get(0), "\n";  # 150100
+ print $py2->get(1), "\n";  # 150200
+
 =head1 LOGGER DEMONSTRATION
 
 Often, the requirement may call for concurrent logging by many workers.
@@ -1807,7 +1884,7 @@ the old time-stamp value until one second has elapsed.
  use warnings;
 
  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- # Logger class. Requires MCE::Shared 1.827+.
+ # Logger class.
  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
  package My::Logger;
@@ -1906,7 +1983,7 @@ the old time-stamp value until one second has elapsed.
  1;
 
  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- # Main script.
+ # Main script. Requires MCE::Shared 1.827+.
  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
  package main;
