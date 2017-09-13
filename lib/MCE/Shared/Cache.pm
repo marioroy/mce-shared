@@ -16,7 +16,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.827';
+our $VERSION = '1.828';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
@@ -950,7 +950,7 @@ MCE::Shared::Cache - A hybrid LRU-plain cache helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Cache version 1.827
+This document describes MCE::Shared::Cache version 1.828
 
 =head1 DESCRIPTION
 

@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized once );
 
-our $VERSION = '1.827';
+our $VERSION = '1.828';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitSubroutinePrototypes)
@@ -414,7 +414,7 @@ MCE::Shared - MCE extension for sharing data supporting threads and processes
 
 =head1 VERSION
 
-This document describes MCE::Shared version 1.827
+This document describes MCE::Shared version 1.828
 
 =head1 SYNOPSIS
 
@@ -1083,8 +1083,6 @@ C<CDB_File> is given in the prior section.
 Duplicate keys and DBM filters are not supported, just plain array and hash
 functionality. The OO interface provides better performance when needed.
 Use C<iterator> or C<next> for iterating over the elements.
-
-=over 3
 
  use MCE::Hobo;
  use MCE::Shared;
