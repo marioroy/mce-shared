@@ -784,7 +784,7 @@ sub _heap_insert_high {
             print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
          }
          elsif (defined $_buf) {
-            if (!ref($_buf) && !looks_like_number($_buf)) {
+            if (!looks_like_number($_buf) && !ref($_buf)) {
                print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
             } else {
                $_buf = $_freeze->([ $_buf ]);
@@ -826,7 +826,7 @@ sub _heap_insert_high {
             my $_buf = $_Q->_dequeue();
 
             if (defined $_buf) {
-               if (!ref($_buf) && !looks_like_number($_buf)) {
+               if (!looks_like_number($_buf) && !ref($_buf)) {
                   print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
                } else {
                   $_buf = $_freeze->([ $_buf ]);
