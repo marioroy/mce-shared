@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.840';
+our $VERSION = '1.841';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -50,12 +50,14 @@ sub _croak {
 our ($HIGHEST, $LOWEST, $FIFO, $LIFO, $LILO, $FILO) = (1, 0, 1, 0, 1, 0);
 my  ($PORDER, $TYPE, $FAST, $AWAIT) = ($HIGHEST, $FIFO, 0, 0);
 
-my %_valid_fields_new = map { $_ => 1 } qw( await fast porder queue type );
-
 my $LF = "\012"; Internals::SvREADONLY($LF, 1);
 my $_has_threads = $INC{'threads.pm'} ? 1 : 0;
 my $_tid = $_has_threads ? threads->tid() : 0;
 my $_reset_flg = 1;
+
+my %_valid_fields_new = map { $_ => 1 } qw(
+   await barrier fast porder queue type
+);
 
 sub CLONE {
    $_tid = threads->tid() if $_has_threads;
@@ -104,14 +106,10 @@ sub new {
 
    # --------------------------------------------------------------------------
 
-   $_Q->{_await} = (exists $_argv{await} && defined $_argv{await})
-      ? $_argv{await} : $AWAIT;
-   $_Q->{_fast} = (exists $_argv{fast} && defined $_argv{fast})
-      ? $_argv{fast} : $FAST;
-   $_Q->{_porder} = (exists $_argv{porder} && defined $_argv{porder})
-      ? $_argv{porder} : $PORDER;
-   $_Q->{_type} = (exists $_argv{type} && defined $_argv{type})
-      ? $_argv{type} : $TYPE;
+   $_Q->{_await}  = defined $_argv{await}  ? $_argv{await}  : $AWAIT;
+   $_Q->{_fast}   = defined $_argv{fast}   ? $_argv{fast}   : $FAST;
+   $_Q->{_porder} = defined $_argv{porder} ? $_argv{porder} : $PORDER;
+   $_Q->{_type}   = defined $_argv{type}   ? $_argv{type}   : $TYPE;
 
    if (exists $_argv{queue}) {
       _croak('Queue: (queue) is not an ARRAY reference')
@@ -127,9 +125,10 @@ sub new {
    $_Q->{_init_pid} = $_has_threads ? $$ .'.'. $_tid : $$;
    $_Q->{_dsem} = 0 if $_Q->{_fast};
 
-   my $_caller = caller() eq 'MCE::Shared' ? caller(1) : caller();
+   my $_barrier = defined $_argv{barrier} ? $_argv{barrier} : 1;
+   my $_caller  = caller() eq 'MCE::Shared' ? caller(1) : caller();
 
-   if ($^O ne 'MSWin32' && $_tid == 0 && !$_Q->{_fast}) {
+   if ($^O ne 'MSWin32' && $_tid == 0 && !$_Q->{_fast} && $_barrier) {
       if ($_caller !~ /^MCE::/) {
          for my $_i (0 .. MUTEX_LOCKS - 1) {
             $_Q->{'_mutex_'.$_i} = MCE::Mutex->new( impl => 'Channel' );
@@ -140,12 +139,11 @@ sub new {
    MCE::Util::_sock_pair($_Q, qw(_qr_sock _qw_sock));
    MCE::Util::_sock_pair($_Q, qw(_ar_sock _aw_sock)) if $_Q->{_await};
 
-   if (exists $_argv{queue} && scalar @{ $_argv{queue} }) {
-      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
-   }
+   MCE::Util::_syswrite($_Q->{_qw_sock}, $LF)
+      if (exists $_argv{queue} && scalar @{ $_argv{queue} });
 
    MCE::Shared::Object::_reset(), $_reset_flg = ''
-      if $_reset_flg && $INC{'MCE/Shared/Server.pm'};
+      if ($_reset_flg && $INC{'MCE/Shared/Server.pm'});
 
    return $_Q;
 }
@@ -168,17 +166,9 @@ sub await {
 sub clear {
    my ($_Q) = @_;
 
-   if ($_Q->{_fast}) {
-      warn "Queue: (clear) is not allowed for fast => 1\n";
-   }
-   else {
-      if ($_Q->_has_data()) {
-         1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
-      }
-      %{ $_Q->{_datp} } = ();
-      @{ $_Q->{_datq} } = ();
-      @{ $_Q->{_heap} } = ();
-   }
+   %{ $_Q->{_datp} } = ();
+   @{ $_Q->{_datq} } = ();
+   @{ $_Q->{_heap} } = ();
 
    return;
 }
@@ -189,9 +179,7 @@ sub end {
    my ($_Q) = @_;
 
    if (!exists $_Q->{_ended}) {
-      if (!$_Q->{_nb_flag}) {
-         1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
-      }
+      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF) unless $_Q->{_nb_flag};
       $_Q->{_ended} = undef;
    }
 
@@ -210,7 +198,7 @@ sub enqueue {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
    }
 
    push @{ $_Q->{_datq} }, @_;
@@ -233,7 +221,7 @@ sub enqueuep {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
    }
 
    $_Q->_enqueuep($_p, @_);
@@ -248,7 +236,7 @@ sub dequeue {
    my ($_Q, $_cnt) = @_;
    my (@_items, $_buf, $_next, $_pending);
 
-   1 until sysread($_Q->{_qr_sock}, $_next, 1) || ($! && !$!{'EINTR'});
+   MCE::Util::_sysread($_Q->{_qr_sock}, $_next, 1);
 
    if (defined $_cnt && $_cnt ne '1') {
       _croak('Queue: (dequeue count argument) is not valid')
@@ -277,7 +265,7 @@ sub dequeue {
          if ($_pending) {
             $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
             for my $_i (1 .. $_pending) {
-               1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+               MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
             }
          }
          $_Q->{_dsem} = $_pending;
@@ -288,13 +276,11 @@ sub dequeue {
    }
    else {
       # Otherwise, never to exceed one byte in the channel
-      if ($_Q->_has_data()) {
-         1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
-      }
+      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF) if $_Q->_has_data();
    }
 
    if (exists $_Q->{_ended} && !$_Q->_has_data()) {
-      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
    }
 
    $_Q->{_nb_flag} = 0;
@@ -315,7 +301,7 @@ sub dequeue_nb {
    }
 
    if (!$_Q->{_nb_flag} && $_Q->_has_data()) {
-      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+      MCE::Util::_sysread($_Q->{_qr_sock}, my($_b), 1);
    }
 
    if (defined $_cnt && $_cnt ne '1') {
@@ -374,7 +360,7 @@ sub insert {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
    }
 
    if (abs($_i) > scalar @{ $_Q->{_datq} }) {
@@ -422,7 +408,7 @@ sub insertp {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
    }
 
    if (exists $_Q->{_datp}->{$_p} && scalar @{ $_Q->{_datp}->{$_p} }) {
@@ -710,7 +696,7 @@ sub _heap_insert_high {
          $_Q->{_tsem} = $_t;
 
          if ($_Q->pending() <= $_t) {
-            1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+            MCE::Util::_syswrite($_Q->{_aw_sock}, $LF);
          } else {
             $_Q->{_asem} += 1;
          }
@@ -759,7 +745,7 @@ sub _heap_insert_high {
                if ($_pending) {
                   $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
                   for my $_i (1 .. $_pending) {
-                     1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+                     MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
                   }
                }
                $_Q->{_dsem} = $_pending;
@@ -770,13 +756,11 @@ sub _heap_insert_high {
          }
          else {
             # Otherwise, never to exceed one byte in the channel
-            if ($_Q->_has_data()) {
-               1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
-            }
+            MCE::Util::_syswrite($_Q->{_qw_sock}, $LF) if $_Q->_has_data();
          }
 
          if (exists $_Q->{_ended} && !$_Q->_has_data()) {
-            1 until syswrite($_Q->{_qw_sock}, $LF) || ($! && !$!{'EINTR'});
+            MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
          }
 
          if ($_cnt) {
@@ -797,7 +781,7 @@ sub _heap_insert_high {
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
             for my $_i (1 .. $_Q->{_asem}) {
-               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+               MCE::Util::_syswrite($_Q->{_aw_sock}, $LF);
             }
             $_Q->{_asem} = 0;
          }
@@ -819,7 +803,7 @@ sub _heap_insert_high {
          };
 
          if (!$_Q->{_nb_flag} && $_Q->_has_data()) {
-            1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+            MCE::Util::_sysread($_Q->{_qr_sock}, my($_b), 1);
          }
 
          if ($_cnt == 1) {
@@ -860,7 +844,7 @@ sub _heap_insert_high {
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
             for my $_i (1 .. $_Q->{_asem}) {
-               1 until syswrite($_Q->{_aw_sock}, $LF) || ($! && !$!{'EINTR'});
+               MCE::Util::_syswrite($_Q->{_aw_sock}, $LF);
             }
             $_Q->{_asem} = 0;
          }
@@ -927,9 +911,10 @@ sub _req_queue {
    local $/ = $LF if ($/ ne $LF);
 
    $_dat_ex->();
+   $_[3]->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->unlock() if $_[3];
+
    print({$_DAT_W_SOCK} $_[0].$LF . $_chn.$LF),
    print({$_DAU_W_SOCK} $_[1]);
-   $_[3]->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->unlock() if $_[3];
 
    chomp(my $_len = <$_DAU_W_SOCK>);
    $_dat_un->(), return if ($_len < 0);
@@ -959,7 +944,7 @@ sub await {
    _req1('O~QUA', $_id.$LF . $_t.$LF);
 
    MCE::Util::_sock_ready($_Q->{_ar_sock}) if $_is_MSWin32;
-   1 until sysread($_Q->{_ar_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+   MCE::Util::_sysread($_Q->{_ar_sock}, my($_b), 1);
 
    return;
 }
@@ -980,15 +965,13 @@ sub dequeue {
 
    if (exists $_Q->{'_mutex_0'}) {
       $_Q->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->lock();
-
-      MCE::Util::_sock_ready($_Q->{_qr_sock}) if $_is_MSWin32;
-      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+      MCE::Util::_sysread($_Q->{_qr_sock}, my($_b), 1);
 
       _req_queue('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, $_Q);
    }
    else {
       MCE::Util::_sock_ready($_Q->{_qr_sock}) if $_is_MSWin32;
-      1 until sysread($_Q->{_qr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+      MCE::Util::_sysread($_Q->{_qr_sock}, my($_b), 1);
 
       _req_queue('O~QUD', $_id.$LF . $_cnt.$LF, $_cnt, undef);
    }
@@ -1035,7 +1018,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.840
+This document describes MCE::Shared::Queue version 1.841
 
 =head1 DESCRIPTION
 
@@ -1107,8 +1090,8 @@ the shared-manager process, otherwise locally.
 
 =item new ( [ options ] )
 
-Constructs a new object. Supported options are queue, porder, type, await, and
-fast.
+Constructs a new object. Supported options are queue, porder, type, await,
+barrier, and fast.
 
  # non-shared or local construction for use by a single process
 
@@ -1123,7 +1106,7 @@ fast.
  $q5 = MCE::Shared::Queue->new( type   => $MCE::Shared::Queue::FIFO );
  $q6 = MCE::Shared::Queue->new( type   => $MCE::Shared::Queue::LIFO );
 
- $q7 = MCE::Shared::Queue->new( await  => 1 );
+ $q7 = MCE::Shared::Queue->new( await  => 1, barrier => 0 );
  $q8 = MCE::Shared::Queue->new( fast   => 1 );
 
  # construction for sharing with other threads and processes
@@ -1140,17 +1123,21 @@ fast.
  $q5 = MCE::Shared->queue( type   => $MCE::Shared::Queue::FIFO );
  $q6 = MCE::Shared->queue( type   => $MCE::Shared::Queue::LIFO );
 
- $q7 = MCE::Shared->queue( await  => 1 );
+ $q7 = MCE::Shared->queue( await  => 1, barrier => 0 );
  $q8 = MCE::Shared->queue( fast   => 1 );
 
 The C<await> option, when enabled, allows workers to block (semaphore-like)
 until the number of items pending is equal or less than a threshold value.
 The C<await> method is described below.
 
+On Unix platforms, C<barrier> mode (enabled by default) prevents many workers
+from dequeuing simultaneously to lessen overhead for the OS kernel. Specify 0
+to disable barrier mode and not allocate sockets. The barrier option has no
+effect if constructing the queue inside a thread or enabling C<fast>.
+
 The C<fast> option speeds up dequeues and is not enabled by default. It is
-beneficial for queues not calling (->clear or ->dequeue_nb) and not altering
-the optional count value while running; e.g. ->dequeue($count). Basically,
-do not enable 'fast' if varying the count dynamically.
+beneficial for queues not calling (->dequeue_nb) and not altering the count
+value while running; e.g. ->dequeue($count).
 
 =item await ( pending_threshold )
 

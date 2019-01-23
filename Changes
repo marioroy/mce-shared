@@ -1,6 +1,13 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.841 Wed Jan 23 08:30:00 EST 2019
+
+  * IPC update, raising reliability across multiple platforms.
+  * Improved hack for the Windows platform in MCE::Shared::Server.
+  * Added barrier option to MCE::Shared::Queue: allows one to disable.
+  * Bumped MCE dependency to 1.838.
+
 1.840 Thu Jan 03 23:30:00 EST 2019
 
   * Improved destroy and exit cleanup in MCE::Shared::Server.

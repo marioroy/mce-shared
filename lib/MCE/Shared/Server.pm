@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized numeric once );
 
 package MCE::Shared::Server;
 
-our $VERSION = '1.840';
+our $VERSION = '1.841';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -39,7 +39,7 @@ BEGIN {
    $_has_threads = $INC{'threads.pm'} ? 1 : 0;
    $_spawn_child = $_has_threads  ? 0 : 1;
 
-   if (!exists $INC{'PDL.pm'}) {
+   if (!defined $INC{'PDL.pm'}) {
       eval '
          use Sereal::Encoder 3.015 qw( encode_sereal );
          use Sereal::Decoder 3.015 qw( decode_sereal );
@@ -68,7 +68,7 @@ use Scalar::Util qw( blessed looks_like_number reftype weaken );
 use Socket qw( SOL_SOCKET SO_RCVBUF );
 use Time::HiRes qw( alarm sleep time );
 
-use MCE::Util ();
+use MCE::Util 1.838 ();
 use MCE::Signal ();
 use MCE::Mutex ();
 use bytes;
@@ -315,7 +315,7 @@ sub _share {
 
          if ( $_class->isa('Tie::File') ) {
             # enable autoflush, enable raw layer
-            select(( select($_obj{ $_id }->{'fh'}), $| = 1 )[0]);
+            $_obj{ $_id }->{'fh'}->autoflush(1);
             binmode($_obj{ $_id }->{'fh'}, ':raw');
          }
 
@@ -361,6 +361,10 @@ sub _start {
       if ($^O ne 'aix' && $^O ne 'linux');
 
    MCE::Shared::Object::_start();
+
+   local $SIG{TTIN}  unless $_is_MSWin32;
+   local $SIG{TTOU}  unless $_is_MSWin32;
+   local $SIG{WINCH} unless $_is_MSWin32;
 
    if ($_spawn_child) {
       $_svr_pid = fork();
@@ -1113,37 +1117,14 @@ sub _loop {
    # Call on hash function.
 
    if ($_is_MSWin32) {
-      # The normal loop hangs on Windows when processes/threads start/exit.
-      # Using ioctl() properly, http://www.perlmonks.org/?node_id=780083
-
-      my $_val_bytes = "\x00\x00\x00\x00";
-      my $_ptr_bytes = unpack( 'I', pack('P', $_val_bytes) );
-      my ($_count, $_nbytes, $_start);
+      MCE::Util::_nonblocking($_DAT_R_SOCK, 1);
 
       while (!$_done) {
-         $_start = time, $_count = 1;
+         MCE::Util::_sysread($_DAT_R_SOCK, $_func, 8);
+         last() unless length($_func) == 8;
+         $_DAU_R_SOCK = $_channels->[ substr($_func, -2, 2, '') ];
 
-         # MSWin32 FIONREAD
-         IOCTL: ioctl($_DAT_R_SOCK, 0x4004667f, $_ptr_bytes);
-
-         unless ($_nbytes = unpack('I', $_val_bytes)) {
-            if ($_count) {
-                # delay after a while to not consume a CPU core
-                $_count = 0 if ++$_count % 50 == 0 && time - $_start > 0.030;
-            } else {
-                sleep 0.030;
-            }
-            goto IOCTL;
-         }
-
-         do {
-            sysread($_DAT_R_SOCK, $_func, 8);
-            $_done = 1, last() unless length($_func) == 8;
-            $_DAU_R_SOCK = $_channels->[ substr($_func, -2, 2, '') ];
-
-            $_output_function{$_func}();
-
-         } while (($_nbytes -= 8) >= 8);
+         $_output_function{$_func}();
       }
    }
    else {
@@ -1295,12 +1276,12 @@ sub _start {
    # inlined for performance
    $_dat_ex = sub {
       my $_pid = $_has_threads ? $$ .'.'. $_tid : $$;
-      sysread($_DAT_LOCK->{_r_sock}, my($b), 1), $_DAT_LOCK->{ $_pid } = 1
+      MCE::Util::_sysread($_DAT_LOCK->{_r_sock}, my($b), 1), $_DAT_LOCK->{ $_pid } = 1
          unless $_DAT_LOCK->{ $_pid };
    };
    $_dat_un = sub {
       my $_pid = $_has_threads ? $$ .'.'. $_tid : $$;
-      syswrite($_DAT_LOCK->{_w_sock}, '0'), $_DAT_LOCK->{ $_pid } = 0
+      MCE::Util::_syswrite($_DAT_LOCK->{_w_sock}, '0'), $_DAT_LOCK->{ $_pid } = 0
          if $_DAT_LOCK->{ $_pid };
    };
 
@@ -1830,7 +1811,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.840
+This document describes MCE::Shared::Server version 1.841
 
 =head1 DESCRIPTION
 

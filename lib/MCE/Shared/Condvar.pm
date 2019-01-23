@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.840';
+our $VERSION = '1.841';
 
 use MCE::Shared::Base ();
 use MCE::Util ();
@@ -150,7 +150,7 @@ sub len {
             print {$_DAU_R_SOCK} $LF;
          };
          for my $_i (1 .. $_var->{_count}) {
-            1 until syswrite($_var->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
+            MCE::Util::_syswrite($_var->{_cw_sock}, $LF);
          }
 
          $_var->{_count} = 0;
@@ -167,7 +167,7 @@ sub len {
             print {$_DAU_R_SOCK} $LF;
          };
          if ( $_var->{_count} >= 0 ) {
-            1 until syswrite($_var->{_cw_sock}, $LF) || ($! && !$!{'EINTR'});
+            MCE::Util::_syswrite($_var->{_cw_sock}, $LF);
             $_var->{_count} -= 1;
          }
 
@@ -323,7 +323,7 @@ sub timedwait {
       die "alarm clock restart\n"
          if $_is_MSWin32 && MCE::Util::_sock_ready($_CV->{_cr_sock}, $_timeout);
 
-      1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+      MCE::Util::_sysread($_CV->{_cr_sock}, my($_b), 1);
 
       alarm 0 unless $_is_MSWin32;
    };
@@ -351,7 +351,7 @@ sub wait {
    $_CV->{_mutex}->unlock();
 
    MCE::Util::_sock_ready($_CV->{_cr_sock}) if $_is_MSWin32;
-   1 until sysread($_CV->{_cr_sock}, my($_b), 1) || ($! && !$!{'EINTR'});
+   MCE::Util::_sysread($_CV->{_cr_sock}, my($_b), 1);
 
    return 1;
 }
@@ -372,7 +372,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.840
+This document describes MCE::Shared::Condvar version 1.841
 
 =head1 DESCRIPTION
 

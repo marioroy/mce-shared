@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.840';
+our $VERSION = '1.841';
 
 ## no critic (InputOutput::ProhibitTwoArgOpen)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -21,6 +21,7 @@ our $VERSION = '1.840';
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use MCE::Shared::Base ();
+use Errno ();
 use bytes;
 
 my $LF = "\012"; Internals::SvREADONLY($LF, 1);
@@ -31,7 +32,7 @@ sub _croak {
 }
 
 sub import {
-   if (!exists $INC{'MCE/Shared.pm'}) {
+   if (!defined $INC{'MCE/Shared.pm'}) {
       no strict 'refs'; no warnings 'redefine';
       *{ caller().'::mce_open' } = \&open;
    }
@@ -232,9 +233,9 @@ sub WRITE {
           : ( @_ == 3 )
               ? syswrite($_[0], $_[1], $_[2] - $wrote, $wrote)
               : syswrite($_[0], $_[1], $_[2] - $wrote, $_[3] + $wrote)
-      ) || do {
+      ) or do {
          if ( $! ) {
-            redo WRITE if $!{'EINTR'};
+            redo WRITE if $! == Errno::EINTR();
             return undef;
          }
       };
@@ -446,9 +447,9 @@ sub WRITE {
          WRITE: {
             $_wrote += ( syswrite (
                $_obj->{ $_id }, $_buf, length($_buf) - $_wrote, $_wrote
-            )) || do {
+            )) or do {
                if ( $! ) {
-                  redo WRITE if $!{'EINTR'};
+                  redo WRITE if $! == Errno::EINTR();
                   print {$_DAU_R_SOCK} ''.$LF;
 
                   return;
@@ -667,7 +668,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.840
+This document describes MCE::Shared::Handle version 1.841
 
 =head1 DESCRIPTION
 

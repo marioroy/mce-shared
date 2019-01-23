@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized once redefine );
 
 package MCE::Hobo;
 
-our $VERSION = '1.840';
+our $VERSION = '1.841';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -185,6 +185,10 @@ sub create {
    }
 
    # ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~ ~~~
+
+   local $SIG{TTIN}  unless $_is_MSWin32;
+   local $SIG{TTOU}  unless $_is_MSWin32;
+   local $SIG{WINCH} unless $_is_MSWin32;
 
    my @args = @_; @_ = ();  # To avoid (Scalars leaked: N) messages
    my $pid  = fork();
@@ -569,11 +573,10 @@ sub _dispatch {
    $SIG{TERM} = $SIG{INT} = $SIG{HUP} = \&_trap;
    $SIG{QUIT} = \&_quit;
 
-   # IO::Handle->autoflush not available in older Perl.
    {
       local $!;
-      select(( select(*STDERR), $| = 1 )[0]) if defined(fileno *STDERR);
-      select(( select(*STDOUT), $| = 1 )[0]) if defined(fileno *STDOUT);
+      (*STDERR)->autoflush(1) if defined( fileno *STDERR );
+      (*STDOUT)->autoflush(1) if defined( fileno *STDOUT );
    }
 
    # Run task.
@@ -616,11 +619,13 @@ sub _exit {
 
    threads->exit($exit_status) if ( $_has_threads && $_is_MSWin32 );
 
-   $SIG{HUP} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub {
-      $SIG{$_[0]} = $SIG{INT} = sub { };
-      CORE::kill($_[0], getppid()) if ( $_[0] eq 'INT' && !$_is_MSWin32 );
-      CORE::kill('KILL', $$);
-   };
+   if ( ! $_tid ) {
+      $SIG{HUP} = $SIG{INT} = $SIG{QUIT} = $SIG{TERM} = sub {
+         $SIG{$_[0]} = $SIG{INT} = sub { };
+         CORE::kill($_[0], getppid()) if ( $_[0] eq 'INT' && !$_is_MSWin32 );
+         CORE::kill('KILL', $$);
+      };
+   }
 
    my $posix_exit = ( exists $_SELF->{posix_exit} )
       ? $_SELF->{posix_exit} : $_MNGD->{ $_SELF->{PKG} }{posix_exit};
@@ -814,7 +819,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.840
+This document describes MCE::Hobo version 1.841
 
 =head1 SYNOPSIS
 
