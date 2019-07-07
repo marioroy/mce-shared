@@ -80,7 +80,7 @@ WriteMakefile(
       'Carp'         => 0,
       'Errno'        => 0,
       'IO::Handle'   => 0,
-      'MCE'          => 1.838,
+      'MCE'          => 1.839,
       'POSIX'        => 0,
       'Scalar::Util' => 0,
       'Socket'       => 0,

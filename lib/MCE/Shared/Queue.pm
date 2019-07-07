@@ -25,7 +25,7 @@ use MCE::Mutex ();
 use constant {
    MAX_DQ_DEPTH => 192,  # Maximum dequeue notifications
 
-   MUTEX_LOCKS  => 6,    # Number of mutex locks for 1st level defense
+   MUTEX_LOCKS  => 5,    # Number of mutex locks for 1st level defense
                          # against many workers waiting to dequeue
 };
 
@@ -139,7 +139,7 @@ sub new {
    MCE::Util::_sock_pair($_Q, qw(_qr_sock _qw_sock));
    MCE::Util::_sock_pair($_Q, qw(_ar_sock _aw_sock)) if $_Q->{_await};
 
-   MCE::Util::_syswrite($_Q->{_qw_sock}, $LF)
+   syswrite($_Q->{_qw_sock}, $LF)
       if (exists $_argv{queue} && scalar @{ $_argv{queue} });
 
    MCE::Shared::Object::_reset(), $_reset_flg = ''
@@ -179,7 +179,7 @@ sub end {
    my ($_Q) = @_;
 
    if (!exists $_Q->{_ended}) {
-      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF) unless $_Q->{_nb_flag};
+      syswrite($_Q->{_qw_sock}, $LF) unless $_Q->{_nb_flag};
       $_Q->{_ended} = undef;
    }
 
@@ -198,7 +198,7 @@ sub enqueue {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+      syswrite($_Q->{_qw_sock}, $LF);
    }
 
    push @{ $_Q->{_datq} }, @_;
@@ -221,7 +221,7 @@ sub enqueuep {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+      syswrite($_Q->{_qw_sock}, $LF);
    }
 
    $_Q->_enqueuep($_p, @_);
@@ -265,7 +265,7 @@ sub dequeue {
          if ($_pending) {
             $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
             for my $_i (1 .. $_pending) {
-               MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+               syswrite($_Q->{_qw_sock}, $LF);
             }
          }
          $_Q->{_dsem} = $_pending;
@@ -276,11 +276,11 @@ sub dequeue {
    }
    else {
       # Otherwise, never to exceed one byte in the channel
-      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF) if $_Q->_has_data();
+      syswrite($_Q->{_qw_sock}, $LF) if $_Q->_has_data();
    }
 
    if (exists $_Q->{_ended} && !$_Q->_has_data()) {
-      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+      syswrite($_Q->{_qw_sock}, $LF);
    }
 
    $_Q->{_nb_flag} = 0;
@@ -360,7 +360,7 @@ sub insert {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+      syswrite($_Q->{_qw_sock}, $LF);
    }
 
    if (abs($_i) > scalar @{ $_Q->{_datq} }) {
@@ -408,7 +408,7 @@ sub insertp {
       return;
    }
    if (!$_Q->{_nb_flag} && !$_Q->_has_data()) {
-      MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+      syswrite($_Q->{_qw_sock}, $LF);
    }
 
    if (exists $_Q->{_datp}->{$_p} && scalar @{ $_Q->{_datp}->{$_p} }) {
@@ -696,7 +696,7 @@ sub _heap_insert_high {
          $_Q->{_tsem} = $_t;
 
          if ($_Q->pending() <= $_t) {
-            MCE::Util::_syswrite($_Q->{_aw_sock}, $LF);
+            syswrite($_Q->{_aw_sock}, $LF);
          } else {
             $_Q->{_asem} += 1;
          }
@@ -745,7 +745,7 @@ sub _heap_insert_high {
                if ($_pending) {
                   $_pending = MAX_DQ_DEPTH if ($_pending > MAX_DQ_DEPTH);
                   for my $_i (1 .. $_pending) {
-                     MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+                     syswrite($_Q->{_qw_sock}, $LF);
                   }
                }
                $_Q->{_dsem} = $_pending;
@@ -756,11 +756,11 @@ sub _heap_insert_high {
          }
          else {
             # Otherwise, never to exceed one byte in the channel
-            MCE::Util::_syswrite($_Q->{_qw_sock}, $LF) if $_Q->_has_data();
+            syswrite($_Q->{_qw_sock}, $LF) if $_Q->_has_data();
          }
 
          if (exists $_Q->{_ended} && !$_Q->_has_data()) {
-            MCE::Util::_syswrite($_Q->{_qw_sock}, $LF);
+            syswrite($_Q->{_qw_sock}, $LF);
          }
 
          if ($_cnt) {
@@ -768,7 +768,7 @@ sub _heap_insert_high {
             print {$_DAU_R_SOCK} length($_buf).'1'.$LF, $_buf;
          }
          elsif (defined $_buf) {
-            if (!looks_like_number($_buf) && !ref($_buf)) {
+            if (!ref($_buf)) {
                print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
             } else {
                $_buf = $_freeze->([ $_buf ]);
@@ -781,7 +781,7 @@ sub _heap_insert_high {
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
             for my $_i (1 .. $_Q->{_asem}) {
-               MCE::Util::_syswrite($_Q->{_aw_sock}, $LF);
+               syswrite($_Q->{_aw_sock}, $LF);
             }
             $_Q->{_asem} = 0;
          }
@@ -810,7 +810,7 @@ sub _heap_insert_high {
             my $_buf = $_Q->_dequeue();
 
             if (defined $_buf) {
-               if (!looks_like_number($_buf) && !ref($_buf)) {
+               if (!ref($_buf)) {
                   print {$_DAU_R_SOCK} length($_buf).'0'.$LF, $_buf;
                } else {
                   $_buf = $_freeze->([ $_buf ]);
@@ -844,7 +844,7 @@ sub _heap_insert_high {
 
          if ($_Q->{_await} && $_Q->{_asem} && $_Q->pending() <= $_Q->{_tsem}) {
             for my $_i (1 .. $_Q->{_asem}) {
-               MCE::Util::_syswrite($_Q->{_aw_sock}, $LF);
+               syswrite($_Q->{_aw_sock}, $LF);
             }
             $_Q->{_asem} = 0;
          }
@@ -886,7 +886,7 @@ use warnings;
 no warnings qw( threads recursion uninitialized numeric once );
 
 use constant {
-   MUTEX_LOCKS => 6,  # Number of mutex locks for 1st level defense
+   MUTEX_LOCKS => 5,  # Number of mutex locks for 1st level defense
                       # against many workers waiting to dequeue
 };
 
@@ -896,11 +896,11 @@ no overloading;
 
 my $_is_MSWin32 = ($^O eq 'MSWin32') ? 1 : 0;
 
-my ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
+my ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
     $_freeze, $_thaw, $_pending);
 
 sub _init_queue {
-   ($_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
+   ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
     $_freeze, $_thaw) = @_;
 
    return;
@@ -910,18 +910,22 @@ sub _req_queue {
    local $\ = undef if (defined $\);
    local $/ = $LF if ($/ ne $LF);
 
-   $_dat_ex->();
+   CORE::lock $_DAT_LOCK if $_is_MSWin32;
+   $_dat_ex->() if !$_is_MSWin32;
    $_[3]->{'_mutex_'.( $_chn % MUTEX_LOCKS )}->unlock() if $_[3];
 
    print({$_DAT_W_SOCK} $_[0].$LF . $_chn.$LF),
    print({$_DAU_W_SOCK} $_[1]);
 
    chomp(my $_len = <$_DAU_W_SOCK>);
-   $_dat_un->(), return if ($_len < 0);
+   if ($_len < 0) {
+      $_dat_un->() if !$_is_MSWin32;
+      return;
+   }
 
    my $_frozen = chop($_len);
    read $_DAU_W_SOCK, my($_buf), $_len;
-   $_dat_un->();
+   $_dat_un->() if !$_is_MSWin32;
 
    ($_[2] == 1)
       ? ($_frozen) ? $_thaw->($_buf)[0] : $_buf
@@ -1086,9 +1090,9 @@ the shared-manager process, otherwise locally.
 
 =head1 API DOCUMENTATION
 
-=over 3
+=head2 MCE::Shared::Queue->new ( [ options ] )
 
-=item new ( [ options ] )
+=head2 MCE::Shared->queue ( [ options ] )
 
 Constructs a new object. Supported options are queue, porder, type, await,
 barrier, and fast.
@@ -1139,7 +1143,7 @@ The C<fast> option speeds up dequeues and is not enabled by default. It is
 beneficial for queues not calling (->dequeue_nb) and not altering the count
 value while running; e.g. ->dequeue($count).
 
-=item await ( pending_threshold )
+=head2 await ( pending_threshold )
 
 Waits until the queue drops down to threshold items. The C<await> method is
 beneficial when wanting to throttle worker(s) appending to the queue. Perhaps,
@@ -1182,13 +1186,13 @@ increasing too high. Below, the number of items pending will never go above 20.
     }
  };
 
-=item clear ( )
+=head2 clear ( )
 
 Clears the queue of any items.
 
  $q->clear;
 
-=item end ( )
+=head2 end ( )
 
 Stops the queue from receiving more items. Any worker blocking on C<dequeue>
 will be unblocked automatically. Subsequent calls to C<dequeue> will behave
@@ -1204,21 +1208,21 @@ depends on how many items workers dequeue at a time.
  $q->enqueue((undef) x ($N_workers * 2));  # $q->dequeue(2)  2 items
  $q->enqueue((undef) x ($N_workers * N));  # $q->dequeue(N)  N items
 
-=item enqueue ( item [, item, ... ] )
+=head2 enqueue ( item [, item, ... ] )
 
 Appends a list of items onto the end of the normal queue.
 
  $q->enqueue( 'foo' );
  $q->enqueue( 'bar', 'baz' );
 
-=item enqueuep ( priority, item [, item, ... ] )
+=head2 enqueuep ( priority, item [, item, ... ] )
 
 Appends a list of items onto the end of the priority queue with priority.
 
  $q->enqueue( $priority, 'foo' );
  $q->enqueue( $priority, 'bar', 'baz' );
 
-=item dequeue ( [ count ] )
+=head2 dequeue ( [ count ] )
 
 Returns the requested number of items (default 1) from the queue. Priority
 data will always dequeue first before any data from the normal queue.
@@ -1246,7 +1250,7 @@ which will block until the requested number of items are available.
     ...
  }
 
-=item dequeue_nb ( [ count ] )
+=head2 dequeue_nb ( [ count ] )
 
 Returns the requested number of items (default 1) from the queue. Like with
 dequeue, priority data will always dequeue first. This method is non-blocking
@@ -1255,7 +1259,7 @@ and returns C<undef> in the absence of data.
  $q->dequeue_nb( 2 );
  $q->dequeue_nb; # default 1
 
-=item insert ( index, item [, item, ... ] )
+=head2 insert ( index, item [, item, ... ] )
 
 Adds the list of items to the queue at the specified index position (0 is the
 head of the list). The head of the queue is that item which would be removed
@@ -1271,12 +1275,12 @@ by a call to dequeue.
  $q->insert(1, 'foo', 'bar');
  # Queue now contains: 1, 2, 3, 'foo', 'bar', 4
 
-=item insertp ( priority, index, item [, item, ... ] )
+=head2 insertp ( priority, index, item [, item, ... ] )
 
 Adds the list of items to the queue at the specified index position with
 priority. The behavior is similarly to C<$q->insert> otherwise.
 
-=item pending ( )
+=head2 pending ( )
 
 Returns the number of items in the queue. The count includes both normal
 and priority data. Returns C<undef> if the queue has been ended, and there
@@ -1289,7 +1293,7 @@ are no more items in the queue.
  print $q->pending(), "\n";
  # Output: 4
 
-=item peek ( [ index ] )
+=head2 peek ( [ index ] )
 
 Returns an item from the normal queue, at the specified index, without
 dequeuing anything. It defaults to the head of the queue if index is not
@@ -1308,13 +1312,13 @@ call to dequeue. Negative index values are supported, similarly to arrays.
  print $q->peek(1), ' ', $q->peek(-2), "\n";
  # Output: 4 2
 
-=item peekp ( priority [, index ] )
+=head2 peekp ( priority [, index ] )
 
 Returns an item from the queue with priority, at the specified index, without
 dequeuing anything. It defaults to the head of the queue if index is not
 specified. The behavior is similarly to C<$q->peek> otherwise.
 
-=item peekh ( [ index ] )
+=head2 peekh ( [ index ] )
 
 Returns an item from the head of the heap or at the specified index.
 
@@ -1334,7 +1338,7 @@ Returns an item from the head of the heap or at the specified index.
  print $q->peekh(0), "\n";
  # Output: 4
 
-=item heap ( )
+=head2 heap ( )
 
 Returns an array containing the heap data. Heap data consists of priority
 numbers, not the data.
@@ -1345,27 +1349,25 @@ numbers, not the data.
  @h = $q->heap;   # $MCE::Shared::Queue::LOWEST
  # Heap contains: 4, 5, 6
 
-=back
-
 =head1 ACKNOWLEDGMENTS
 
 =over 3
 
-=item L<List::BinarySearch>
+=item * L<List::BinarySearch>
 
 The bsearch_num_pos method was helpful for accommodating the highest and lowest
 order in MCE::Shared::Queue.
 
-=item L<POE::Queue::Array>
+=item * L<POE::Queue::Array>
 
 For extra optimization, two if statements were adopted for checking if the item
 belongs at the end or head of the queue.
 
-=item L<List::Priority>
+=item * L<List::Priority>
 
 MCE::Shared::Queue supports both normal and priority queues.
 
-=item L<Thread::Queue>
+=item * L<Thread::Queue>
 
 Thread::Queue is used as a template for identifying and documenting the methods.
 MCE::Shared::Queue is not fully compatible due to supporting normal and priority
