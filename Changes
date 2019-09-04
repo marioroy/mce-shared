@@ -1,6 +1,12 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.848 Tue Sep 03 23:30:00 EST 2019
+
+  * Fixed broken examples in the MCE::Shared documentation.
+
+  * Bumped MCE dependency to 1.848.
+
 1.847 Mon Sep 02 23:30:00 EST 2019
 
   * Obsolete RedHat MCE-Shared-1.841-Sereal-deps.patch file. This patch file
