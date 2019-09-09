@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized numeric once );
 
 package MCE::Shared::Server;
 
-our $VERSION = '1.849';
+our $VERSION = '1.850';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -173,10 +173,7 @@ sub _new {
 
    my ($_id, $_len);
 
-   my $_chn = ($_has_threads)
-      ? $_tid % $_SVR->{_data_channels} + 1
-      : abs($$) % $_SVR->{_data_channels} + 1;
-
+   my $_chn        = $_SVR->{_data_channels} + 1;
    my $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
    my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
@@ -237,10 +234,7 @@ sub _new {
 sub _incr_count {
    return unless $_svr_pid;
 
-   my $_chn = ($_has_threads)
-      ? $_tid % $_SVR->{_data_channels} + 1
-      : abs($$) % $_SVR->{_data_channels} + 1;
-
+   my $_chn        = $_SVR->{_data_channels} + 1;
    my $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
    my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
@@ -365,7 +359,7 @@ sub _start {
 
    $_SVR = { _data_channels => $_data_channels };
 
-   # The extra channel is reserved for _get_hobo_data and export.
+   # Defaults to misc channel used by _new, _get_hobo_data, and export.
    MCE::Util::_sock_pair($_SVR, qw(_dat_r_sock _dat_w_sock), $_)
       for (0 .. $_data_channels + 1);
 
@@ -373,14 +367,14 @@ sub _start {
       if ($^O ne 'aix' && $^O ne 'linux');
 
    if ($_is_MSWin32) {
-      for (1 .. $_data_channels) {
+      for (1 .. $_data_channels + 1) {
          my $_mutex;
          $_SVR->{'_mutex_'.$_} = threads::shared::share($_mutex);
       }
    }
    else {
       $_SVR->{'_mutex_'.$_} = MCE::Mutex->new( impl => 'Channel' )
-         for (1 .. $_data_channels);
+         for (1 .. $_data_channels + 1);
    }
 
    MCE::Shared::Object::_start();
@@ -444,7 +438,7 @@ sub _stop {
 
       MCE::Util::_destroy_socks($_SVR, qw( _dat_w_sock _dat_r_sock ));
 
-      for my $_i (1 .. $_SVR->{_data_channels}) {
+      for my $_i (1 .. $_SVR->{_data_channels} + 1) {
          delete $_SVR->{'_mutex_'.$_i};
       }
 
@@ -1307,7 +1301,7 @@ sub DESTROY {
          delete($_new{ $_id }), delete($_ob2{ $_id }),
          delete($_ob3{"$_id:count"});
 
-         _req1('M~DES', $_id.$LF);
+         _req0('M~DES', $_id.$LF);
       }
    }
 
@@ -1341,7 +1335,7 @@ sub _reset {
 }
 
 sub _start {
-   $_chn        = 1;
+   $_chn        = $_SVR->{_data_channels} + 1;
    $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
    $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
    $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
@@ -1466,9 +1460,6 @@ sub _auto {
 # Called by MCE::Hobo ( ->join, ->wait_one ).
 
 sub _get_hobo_data {
-   my $_chn        = $_SVR->{_data_channels} + 1;
-   my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
-
    local $\ = undef if (defined $\);
    local $/ = $LF if ($/ ne $LF);
 
@@ -1493,8 +1484,31 @@ sub _get_hobo_data {
    return ($_result, $_error);
 }
 
-# Called by await, CLOSE, DESTROY, destroy, rewind, broadcast, signal,
-# timedwait, and wait.
+# Called by CLOSE, DESTROY, and destroy using the misc data channel.
+
+sub _req0 {
+   return unless defined $_DAU_W_SOCK;  # (in cleanup)
+
+   my $_chn        = $_SVR->{_data_channels} + 1;
+   my $_DAT_LOCK   = $_SVR->{'_mutex_'.$_chn};
+   my $_DAT_W_SOCK = $_SVR->{_dat_w_sock}[0];
+   my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
+
+   local $\ = undef if (defined $\);
+   local $/ = $LF   if ($/ ne $LF );
+
+   CORE::lock $_DAT_LOCK if $_is_MSWin32;
+   $_DAT_LOCK->lock() if !$_is_MSWin32;
+   print({$_DAT_W_SOCK} $_[0].$LF . $_chn.$LF),
+   print({$_DAU_W_SOCK} $_[1]);
+
+   chomp(my $_ret = <$_DAU_W_SOCK>);
+   $_DAT_LOCK->unlock if !$_is_MSWin32;
+
+   $_ret;
+}
+
+# Called by await, rewind, broadcast, signal, timedwait, and wait.
 
 sub _req1 {
    return unless defined $_DAU_W_SOCK;  # (in cleanup)
@@ -1650,7 +1664,7 @@ sub destroy {
    delete($_all{ $_id }), delete($_obj{ $_id });
 
    if (defined $_svr_pid && exists $_new{ $_id } && $_new{ $_id } eq $_pid) {
-      delete($_new{ $_id }), _req1('M~DES', $_id.$LF);
+      delete($_new{ $_id }), _req0('M~DES', $_id.$LF);
    }
 
    $_[0] = undef;
@@ -1677,9 +1691,6 @@ sub export {
    { local $@; MCE::Shared::_use($_class); }
 
    {
-      my $_chn        = $_SVR->{_data_channels} + 1;
-      my $_DAU_W_SOCK = $_SVR->{_dat_w_sock}[$_chn];
-
       local $\ = undef if (defined $\);
       local $/ = $LF if ($/ ne $LF);
 
@@ -1940,7 +1951,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.849
+This document describes MCE::Shared::Server version 1.850
 
 =head1 DESCRIPTION
 
