@@ -13,12 +13,11 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.864';
+our $VERSION = '1.867';
 
 use MCE::Shared::Base ();
 use MCE::Util ();
 use MCE::Mutex ();
-use bytes;
 
 use overload (
    q("")    => \&MCE::Shared::Base::_stringify,
@@ -58,7 +57,7 @@ sub new {
    $_cv->{_value}    = shift || 0;
    $_cv->{_count}    = 0;
 
-   MCE::Util::_sock_pair($_cv, qw(_cr_sock _cw_sock));
+   MCE::Util::_sock_pair($_cv, qw(_cr_sock _cw_sock), undef, 1);
 
    MCE::Shared::Object::_reset(), $_reset_flg = ''
       if $_reset_flg && $INC{'MCE/Shared/Server.pm'};
@@ -351,7 +350,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.864
+This document describes MCE::Shared::Condvar version 1.867
 
 =head1 DESCRIPTION
 
