@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.867';
+our $VERSION = '1.868';
 
 use MCE::Shared::Base ();
 use MCE::Util ();
@@ -127,6 +127,8 @@ sub len {
 ###############################################################################
 
 {
+   use bytes;
+
    use constant {
       SHR_O_CVB => 'O~CVB',  # Condvar broadcast
       SHR_O_CVS => 'O~CVS',  # Condvar signal
@@ -350,7 +352,7 @@ MCE::Shared::Condvar - Condvar helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Condvar version 1.867
+This document describes MCE::Shared::Condvar version 1.868
 
 =head1 DESCRIPTION
 

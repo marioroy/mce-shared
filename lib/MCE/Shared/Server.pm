@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized numeric once );
 
 package MCE::Shared::Server;
 
-our $VERSION = '1.867';
+our $VERSION = '1.868';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -700,7 +700,7 @@ sub _loop {
       return;
    };
 
-   my $_warn0 = sub {
+   my $_warn = sub {
       if ( $_wa ) {
          my $_buf = $_freeze->([ ]);
          print {$_DAU_R_SOCK} length($_buf).$LF, $_buf;
@@ -807,7 +807,7 @@ sub _loop {
 
          read($_DAU_R_SOCK, my($_buf), $_len);
 
-         $_var = $_obj{ $_id } || do { return $_warn0->($_fcn) };
+         $_var = $_obj{ $_id } || do { return $_warn->($_fcn) };
 
          $_wa  ? $_auto_reply->(@{ $_thaw->($_buf) })
                : eval { $_var->$_fcn(@{ $_thaw->($_buf) }) };
@@ -821,7 +821,7 @@ sub _loop {
          chomp($_fcn = <$_DAU_R_SOCK>),
          chomp($_wa  = <$_DAU_R_SOCK>);
 
-         $_var = $_obj{ $_id } || do { return $_warn0->($_fcn) };
+         $_var = $_obj{ $_id } || do { return $_warn->($_fcn) };
 
          my $_code = $_var->can($_fcn) || do {
             if ( ($_fcn eq 'keys' || $_fcn eq 'SCALAR') &&
@@ -1404,10 +1404,7 @@ sub _auto {
    CORE::kill($MCE::Signal::SIG, $$) if $MCE::Signal::SIG;
 
    return unless $_wa;
-
-   return ( $_wa != _ARRAY )
-      ? $_thaw->($_buf)[0]
-      : @{ $_thaw->($_buf) };
+   return ( $_wa != _ARRAY ) ? $_thaw->($_buf)[0] : @{ $_thaw->($_buf) };
 }
 
 # Called by MCE::Hobo ( ->join, ->wait_one ).
@@ -1935,7 +1932,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.867
+This document describes MCE::Shared::Server version 1.868
 
 =head1 DESCRIPTION
 

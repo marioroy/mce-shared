@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.867';
+our $VERSION = '1.868';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (InputOutput::ProhibitTwoArgOpen)
@@ -753,7 +753,7 @@ MCE::Shared::Handle - Handle helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Handle version 1.867
+This document describes MCE::Shared::Handle version 1.868
 
 =head1 DESCRIPTION
 

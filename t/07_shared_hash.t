@@ -584,5 +584,29 @@ my $length = $h5->append("ἀθάνατῳ", "Ǣ");
 is( $h5->get("ἀθάνατῳ"), $sappho_text . "Ǣ", 'shared hash, check unicode append' );
 is( $length, length($sappho_text) + 1, 'shared hash, check unicode length' );
 
+$h5->clear();
+
+@vals = $h5->pipeline(
+   [ "set", foo => $sappho_text ],
+   [ "mget", qw/ foo / ]
+);
+
+cmp_array(
+   [ @vals ], [ $sappho_text ],
+   'shared hash, check unicode pipeline list'
+);
+
+@vals = $h5->pipeline_ex(
+   [ "set", bar => $sappho_text ],
+   [ "set", baz => $sappho_text ],
+);
+
+cmp_array(
+   [ @vals ], [ $sappho_text, $sappho_text ],
+   'shared hash, check unicode pipeline_ex list'
+);
+
+is( $h5->len('foo'), length($sappho_text), 'shared hash, check unicode length' );
+
 done_testing;
 

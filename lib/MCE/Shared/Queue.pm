@@ -13,7 +13,7 @@ use 5.010001;
 
 no warnings qw( threads recursion uninitialized numeric );
 
-our $VERSION = '1.867';
+our $VERSION = '1.868';
 
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
 
@@ -614,6 +614,8 @@ sub _heap_insert_high {
 ###############################################################################
 
 {
+   use bytes;
+
    use constant {
       SHR_O_QUA => 'O~QUA',  # Queue await
       SHR_O_QUD => 'O~QUD',  # Queue dequeue
@@ -799,7 +801,7 @@ no overloading;
 my $_is_MSWin32 = ($^O eq 'MSWin32') ? 1 : 0;
 
 my ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
-    $_freeze, $_thaw, $_pending);
+    $_freeze, $_thaw);
 
 sub _init_queue {
    ($_DAT_LOCK, $_DAT_W_SOCK, $_DAU_W_SOCK, $_dat_ex, $_dat_un, $_chn, $_obj,
@@ -867,9 +869,9 @@ sub dequeue {
 
    _req_queue('O~QUD', $_id.$LF . $_cnt.$LF, my($_len), my($_buf));
 
-   return                      if ($_len == -2);
    return $_thaw->($_buf)[0]   if ($_len > 0 && $_cnt == 1);
    return @{ $_thaw->($_buf) } if ($_len > 0);
+   return                      if ($_len == -2);
 
    MCE::Util::_sock_ready($_Q->{_qr_sock}) if $_is_MSWin32;
    MCE::Util::_sysread($_Q->{_qr_sock}, my($_next), 1);
@@ -921,7 +923,7 @@ MCE::Shared::Queue - Hybrid-queue helper class
 
 =head1 VERSION
 
-This document describes MCE::Shared::Queue version 1.867
+This document describes MCE::Shared::Queue version 1.868
 
 =head1 DESCRIPTION
 
@@ -938,9 +940,7 @@ the shared-manager process, otherwise locally.
 
  use MCE::Shared::Queue;
 
- my $qu = MCE::Shared::Queue->new(
-    await => 1, queue => [ "." ]
- );
+ my $qu = MCE::Shared::Queue->new( await => 1, queue => [ "." ] );
 
  # construction for sharing with other threads and processes
 

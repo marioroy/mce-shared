@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized once redefine );
 
 package MCE::Hobo;
 
-our $VERSION = '1.867';
+our $VERSION = '1.868';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -177,7 +177,7 @@ sub create {
 
    $_DATA->{"$pkg:id"} = 10000 if ( ( my $id = ++$_DATA->{"$pkg:id"} ) > 2e9 );
 
-   if ( $max_workers ) {
+   if ( $max_workers || $self->{IGNORE} ) {
       local $!;
 
       # Reap completed hobo processes.
@@ -188,7 +188,7 @@ sub create {
       }
 
       # Wait for a slot if saturated.
-      if ( keys(%{ $list->[0] }) >= $max_workers ) {
+      if ( $max_workers && keys(%{ $list->[0] }) >= $max_workers ) {
          my $count = keys(%{ $list->[0] }) - $max_workers + 1;
          _wait_one($pkg) for 1 .. $count;
       }
@@ -215,7 +215,7 @@ sub create {
       }
       elsif ( $pid ) {                                      # parent
          $self->{WRK_ID} = $pid;
-         $list->set($pid, $self) unless $self->{IGNORE};
+         $list->set($pid, $self);
          $mngd->{on_start}->($pid, $self->{ident}) if $mngd->{on_start};
       }
       else {                                                # child
@@ -364,6 +364,9 @@ sub is_joinable {
       };
    }
    else {
+      _croak('Error: $hobo->is_joinable() not called by managed process')
+         if ( $self->{IGNORE} );
+
       return '' if ( exists $self->{JOINED} );
       $_DATA->{$pkg}->exists('R'.$wrk_id) ? 1 : '';
    }
@@ -385,6 +388,9 @@ sub is_running {
       };
    }
    else {
+      _croak('Error: $hobo->is_running() not called by managed process')
+         if ( $self->{IGNORE} );
+
       return '' if ( exists $self->{JOINED} );
       $_DATA->{$pkg}->exists('R'.$wrk_id) ? '' : 1;
    }
@@ -392,8 +398,6 @@ sub is_running {
 
 sub join {
    _croak('Usage: $hobo->join()') unless ref( my $self = $_[0] );
-   _croak('Cannot join a detached/ignored child') if $self->{IGNORE};
-
    my ( $wrk_id, $pkg ) = ( $self->{WRK_ID}, $self->{PKG} );
 
    if ( exists $self->{JOINED} ) {
@@ -411,16 +415,21 @@ sub join {
    elsif ( $self->{MGR_ID} eq "$$.$_tid" ) {
       # remove from list after reaping
       if ( $_tid ) {
+         local $SIG{CHLD};
          _reap_hobo($self, 1);
          $_LIST->{$pkg}->del($wrk_id);
       }
       else {
-         local $!; waitpid($wrk_id, 0);
+         local ($SIG{CHLD}, $!);
+         waitpid($wrk_id, 0);
          _reap_hobo($self, 0);
          $_LIST->{$pkg}->del($wrk_id);
       }
    }
    else {
+      _croak('Error: $hobo->join() not called by managed process')
+         if ( $self->{IGNORE} );
+
       sleep 0.3 until ( $_DATA->{$pkg}->exists('R'.$wrk_id) );
       _reap_hobo($self, 0);
    }
@@ -627,7 +636,7 @@ sub _dispatch {
 
    my @res; local $SIG{'ALRM'} = sub { alarm 0; die "Hobo timed out\n" };
 
-   if ( $void_context ) {
+   if ( $void_context || $_SELF->{IGNORE} ) {
       no strict 'refs';
       eval {
          alarm( $hobo_timeout || 0 );
@@ -648,12 +657,14 @@ sub _dispatch {
       _exit($?) if ( $@ =~ /^Hobo exited \(\S+\)$/ );
       my $err = $@; $? = 1;
 
-      $_DATA->{ $_SELF->{PKG} }->set('S'.$$, $err),
-      $_DATA->{ $_SELF->{PKG} }->set('R'.$$, @res ? $_freeze->(\@res) : '')
-         if ( ! $_SELF->{IGNORE} );
+      if ( ! $_SELF->{IGNORE} ) {
+         $_DATA->{ $_SELF->{PKG} }->set('S'.$$, $err),
+         $_DATA->{ $_SELF->{PKG} }->set('R'.$$, @res ? $_freeze->(\@res) : '');
+      }
 
-      warn "Hobo $$ terminated abnormally: reason $err\n"
-         if ( $err ne "Hobo timed out" && !$mngd->{on_finish} );
+      if ( $err ne "Hobo timed out" && !$mngd->{on_finish} ) {
+         use bytes; warn "Hobo $$ terminated abnormally: reason $err\n";
+      }
    }
    else {
       $_DATA->{ $_SELF->{PKG} }->set('R'.$$, @res ? $_freeze->(\@res) : '')
@@ -692,6 +703,8 @@ sub _force_reap {
    return unless ( exists $_LIST->{$pkg} && $_LIST->{$pkg}->len() );
 
    for my $hobo ( $_LIST->{$pkg}->vals() ) {
+      next if $hobo->{IGNORE};
+
       if ( $hobo->is_running() ) {
          sleep(0.015), CORE::kill('KILL', $hobo->pid())
             if CORE::kill('ZERO', $hobo->pid());
@@ -732,6 +745,8 @@ sub _reap_hobo {
 
    ( $hobo->{ERROR}, $hobo->{RESULT}, $hobo->{JOINED} ) =
       ( pop || '', length $_[0] ? $_thaw->(pop) : [], 1 );
+
+   return if $hobo->{IGNORE};
 
    if ( my $on_finish = $_MNGD->{ $hobo->{PKG} }{on_finish} ) {
       my ( $exit, $err ) = ( $? || 0, $hobo->{ERROR} );
@@ -938,7 +953,7 @@ MCE::Hobo - A threads-like parallelization module
 
 =head1 VERSION
 
-This document describes MCE::Hobo version 1.867
+This document describes MCE::Hobo version 1.868
 
 =head1 SYNOPSIS
 
@@ -1561,14 +1576,13 @@ respectively. Pass 0 if simply wanting to give other workers a chance to run.
 
 =back
 
-=head1 THREADS-like DETACH CAPABILITY ON UNIX
+=head1 THREADS-like DETACH CAPABILITY
 
 Threads-like detach capability was added starting with the 1.867 release.
 
 A threads example is shown first followed by the MCE::Hobo example. All one
 needs to do is set the CHLD signal handler to IGNORE. Unfortunately, this works
-on UNIX platforms only. Similarly to threads, the process is detached where one
-can no longer join it. The hobo process restores the CHLD handler to default,
+on UNIX platforms only. The hobo process restores the CHLD handler to default,
 so is able to deeply spin workers and reap if desired.
 
  use threads;
@@ -1581,7 +1595,10 @@ so is able to deeply spin workers and reap if desired.
 
  use MCE::Hobo;
 
- # Have the OS reap workers automatically.
+ # Have the OS reap workers automatically when exiting.
+ # The on_finish option is ignored if specified (no-op).
+ # Ensure not inside a thread on UNIX platforms.
+
  $SIG{CHLD} = 'IGNORE';
 
  for ( 1 .. 8 ) {
@@ -1590,10 +1607,22 @@ so is able to deeply spin workers and reap if desired.
      };
  }
 
-The following is another way although not detach-like for the same result
-and works on the Windows platform.
+ # Optionally, wait for any remaining workers before leaving.
+ # This is necessary if workers are consuming shared objects,
+ # constructed via MCE::Shared. 
+
+ MCE::Hobo->wait_all;
+
+The following is another way and works on Windows.
+Here, the on_finish handler works as usual.
 
  use MCE::Hobo;
+
+ MCE::Hobo->init(
+     on_finish = sub {
+         ...
+     },
+ );
 
  for ( 1 .. 8 ) {
      $_->join for MCE::Hobo->list_joinable;
@@ -1602,7 +1631,7 @@ and works on the Windows platform.
      };
  }
 
- MCE::Hobo->waitall;
+ MCE::Hobo->wait_all;
 
 =head1 PARALLEL::FORKMANAGER-like DEMONSTRATION
 
