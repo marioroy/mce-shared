@@ -1,6 +1,13 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.870 Tue May 12 20:00:00 EST 2020
+
+  * Bumped minimum version required for Scalar::Util to 1.22.
+    Has fix to preserve utf8 flag of string passed to dualvar.
+
+  * Re-enabled unicode testing for MCE::Shared::Cache.
+
 1.869 Mon May 11 22:00:00 EST 2020
 
   * Disabled unicode testing for MCE::Shared::Cache on Perl 5.10.1.
