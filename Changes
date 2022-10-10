@@ -1,6 +1,11 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.878 Mon Oct 10 04:00:00 EST 2022
+
+  * Improved reliability on the Windows platform.
+  * Added deeply-shared demonstration to POD.
+
 1.877 Tue May 24 05:00:00 EST 2022
 
   * Replace http with https in documentation and meta files.

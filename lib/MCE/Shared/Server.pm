@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized numeric once );
 
 package MCE::Shared::Server;
 
-our $VERSION = '1.877';
+our $VERSION = '1.878';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -1311,6 +1311,7 @@ sub _start {
    # inlined for performance
    $_dat_ex = sub {
       my $_pid = $_tid ? $$ .'.'. $_tid : $$;
+      MCE::Util::_sock_ready($_DAT_LOCK->{_r_sock}) if $_is_MSWin32;
       MCE::Util::_sysread($_DAT_LOCK->{_r_sock}, my($b), 1), $_DAT_LOCK->{ $_pid } = 1
          unless $_DAT_LOCK->{ $_pid };
    };
@@ -1942,7 +1943,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.877
+This document describes MCE::Shared::Server version 1.878
 
 =head1 DESCRIPTION
 
