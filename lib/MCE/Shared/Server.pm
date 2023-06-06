@@ -13,7 +13,7 @@ no warnings qw( threads recursion uninitialized numeric once );
 
 package MCE::Shared::Server;
 
-our $VERSION = '1.882';
+our $VERSION = '1.883';
 
 ## no critic (BuiltinFunctions::ProhibitStringyEval)
 ## no critic (Subroutines::ProhibitExplicitReturnUndef)
@@ -159,8 +159,7 @@ sub _new {
          if !$INC{'IO/FDPass.pm'};
 
       for my $_k (qw(
-         _qw_sock _qr_sock _aw_sock _ar_sock _cw_sock _cr_sock
-         _mutex_0 _mutex_1 _mutex_2 _mutex_3 _mutex_4 _mutex_5 _qr_mutex
+         _qr_mutex _qw_sock _qr_sock _aw_sock _ar_sock _cw_sock _cr_sock
       )) {
          if ( defined $_[1]->{ $_k } ) {
             $_hndls{ $_k } = delete $_[1]->{ $_k };
@@ -1932,7 +1931,7 @@ MCE::Shared::Server - Server/Object packages for MCE::Shared
 
 =head1 VERSION
 
-This document describes MCE::Shared::Server version 1.882
+This document describes MCE::Shared::Server version 1.883
 
 =head1 DESCRIPTION
 

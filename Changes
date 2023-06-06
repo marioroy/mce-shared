@@ -1,6 +1,10 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.883 Tue Jun 06 18:00:00 EST 2023
+
+  * Remove unused Queue vars in MCE::Shared::Server, since 1.867.
+
 1.882 Tue Jun 06 12:00:00 EST 2023
 
   * Bump MCE dependency to 1.886.
