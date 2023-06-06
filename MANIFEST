@@ -35,3 +35,4 @@ t/07_shared_queue_norm.t
 t/07_shared_queue_prio.t
 t/07_shared_scalar.t
 t/07_shared_sequence.t
+xt/dequeue_timed.t
