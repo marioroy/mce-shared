@@ -1,6 +1,11 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.884 Tue Jun 08 04:00:00 EST 2023
+
+  * Add missing return statement(s) in Condvar and Queue.
+  * Move tests for condvar timedwait to xt/condvar_timedwait.t
+
 1.883 Tue Jun 06 18:00:00 EST 2023
 
   * Remove unused Queue vars in MCE::Shared::Server, since 1.867.
