@@ -1,6 +1,11 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.885 Fri Jun 09 08:00:00 EST 2023
+
+  * Fix typo in Queue dequeue_timed documentation.
+    Thank you, Łukasz Strzelecki.
+
 1.884 Thu Jun 08 04:00:00 EST 2023
 
   * Add missing return statement(s) in Condvar and Queue.
