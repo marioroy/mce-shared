@@ -622,10 +622,10 @@ isn't used for anything else.
  my $q1 = MCE::Shared->queue();
  my $q2 = MCE::Shared->queue( await => 1 );
 
-For platforms where L<IO::FDPass> isn't possible (e.g. Cygwin), construct
-C<condvar> and C<queue> before other classes. The shared-manager process
-will be delayed until sharing other classes (e.g. Array, Hash) or starting
-explicitly.
+For platforms where L<IO::FDPass> isn't possible (e.g. Cygwin, Android),
+construct C<condvar> and C<queue> before other classes. The shared-manager
+process will be delayed until sharing other classes (e.g. Array, Hash) or
+starting explicitly.
 
  use MCE::Shared;
 

@@ -36,6 +36,9 @@ provides:
   MCE::Shared::Cache:
     file: lib/MCE/Shared/Cache.pm
     version: '1.885'
+  MCE::Shared::Common:
+    file: lib/MCE/Shared/Common.pm
+    version: '1.885'
   MCE::Shared::Condvar:
     file: lib/MCE/Shared/Condvar.pm
     version: '1.885'

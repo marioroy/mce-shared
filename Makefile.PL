@@ -37,7 +37,7 @@ if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} ) {
 my %io_fdpass;
 
 if ( ! $ENV{'MCE_PREREQ_EXCLUDE_IO_FDPASS'} && $has_cc ) {
-   if ( $^O =~ /mingw|msys|cygwin/i ) {
+   if ( $^O =~ /mingw|msys|cygwin|android/i ) {
       # cygwin and friends lack file-descriptor passing capability
    }
    elsif ( $^O =~ /bsd|darwin|dragonfly|linux|mswin/i ) {
@@ -127,6 +127,10 @@ WriteMakefile(
             },
             'MCE::Shared::Cache' => {
                'file'    => 'lib/MCE/Shared/Cache.pm',
+               'version' => '1.885'
+            },
+            'MCE::Shared::Common' => {
+               'file'    => 'lib/MCE/Shared/Common.pm',
                'version' => '1.885'
             },
             'MCE::Shared::Condvar' => {

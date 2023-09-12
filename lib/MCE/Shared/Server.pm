@@ -34,7 +34,7 @@ BEGIN {
    local $@;
 
    eval 'use IO::FDPass ();'
-      if ( ! $INC{'IO/FDPass.pm'} && $^O ne 'cygwin' );
+      if ( ! $INC{'IO/FDPass.pm'} && $^O !~ /cygwin|android/ );
 
    $_spawn_child = $INC{'threads.pm'} ? 0 : 1;
 
@@ -379,8 +379,9 @@ sub _start {
    MCE::Util::_sock_pair($_SVR, qw(_dat_r_sock _dat_w_sock), $_, 1)
       for (1 .. $_data_channels + 1);
 
-   setsockopt($_SVR->{_dat_r_sock}[0], SOL_SOCKET, SO_RCVBUF, 4096)
-      if ($^O ne 'aix' && $^O ne 'linux');
+   if ($^O !~ /linux|android|aix/) {
+      setsockopt($_SVR->{_dat_r_sock}[0], SOL_SOCKET, SO_RCVBUF, 4096);
+   }
 
    if ($_is_MSWin32) {
       for (1 .. $_data_channels + 1) {
@@ -688,7 +689,7 @@ sub _loop {
                  $_args->[0] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
 
                @{ $_args } = $_obj{ $_id }->keys($_args->[0])
-                  if $pkg->isa('MCE::Shared::Base::Common');
+                  if $pkg->isa('MCE::Shared::Common');
             }
             else {
                $_obj{ $_id }->_prune_head()
@@ -1753,7 +1754,7 @@ sub iterator {
       @keys = $self->keys;
    }
    elsif ( @keys == 1 && $keys[0] =~ /^(?:key|val)[ ]+\S\S?[ ]+\S/ ) {
-      return sub {} unless $pkg->isa('MCE::Shared::Base::Common');
+      return sub {} unless $pkg->isa('MCE::Shared::Common');
       @keys = $self->keys($keys[0]);
    }
    elsif ( $pkg->isa('MCE::Shared::Cache') ) {

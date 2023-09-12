@@ -25,7 +25,7 @@ use Scalar::Util qw( dualvar looks_like_number );
 use Time::HiRes qw( time );
 
 use MCE::Shared::Base ();
-use base 'MCE::Shared::Base::Common';
+use base 'MCE::Shared::Common';
 
 use constant {
    _DATA => 0,  # unordered data

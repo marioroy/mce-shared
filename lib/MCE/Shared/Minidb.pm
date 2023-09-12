@@ -16,7 +16,7 @@ no warnings qw( threads recursion uninitialized numeric );
 our $VERSION = '1.885';
 
 use MCE::Shared::Base ();
-use base 'MCE::Shared::Base::Common';
+use base 'MCE::Shared::Common';
 
 use MCE::Shared::Ordhash ();
 use MCE::Shared::Array ();

@@ -18,7 +18,7 @@ our $VERSION = '1.885';
 ## no critic (TestingAndDebugging::ProhibitNoStrict)
 
 use MCE::Shared::Base ();
-use base 'MCE::Shared::Base::Common';
+use base 'MCE::Shared::Common';
 
 use overload (
    q("")    => \&MCE::Shared::Base::_stringify,

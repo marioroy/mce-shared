@@ -247,50 +247,6 @@ sub _croak {
    }
 }
 
-###############################################################################
-## ----------------------------------------------------------------------------
-## Common API for MCE::Shared::{ Array, Cache, Hash, Minidb, Ordhash }.
-##
-###############################################################################
-
-package MCE::Shared::Base::Common;
-
-# pipeline ( [ func1, @args ], [ func2, @args ], ... )
-
-sub pipeline {
-   my $self = shift;
-   my $tmp; $tmp = pop if ( defined wantarray );
-
-   while ( @_ ) {
-      my $cmd = shift; next unless ( ref $cmd eq 'ARRAY' );
-      if ( my $code = $self->can(shift @{ $cmd }) ) {
-         $code->($self, @{ $cmd });
-      }
-   }
-
-   if ( defined $tmp ) {
-      my $code;
-      return ( ref $tmp eq 'ARRAY' && ( $code = $self->can(shift @{ $tmp }) ) )
-         ? $code->($self, @{ $tmp })
-         : undef;
-   }
-
-   return;
-}
-
-# pipeline_ex ( [ func1, @args ], [ func2, @args ], ... )
-
-sub pipeline_ex {
-   my $self = shift;
-   my $code;
-
-   map {
-      ( ref $_ eq 'ARRAY' && ( $code = $self->can(shift @{ $_ }) ) )
-         ? $code->($self, @{ $_ })
-         : undef;
-   } @_;
-}
-
 1;
 
 __END__
