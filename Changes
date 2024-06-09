@@ -1,6 +1,10 @@
 
 Revision history for Perl module MCE::Shared.
 
+1.889 Sun Jun 09 15:30:00 EST 2024
+
+  * Improve support for PDL.
+
 1.888 Fri Jun 06 04:00:00 EST 2024
 
   * Apply workaround for PDL::srand in MCE::Hobo. Thank you, PerlMonks.
